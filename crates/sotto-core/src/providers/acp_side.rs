@@ -355,11 +355,20 @@ struct AcpSideRpc {
     text: String,
     tooled: bool,
     ignore_non_json: bool,
+    /// Whether an inbound JSON-RPC request before `session/new` returns also aborts the side call (Antigravity: yes;
+    /// Cursor: only once a session exists, matching `cursor.ts:1365`).
+    cancel_before_session: bool,
     failure: &'static str,
 }
 
 impl AcpSideRpc {
-    fn new(stdin: ChildStdin, output: SideOutput<ChildStdout>, ignore_non_json: bool, failure: &'static str) -> Self {
+    fn new(
+        stdin: ChildStdin,
+        output: SideOutput<ChildStdout>,
+        ignore_non_json: bool,
+        cancel_before_session: bool,
+        failure: &'static str,
+    ) -> Self {
         Self {
             stdin,
             output,
@@ -368,6 +377,7 @@ impl AcpSideRpc {
             text: String::new(),
             tooled: false,
             ignore_non_json,
+            cancel_before_session,
             failure,
         }
     }
@@ -429,7 +439,9 @@ impl AcpSideRpc {
             let _ = self
                 .write_frame(&json!({ "jsonrpc": "2.0", "id": wire_id, "result": reply }))
                 .await;
-            self.cancel_once().await;
+            if self.cancel_before_session || self.session_id.is_some() {
+                self.cancel_once().await;
+            }
             return Ok(None);
         }
         if method.is_none() && wire_id.is_some() {
@@ -564,7 +576,7 @@ pub(crate) async fn write_cursor(launch: &ResolvedCli, prefix_args: &[String], r
     launch.apply_tokio(&mut command);
     command.args(&launch.prefix_args).args(prefix_args).arg("acp");
     let (mut child, stdin, stdout, stderr) = spawn_side_child(command, run.cwd, CURSOR_FAILED)?;
-    let mut rpc = AcpSideRpc::new(stdin, SideOutput::new(stdout, stderr, OUTPUT_LIMIT, false), false, CURSOR_FAILED);
+    let mut rpc = AcpSideRpc::new(stdin, SideOutput::new(stdout, stderr, OUTPUT_LIMIT, false), false, false, CURSOR_FAILED);
     let (timed_out, outcome) = match tokio::time::timeout(run.deadline, run_cursor_session(&mut rpc, &run)).await {
         Ok(outcome) => (false, outcome),
         Err(_) => (true, Err(CURSOR_FAILED.into())),
@@ -629,7 +641,7 @@ pub(crate) async fn write_antigravity(launch: &ResolvedCli, prefix_args: &[Strin
         .args(prefix_args)
         .args(antigravity_arguments(run.data_directory));
     let (mut child, stdin, stdout, stderr) = spawn_side_child(command, run.cwd, ANTIGRAVITY_FAILED)?;
-    let mut rpc = AcpSideRpc::new(stdin, SideOutput::new(stdout, stderr, OUTPUT_LIMIT, false), true, ANTIGRAVITY_FAILED);
+    let mut rpc = AcpSideRpc::new(stdin, SideOutput::new(stdout, stderr, OUTPUT_LIMIT, false), true, true, ANTIGRAVITY_FAILED);
     let (timed_out, outcome) = match tokio::time::timeout(run.deadline, run_antigravity_session(&mut rpc, &run, &session_slot)).await {
         Ok(outcome) => (false, outcome),
         Err(_) => (true, Err(ANTIGRAVITY_FAILED.into())),

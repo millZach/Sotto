@@ -185,6 +185,108 @@ fn cursor_drafts_on_the_model_configured_while_idle() {
     assert_eq!(saved["t"]["reasoningEffort"], json!("max"));
 }
 
+#[test]
+fn cursor_send_message_applies_per_model_effort_option_and_rejects_unknown_effort() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    let adapter = cursor(&fixture, &runtime, json!({ "text": "Fix the parser" }), Duration::from_secs(60));
+    let send = crate::provider::SendMessageRequest {
+        thread_id: "t-effort".into(),
+        record_seed: crate::provider::ThreadRecordSeed { project_id: "project-1".into(), title: "Effort check".into(), created_at: "2026-11-27T10:00:00.000Z".into() },
+        message_id: "m-1".into(),
+        cwd: fixture.repo.to_string_lossy().into_owned(),
+        model_id: Some("native:cursor:model:gpt-fixture".into()),
+        reasoning_effort: Some("high".into()),
+        runtime_mode: Some("approval-required".into()),
+        text: "Hello".into(),
+        command_id: "c-1".into(),
+        draft_id: "d-1".into(),
+        attachments: Vec::new(),
+    };
+    runtime.block_on(adapter.send_message(send)).unwrap();
+
+    // Wire must have sent Cursor's per-model `reasoning` configId (not hardcoded `reasoning_effort`) and fake session saved `high`.
+    let frames = jsonl(&fixture.data().join("requests.jsonl"));
+    let effort_call = frames
+        .iter()
+        .find(|f| f["method"] == "session/set_config_option" && f["params"]["configId"] == "reasoning");
+    assert!(effort_call.is_some(), "expected configId=reasoning in {frames:?}");
+    assert_eq!(effort_call.unwrap()["params"]["value"], json!("high"));
+    assert!(!frames.iter().any(|f| f["params"]["configId"] == "reasoning_effort"));
+
+    let saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(fixture.data().join("cursor-threads.json")).unwrap()).unwrap();
+    assert_eq!(saved["t-effort"]["reasoningEffort"], json!("high"));
+    let sid = saved["t-effort"]["cursorSessionId"].as_str().unwrap();
+    let fake_session: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture.data().join("sessions").join(format!("{sid}.json"))).unwrap()).unwrap();
+    assert_eq!(fake_session["effort"], json!("high"));
+
+    // Switching to `claude-fixture` must use its own per-model option ID (`effort`) rather than `reasoning`.
+    runtime
+        .block_on(adapter.configure_thread(
+            "t-effort".into(),
+            Some("native:cursor:model:claude-fixture".into()),
+            None,
+            Some("max".into()),
+        ))
+        .unwrap();
+    let frames_after = jsonl(&fixture.data().join("requests.jsonl"));
+    assert!(
+        frames_after
+            .iter()
+            .any(|f| f["method"] == "session/set_config_option" && f["params"]["configId"] == "effort" && f["params"]["value"] == "max"),
+        "expected configId=effort for claude-fixture in {frames_after:?}"
+    );
+    let fake_session_after: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(fixture.data().join("sessions").join(format!("{sid}.json"))).unwrap()).unwrap();
+    assert_eq!(fake_session_after["effort"], json!("max"));
+
+    // An invalid effort must fail rather than being swallowed and persisted.
+    let err = runtime.block_on(adapter.configure_thread(
+        "t-effort".into(),
+        Some("native:cursor:model:claude-fixture".into()),
+        None,
+        Some("ultra".into()),
+    ));
+    assert!(err.is_err(), "expected unknown effort to fail");
+    let saved_after: serde_json::Value = serde_json::from_str(&fs::read_to_string(fixture.data().join("cursor-threads.json")).unwrap()).unwrap();
+    assert_eq!(saved_after["t-effort"]["reasoningEffort"], json!("max"));
+
+    runtime.block_on(adapter.disconnect()).unwrap();
+}
+
+#[test]
+fn cursor_ignores_pre_session_inbound_request_while_antigravity_aborts() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    let cursor_pinger = fixture.dir.path().join("cursor-pre-session-ping.mjs");
+    // Sends a server-initiated request before replying to `initialize`, then forwards to `fakeCursorAgent.mjs`.
+    let script = format!(
+        "import {{ createInterface }} from 'node:readline'\nimport {{ spawn }} from 'node:child_process'\nconst child = spawn(process.execPath, [{}, ...process.argv.slice(2)], {{ stdio: ['pipe', 'pipe', 'pipe'] }})\nchild.stderr.pipe(process.stderr)\nlet pinged = false\ncreateInterface({{ input: process.stdin }}).on('line', line => {{\n  const msg = JSON.parse(line)\n  if (msg.id === 'pre-1') return\n  if (msg.method === 'initialize' && !pinged) {{ pinged = true; process.stdout.write(JSON.stringify({{ jsonrpc: '2.0', id: 'pre-1', method: 'cursor/ping', params: {{}} }}) + '\\n') }}\n  child.stdin.write(line + '\\n')\n}}).on('close', () => child.stdin.end())\nchild.stdout.pipe(process.stdout)\nchild.on('exit', code => process.exit(code ?? 0))\n",
+        serde_json::to_string(FAKE_CURSOR).unwrap()
+    );
+    fs::write(&cursor_pinger, script).unwrap();
+    let mut cfg = AcpAdapterConfig::fake(AcpFlavor::Cursor, fixture.data(), FAKE_CURSOR.into());
+    cfg.prefix_args[0] = cursor_pinger.to_string_lossy().into_owned();
+    let adapter = cursor_on(&fixture, &runtime, json!({ "text": "Fix the parser" }), cfg);
+    commit(&fixture, &drafting(&fixture, &runtime, adapter, false), None);
+    assert_eq!(fixture.last_commit(), "Fix the parser");
+
+    // Antigravity aborts on any inbound request, even before `session/new` returns.
+    let agy_fixture = Fixture::new();
+    let agy_pinger = agy_fixture.dir.path().join("agy-pre-session-ping.mjs");
+    let agy_script = format!(
+        "import {{ createInterface }} from 'node:readline'\nimport {{ spawn }} from 'node:child_process'\nconst child = spawn(process.execPath, [{}, ...process.argv.slice(2)], {{ stdio: ['pipe', 'pipe', 'pipe'] }})\nchild.stderr.pipe(process.stderr)\nlet pinged = false\ncreateInterface({{ input: process.stdin }}).on('line', line => {{\n  const msg = JSON.parse(line)\n  if (msg.id === 'pre-1') return\n  if (msg.method === 'initialize' && !pinged) {{ pinged = true; process.stdout.write(JSON.stringify({{ jsonrpc: '2.0', id: 'pre-1', method: 'antigravity/ping', params: {{}} }}) + '\\n') }}\n  child.stdin.write(line + '\\n')\n}}).on('close', () => child.stdin.end())\nchild.stdout.pipe(process.stdout)\nchild.on('exit', code => process.exit(code ?? 0))\n",
+        serde_json::to_string(FAKE_ANTIGRAVITY).unwrap()
+    );
+    fs::write(&agy_pinger, agy_script).unwrap();
+    let mut agy_cfg = AcpAdapterConfig::fake(AcpFlavor::Antigravity, agy_fixture.data(), FAKE_ANTIGRAVITY.into());
+    agy_cfg.prefix_args[0] = agy_pinger.to_string_lossy().into_owned();
+    let agy_adapter = antigravity_on(&agy_fixture, &runtime, "gemini-3.8-flash", json!({ "text": "Should be dropped" }), agy_cfg);
+    commit(&agy_fixture, &drafting(&agy_fixture, &runtime, agy_adapter, false), None);
+    assert_eq!(agy_fixture.last_commit(), STAND_IN_SUBJECT);
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Antigravity.
 
