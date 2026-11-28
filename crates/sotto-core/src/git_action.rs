@@ -25,7 +25,7 @@ use crate::ops::{parse_porcelain_v2_changed, run_action_git as git, run_action_g
 use crate::workspace::clip_utf16;
 
 /// What Node's runner gives a Git command that names no deadline of its own.
-const COMMAND_DEADLINE: Duration = Duration::from_secs(30);
+pub(crate) const COMMAND_DEADLINE: Duration = Duration::from_secs(30);
 /// Node's deadline for cutting a feature branch's checkout.
 const CHECKOUT_DEADLINE: Duration = Duration::from_secs(10);
 /// Node's `COMMIT_TIMEOUT_MS`: a commit's hooks may take long.
@@ -529,7 +529,7 @@ fn fetch_origin(cwd: &str) {
 
 /// The repository's default branch, as Node's `defaultBranch` finds it: where `origin/HEAD` points, else `main` or
 /// `master` when there is such a branch here.
-fn default_branch(cwd: &str, has_origin: bool) -> Option<String> {
+pub(crate) fn default_branch(cwd: &str, has_origin: bool) -> Option<String> {
     if has_origin {
         let head = git(cwd, &["symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"], COMMAND_DEADLINE).unwrap_or_default();
         if let Some(name) = js_trim(&head).strip_prefix("origin/") {
@@ -598,7 +598,7 @@ fn digits(text: &str) -> Result<u64, ()> {
 }
 
 /// The lines of Git's output, trimmed, without the empty ones.
-fn lines(output: &str) -> Vec<String> {
+pub(crate) fn lines(output: &str) -> Vec<String> {
     output.split('\n').map(js_trim).filter(|line| !line.is_empty()).map(ToString::to_string).collect()
 }
 
@@ -1023,13 +1023,13 @@ fn remove_trace(folder: &Path) {
 }
 
 /// A Git setting, trimmed, or nothing when it is not set: Node's `config --get` with `.catch(() => '')`.
-fn config(cwd: &str, key: &str) -> String {
+pub(crate) fn config(cwd: &str, key: &str) -> String {
     js_trim(&git(cwd, &["config", "--get", key], COMMAND_DEADLINE).unwrap_or_default()).to_string()
 }
 
 /// The remote a push goes to, as T3 chooses it: `branch.<b>.pushRemote`, then `remote.pushDefault`, when either names a
 /// remote this repository has, then `origin`, then the first remote.
-fn push_remote(cwd: &str, branch: Option<&str>) -> Option<String> {
+pub(crate) fn push_remote(cwd: &str, branch: Option<&str>) -> Option<String> {
     let remotes = lines(&git(cwd, &["remote"], COMMAND_DEADLINE).unwrap_or_default());
     let configured = [branch.map(|branch| config(cwd, &format!("branch.{branch}.pushRemote"))).unwrap_or_default(), config(cwd, "remote.pushDefault")];
     configured
@@ -1039,7 +1039,7 @@ fn push_remote(cwd: &str, branch: Option<&str>) -> Option<String> {
 }
 
 /// A branch's upstream as its remote and branch, as Node's `parseUpstream` reads it.
-fn parse_upstream(upstream: &str) -> (String, String) {
+pub(crate) fn parse_upstream(upstream: &str) -> (String, String) {
     match upstream.split_once('/') {
         Some((remote, branch)) => (remote.to_string(), branch.to_string()),
         None => ("origin".to_string(), upstream.to_string()),

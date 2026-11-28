@@ -3058,7 +3058,8 @@ const STATUS_GIT_PREFIX: [&str; 8] = ["--no-optional-locks", "--literal-pathspec
 const ACTION_GIT_PREFIX: [&str; 3] = ["--no-optional-locks", "-c", "core.quotePath=false"];
 
 #[allow(clippy::too_many_arguments)]
-fn run_git_impl(
+fn run_tool_impl(
+    tool: &str,
     folder: &str,
     args: &[&str],
     extra_env: &[(String, String)],
@@ -3083,16 +3084,23 @@ fn run_git_impl(
         })
     });
     if Instant::now() >= deadline {
-        return Err(GitRunError::Failed("git timed out".into()));
+        return Err(GitRunError::Failed(format!("{tool} timed out")));
     }
     let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
-    let mut cmd = match crate::cli_lookup::resolve_tool_cli("git", &opts) {
-        Some(res) => {
-            let mut c = Command::new(&res.executable);
-            res.apply_std(&mut c);
-            c
+    // Node keeps `gh` on PATH on Windows (`ghCommand.ts:20`) and resolves it via CLI lookup off Windows so a systemd
+    // or non-interactive SSH host finds `~/.local/bin/gh` (#2430).
+    let lookup_tool = !(tool == "gh" && cfg!(windows));
+    let mut cmd = if lookup_tool {
+        match crate::cli_lookup::resolve_tool_cli(tool, &opts) {
+            Some(res) => {
+                let mut c = Command::new(&res.executable);
+                res.apply_std(&mut c);
+                c
+            }
+            None => Command::new(tool),
         }
-        None => Command::new("git"),
+    } else {
+        Command::new(tool)
     };
     cmd.args(prefix)
     .args(args)
@@ -3133,9 +3141,9 @@ fn run_git_impl(
 
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            GitRunError::Unavailable("Git is unavailable.".into())
+            GitRunError::Unavailable(format!("{tool} is unavailable."))
         } else {
-            GitRunError::Failed(format!("Could not run git: {e}"))
+            GitRunError::Failed(format!("Could not run {tool}: {e}"))
         }
     })?;
 
@@ -3156,7 +3164,7 @@ fn run_git_impl(
     });
     let stderr_reader = std::thread::spawn(move || -> Vec<u8> {
         let _reading = reading;
-        // As much of what Git said as its output may hold, so the last lines a refusal quotes are there.
+        // As much of what the tool said as its output may hold, so the last lines a refusal quotes are there.
         match stderr_pipe {
             Some(stderr) => read_pipe(stderr, Some(max_buffer.unwrap_or(16 * 1024)), !keep_reading && lines.is_none(), lines.as_ref()).0,
             None => Vec::new(),
@@ -3166,7 +3174,7 @@ fn run_git_impl(
     // Standard input is written on its own thread once the readers are draining, as Node's runner ends it without
     // waiting: Git can read it late, as a commit reads its message only after its pre-commit hook, and a hook that
     // prints more than a pipe holds would otherwise wait on a reader that waits on this write, past any deadline. The
-    // handle closes when the write ends, or fails once Git is gone.
+    // handle closes when the write ends, or fails once the child is gone.
     if let (Some(input), Some(mut stdin)) = (stdin_bytes, child.stdin.take()) {
         let input = input.to_vec();
         std::thread::spawn(move || {
@@ -3197,22 +3205,22 @@ fn run_git_impl(
             Err(e) => break Err(e),
         }
     };
-    // A hook or a remote helper the command started can hold its pipes open after Git is gone, whether Git exited or was
-    // stopped, so the command settles on its deadline and grace, as Node's runner does (`spawnCommand`), rather than wait
-    // for a close a grandchild may never allow. One still held then did not finish in time; its readers end when the
-    // grandchild lets go.
+    // A hook or a remote helper the command started can hold its pipes open after the child is gone, whether it exited
+    // or was stopped, so the command settles on its deadline and grace, as Node's runner does (`spawnCommand`), rather
+    // than wait for a close a grandchild may never allow. One still held then did not finish in time; its readers end
+    // when the grandchild lets go.
     let held = matches!(
         pipes_closed.recv_timeout(settle_by.saturating_duration_since(Instant::now())),
         Err(std::sync::mpsc::RecvTimeoutError::Timeout)
     );
     *open.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = false;
     if timed_out || held {
-        return Err(GitRunError::Failed("git timed out".into()));
+        return Err(GitRunError::Failed(format!("{tool} timed out")));
     }
     let (buf, overflowed) = reader.join().unwrap_or_default();
     let stderr_buf = stderr_reader.join().unwrap_or_default();
     let status =
-        status.map_err(|e| GitRunError::Failed(format!("Could not wait for git: {e}")))?;
+        status.map_err(|e| GitRunError::Failed(format!("Could not wait for {tool}: {e}")))?;
     let stdout_str = String::from_utf8_lossy(&buf).into_owned();
     if overflowed && !keep_reading {
         return Err(GitRunError::MaxBuffer(stdout_str));
@@ -3220,13 +3228,29 @@ fn run_git_impl(
     if !status.success() {
         let stderr_str = String::from_utf8_lossy(&stderr_buf).trim().to_string();
         let msg = if stderr_str.is_empty() {
-            format!("git exited with status {status}")
+            format!("{tool} exited with status {status}")
         } else {
             stderr_str
         };
         return Err(GitRunError::Failed(msg));
     }
     Ok(GitRunOutput { stdout: stdout_str })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_git_impl(
+    folder: &str,
+    args: &[&str],
+    extra_env: &[(String, String)],
+    stdin_bytes: Option<&[u8]>,
+    max_buffer: Option<usize>,
+    strip_all_git_env: bool,
+    deadline: Instant,
+    stop: TimeoutStop,
+    readers: Readers,
+    prefix: &[&str],
+) -> Result<GitRunOutput, GitRunError> {
+    run_tool_impl("git", folder, args, extra_env, stdin_bytes, max_buffer, strip_all_git_env, deadline, stop, readers, prefix)
 }
 
 /// Git as Node's `runWorktreeGitProcess` (`src/main/agents/threadWorktrees.ts`) runs it for a thread's own worktree:
@@ -3281,7 +3305,15 @@ pub(crate) fn run_action_git_with(folder: &str, args: &[&str], deadline: Duratio
     let readers = Readers { lines: extras.lines, keep_reading: true };
     run_git_impl(folder, args, extras.env, extras.stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, readers, &ACTION_GIT_PREFIX)
         .map(|o| o.stdout)
-        .map_err(action_git_words)
+        .map_err(|e| action_tool_words("git", e))
+}
+
+/// Runs GitHub's `gh` CLI as Node's `runGitStatusCommand` runs it (`src/main/agents/git/gitStatus.ts` + `ghCommand.ts`).
+pub(crate) fn run_action_gh_with(folder: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, String> {
+    let readers = Readers { lines: None, keep_reading: true };
+    run_tool_impl("gh", folder, args, &[], stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, readers, &[])
+        .map(|o| o.stdout)
+        .map_err(|e| action_tool_words("gh", e))
 }
 
 /// Reads a pipe to its end, keeping at most `limit` bytes (`None` for all of it), and hands each line to `lines` as it
@@ -3328,15 +3360,23 @@ fn read_pipe(mut pipe: impl Read, limit: Option<usize>, stop_at_limit: bool, lin
     (kept, overflowed)
 }
 
-/// A Git action's failure in Node's runner's words.
+/// A Git action's failure in Node's runner's words (kept for unit tests).
+#[cfg(test)]
 fn action_git_words(error: GitRunError) -> String {
+    action_tool_words("git", error)
+}
+
+/// A Git or `gh` action's failure in Node's runner's words.
+fn action_tool_words(tool: &str, error: GitRunError) -> String {
+    let timed_out = format!("{tool} timed out");
+    let exited_prefix = format!("{tool} exited with status ");
     match error {
-        GitRunError::Unavailable(_) => GIT_MISSING.into(),
-        GitRunError::MaxBuffer(_) => "git output exceeded buffer limit".into(),
-        GitRunError::Failed(msg) if msg == "git timed out" => "git did not finish in time.".into(),
-        GitRunError::Failed(msg) => match msg.strip_prefix("git exited with status ").map(exit_code) {
-            Some(Some(code)) => format!("git exited with {code}."),
-            Some(None) => "git exited with a signal.".into(),
+        GitRunError::Unavailable(_) => format!("{tool} is not installed or is not on PATH."),
+        GitRunError::MaxBuffer(_) => format!("{tool} output exceeded buffer limit"),
+        GitRunError::Failed(msg) if msg == timed_out => format!("{tool} did not finish in time."),
+        GitRunError::Failed(msg) => match msg.strip_prefix(&exited_prefix).map(exit_code) {
+            Some(Some(code)) => format!("{tool} exited with {code}."),
+            Some(None) => format!("{tool} exited with a signal."),
             None => msg,
         },
     }
