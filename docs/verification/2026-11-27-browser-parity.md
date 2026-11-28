@@ -57,6 +57,39 @@ After a code review, the built app was used by hand on Windows: a secret request
 
 Ctrl with the wheel is checked against the zoom requests Chromium raises: Electron's `sendInputEvent` follows its wheel with a synthetic end of scroll that Chromium counts as a second notch, so one call gives two steps in the test. A real mouse gives one: a single Ctrl+wheel notch sent through Windows' own input (`mouse_event`) to the built app raised one request and took the page from 100% to 110%.
 
+## After the owner's review
+
+The owner's review of the pull request asked for eleven changes across the branch. [The secret requests verification](2026-11-27-secret-requests.md#after-the-owners-review) and [the zoom and downloads verification](2026-11-27-browser-zoom-downloads.md#after-the-owners-review) cover theirs. Here, it is the profiles list (ADR-0221, November 27 amendment). Only a missing `browser-profiles.json` means no profiles. A file Sotto cannot read or parse is kept as it is: Sotto lists the entries it can read and adds and removes none. A removal is refused in words before it closes a page or deletes any data, and the sweep at start deletes no partition. Remove now takes the profile off the list before it deletes the profile's data.
+
+Two test files check this. In `browserProfiles.test.ts`, a broken file is kept and read in part, only a missing file counts as none, and a failed read is tried again. In `browserTools.test.ts`, a removal is refused while the list cannot be read, before any page closes, and a list that fails to change keeps the sign-ins. These tests failed on the old code and pass.
+
+All gates ran on Node 24.22.1, on the tree that is now `de91dfc91`:
+
+- `npm run typecheck` and `npm run lint` passed.
+- `npm run notices:verify` verified 202 components.
+- `npm run e2e:list` listed 693 tests in 305 files.
+- `npm run i18n:extract` changed no catalog.
+- `npm run build` passed.
+- The branch's related suites passed 397 tests in 35 files, with 6 skipped.
+- `browser-parity.spec.ts`, `browser-zoom-downloads.spec.ts`, `secret-requests.spec.ts` and `browser-pane.spec.ts` passed all 6 of their tests in 2.4 minutes.
+
+The full suite ran on `0643f1ffa` as `npm run test -- --maxWorkers=2`, which is the same `vitest run` script; this computer's npm could not load its `test` command, so `npm test` itself would not start. It passed 22,361 tests and failed 14, with 907 skipped, in 57 minutes.
+
+Ten of the failures are the ones listed above, from outside this branch:
+
+- `threadWorktreeReclaim` (2) and `threadWorktreeInterruptedRemoval` (3)
+- `gitRepository` (2)
+- `liveChildSteps` (2)
+- `installedProvidersGate` (1)
+
+The other four failed under the run's load:
+
+- `socketHostContract` and `watcherPairedHosts`: a fetch to the test's own server failed.
+- `delegationRemote`: the test hit its 15-second limit.
+- `workspaceThreadChanges`: the test hit its 15-second limit.
+
+The first three passed when rerun on their own, on this branch and on `origin/main` at f127a1546. `workspaceThreadChanges`' long run of mixed operations takes 14.9 seconds on its own here, so it passed alone on this branch. On `origin/main` it timed out on its own, at 15.2 seconds.
+
 ## Not checked here
 
 - macOS and Linux. The server list's `lsof` and `ss` readers and the Firefox folders there are unit-tested on fixed text only.

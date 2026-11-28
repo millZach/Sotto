@@ -56,6 +56,18 @@ The full `npm test -- --maxWorkers=2` run on `cecd8d007` found what this work br
 
 On `ebdac66fd` the full run passed 22,328 tests and failed 13. `socketHost` (two answer receipts) and `trackedFileEncoding` (its 60-second scan, under the run's load) passed when rerun on their own. The rest fail for reasons outside this branch, as before: `threadWorktreeReclaim` and `threadWorktreeInterruptedRemoval` fail on a clean main, `gitRepository` needs a Git with `gc --no-detach`, `liveChildSteps` needs the right to make symlinks, and `installedProvidersGate` finds this computer's Hermes.
 
+## After the owner's review
+
+The owner's review asked for these changes, recorded in ADR-0222's November 27 amendment:
+
+- **Names (decision 3).** A download's name is held from the moment Sotto picks it until the file is placed. Two downloads of one name each get a name of their own, compared without case where the disk ignores case. **Save to Downloads** moves the file without replacing one: a hard link, or else a copy that refuses an existing file. If a file of that name appeared meanwhile, it takes the next free name. **Save as…** may still replace the file the user chose, but not a name another download holds.
+- **What runs.** Sotto never opens disk images (`iso`, `img`, `vhd`, `vhdx`), or `chm`, `xll`, `appref-ms`, `msp`, `settingcontent-ms`, `library-ms` or `search-ms` files.
+- **A closed thread.** A download still asking is cancelled at the moment its thread is archived, settled or deleted. The engine now tells the shell which threads are closed, and the shell acts only when a thread becomes closed or gone. A settled thread the user opens again keeps its new downloads.
+- **What the agent hears (decision 5).** The agent hears only of downloads its own action started, and of those from a page that was shared with it when the download started and still is.
+- **Zoom (decision 1).** A zoom is the site's by host name, as Chromium keeps it, so another port on the same host shares it.
+
+`browserDownloads.test.ts`, `browserTools.test.ts` and `engineBoundary.test.ts` check these. Their new tests failed on the old code and pass. In the spec, which passed with the other browser journeys, the user's download from the agent's shared page is still listed for the agent. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-owners-review).
+
 ## Not checked here
 
 - macOS and Linux: zoom keys under Command, Touch ID or a Linux security key for passkeys, and the system Save dialog there.
