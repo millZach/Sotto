@@ -237,11 +237,40 @@ describe('a type the user allowed that fails once the value is taken (the second
     // The page moves the focus while the value comes from the engine.
     const take = secrets.take.bind(secrets)
     vi.spyOn(secrets, 'take').mockImplementationOnce((threadId, used) => { const value = take(threadId, used); page.focus = 9; return value })
-    await browser.answerAction({ threadId: THREAD, workspaceId: workspaceId(), pageId: staging.pageId, taskId: staging.taskId, actionId: pending.id, allow: true })
+    const answered = await browser.answerAction({ threadId: THREAD, workspaceId: workspaceId(), pageId: staging.pageId, taskId: staging.taskId, actionId: pending.id, allow: true })
     const result = await typing
     expect(result.isError).toBe(true)
     expect(result.text).toContain('this secretRef is used')
     expect(result.text).not.toContain(CANARY)
+    expect(page.typed).toBe('')
+    // The user who pressed Allow is told in their own words, with no tool's name (the third review, Q-N4).
+    expect(answered).toEqual({ ok: false, error: expect.objectContaining({ message: expect.stringContaining('can\'t be used again') }) })
+    expect(JSON.stringify(answered)).not.toMatch(/secretRef|request_secret/u)
+  })
+
+  it('still tells the agent its reference is used when the user stopped sharing the page as it was taken (the third review, Q-N4)', async () => {
+    fresh()
+    const ref = await secretRef()
+    const staging = await opened('https://staging.example/login')
+    const typing = staging.act({ type: 'type', selector: '#password', secretRef: ref })
+    await vi.waitFor(() => expect(latestTask(staging.taskId)?.pendingAction?.action.type).toBe('type'))
+    const pending = latestTask(staging.taskId)!.pendingAction!
+    const target = { threadId: THREAD, workspaceId: workspaceId(), pageId: staging.pageId }
+    const take = secrets.take.bind(secrets)
+    // The browser awaits what the engine gives, so this take can wait for Stop sharing to finish before it answers.
+    const takeThenStopSharing = async (threadId: string, used: string): Promise<string | null> => {
+      const value = take(threadId, used)
+      expect(await browser.share({ ...target, enabled: false })).toMatchObject({ ok: true })
+      return value
+    }
+    vi.spyOn(secrets, 'take').mockImplementationOnce(takeThenStopSharing as unknown as typeof take)
+    await browser.answerAction({ ...target, taskId: staging.taskId, actionId: pending.id, allow: true })
+    const result = await typing
+    expect(result.isError).toBe(true)
+    // Nothing of the page, which is no longer shared, but the reference is used all the same.
+    expect(result.text).toContain('not shared')
+    expect(result.text).toContain('this secretRef is used')
+    expect(result.text).not.toContain('staging.example')
     expect(page.typed).toBe('')
   })
 })

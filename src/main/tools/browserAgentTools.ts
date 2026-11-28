@@ -6,6 +6,7 @@ import { BrowserAgentServer, HOST_BROWSER_INSTRUCTIONS, type BrowserToolDefiniti
 import type { ThreadToolCallContext } from '../agents/threadToolServer'
 import type { BrowserService } from './browser'
 import type { BrowserTasks, TaskPage } from './browserTasks'
+import { SECRET_SPENT } from './pageAutomation'
 import type { CloudIphoneService } from './cloudIphone/service'
 
 const withoutTarget = { threadId: true, workspaceId: true } as const
@@ -88,11 +89,16 @@ function taskSummary(task: BrowserTask, observable: boolean): unknown {
   if (!observable) return { id: task.id, pageId: task.pageId, status: task.status, pendingAction: task.pendingAction, observationShared: false }
   return { ...task, thumbnail: undefined, evidence: task.evidence?.map(entry => ({ ...entry, image: undefined })) }
 }
-/** A task's result as the tool gives it; `failed` marks it an error, as an action the user allowed that did not finish. */
+const NOT_SHARED = 'The browser page is not shared. Wait for the user before continuing; no page observations are available.'
+/**
+ * A task's result as the tool gives it; `failed` marks it an error, as an action the user allowed that did not finish.
+ * A page the agent may not see says nothing of itself, but a secretRef the action used up is still said (ADR-0219).
+ */
 function operationResult(result: ToolsResult<BrowserAgentResult>, observable = true, failed = false): BrowserToolResult {
   if (!result.ok) return text(result.error, true)
   const { task, image, output, approvalRequired } = result.value
-  const reply = text({ task: taskSummary({ ...task, output: null }, observable), ...(observable ? output ? { output } : {} : { output: 'The browser page is not shared. Wait for the user before continuing; no page observations are available.' }), approvalRequired }, failed)
+  const hidden = output?.includes(SECRET_SPENT) ? `${NOT_SHARED} The secret was taken for this action, so ${SECRET_SPENT}` : NOT_SHARED
+  const reply = text({ task: taskSummary({ ...task, output: null }, observable), ...(observable ? output ? { output } : {} : { output: hidden }), approvalRequired }, failed)
   const match = image?.match(/^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/u)
   if (observable && match) reply.content.push({ type: 'image', mimeType: match[1]!, data: match[2]! })
   return reply

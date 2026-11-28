@@ -32,6 +32,10 @@ function spentWords(error: unknown): string {
   const words = error instanceof ToolFailure ? error.message : 'The browser action did not finish.'
   return words.includes(SECRET_SPENT) ? words : `${words} The secret was typed, and ${SECRET_SPENT}`
 }
+/** A failure once a secret request's value was taken: the agent's words say the reference is used (ADR-0219). */
+class SecretSpent extends ToolFailure {}
+/** The user's words for it, where the window gives none of its own: a host, which takes no secret, never says it. */
+const SECRET_SPENT_FOR_USER = 'This action didn\'t finish, and the secret it was given can\'t be used again. If the agent still needs it, it will ask you for it again.'
 
 const sizeOf = (preset: Parameters<typeof presetSize>[0], orientation?: Parameters<typeof presetSize>[1]): { width: number; height: number } => {
   const { width, height } = presetSize(preset, orientation)
@@ -61,6 +65,8 @@ export interface BrowserTaskWords {
   readonly asksEveryTime?: string
   /** An upload's copies changed between asking and Allow. */
   readonly filesChanged?: string
+  /** A type the user allowed failed once its secret was taken: the secret cannot be used again. */
+  readonly secretSpent?: string
 }
 
 export interface BrowserTaskDependencies {
@@ -678,8 +684,11 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       this.base.emit({ type: 'browser-grant', threadId, grant: this.grantView(threadId) })
       this.shareThreadPages(threadId)
     }
-    try { return (await this.perform(record, task, pending.action, scope.initial, scope.target, false, scope.staged)).task }
-    finally { if (request.forThread) await this.performWaitingActions(threadId) }
+    try { return (await this.perform(record, task, pending.action, scope.initial, scope.target, false, scope.staged)).task } catch (error) {
+      // The user is told in their words; the agent, waiting on the task, reads the reference is used in its output.
+      if (error instanceof SecretSpent) return fail(error.code, this.base.words().secretSpent ?? SECRET_SPENT_FOR_USER)
+      throw error
+    } finally { if (request.forThread) await this.performWaitingActions(threadId) }
   }) }
   /**
    * The grant answers the thread's navigate, click and type requests that were already waiting when it was given,
@@ -816,7 +825,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       task.output = said ?? 'The browser action did not finish. Inspect the page before trying again.'
       task.steps.push({ id: randomUUID(), action: action.type, status: 'failed', at: Date.now(), detail: task.output, url: record.automation.maskedUrl(observedUrl), viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40); this.publishTask(task)
-      if (said !== null) throw new ToolFailure(error instanceof ToolFailure ? error.code : 'unavailable', said)
+      if (said !== null) throw new SecretSpent(error instanceof ToolFailure ? error.code : 'unavailable', said)
       throw error
     } finally {
       this.executing.delete(record.page.id)

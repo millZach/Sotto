@@ -3162,6 +3162,10 @@ msgstr ""
 msgid "These keys were changed by hand. Sotto left them alone."
 msgstr ""
 
+#: src/main/tools/browser.ts
+msgid "This action didn't finish, and the secret it was given can't be used again. If the agent still needs it, it will ask you for it again."
+msgstr ""
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This action includes items from different hosts. Select items from one host."
 msgstr ""

@@ -39,6 +39,7 @@ const browserWords = (): BrowserTaskWords => ({
   changedOrExpired: t`This browser request changed or expired. Ask the agent to try again.`,
   grantNeedsAllow: t`Only an allowed action can be granted for the whole thread. Answer this one once.`,
   stillRunning: t`A browser action is still running.`,
+  secretSpent: t`This action didn't finish, and the secret it was given can't be used again. If the agent still needs it, it will ask you for it again.`,
 })
 export interface BrowserDependencies {
   files: FilesService
