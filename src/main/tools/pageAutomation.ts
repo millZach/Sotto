@@ -110,6 +110,49 @@ export function comparesPartOfAttribute(selector: string): boolean {
 function originOf(url: string): string {
   try { const origin = new URL(url).origin; return origin === 'null' ? '' : origin } catch { return '' }
 }
+/** Keys that move the caret. Held with Shift, each extends a selection. */
+const CARET_KEYS: ReadonlySet<string> = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
+/** The keys a field holding a typed secret still takes: they submit it, move the focus or move the caret, and none edits it. */
+const NON_EDITING_KEYS: ReadonlySet<string> = new Set([...CARET_KEYS, 'Enter', 'Tab', 'Escape'])
+/** How long after one tap the next waits while a document holds a typed secret, so the two never make a double tap. */
+export const DOUBLE_TAP_GAP_MS = 500
+/**
+ * What of an action would select, copy, cut or carry text, in words for its refusal, or null for one that does none of
+ * these. None goes to a document that holds a typed secret (ADR-0219): a site's "show password" turns the secret into
+ * text, a copy or cut puts it on the clipboard, which a shell can read, and on Linux a selection is itself a copy, which a
+ * middle click pastes anywhere. The keys are every platform's, whichever Sotto runs on: Control or Command with A, C or X;
+ * Control+Insert and Shift+Delete; and Shift with a key that moves the caret. A double or triple click selects a word or
+ * a line, a click with Shift extends a selection, a middle click pastes the selection on Linux, and a drag selects text
+ * or carries what is selected.
+ */
+export function movesText(action: TargetedAction | PageInput): string | null {
+  if (action.type === 'key') {
+    const key = action.key.length === 1 ? action.key.toLowerCase() : action.key, held = action.modifiers ?? []
+    const command = held.includes('Control') || held.includes('Meta')
+    if ((command && (key === 'a' || key === 'c' || key === 'x')) || (held.includes('Control') && key === 'Insert') || (held.includes('Shift') && key === 'Delete')) return 'a key that selects, copies or cuts'
+    if (held.includes('Shift') && CARET_KEYS.has(key)) return 'Shift with a key that moves the caret'
+  } else if (action.type === 'click') {
+    if ((action.clickCount ?? 1) > 1) return 'a double or triple click'
+    if (action.modifiers?.includes('Shift')) return 'a click with Shift'
+    if (action.button === 'middle') return 'a middle click'
+  } else if (action.type === 'drag') return 'a drag'
+  return null
+}
+/**
+ * Run on an element: the text an edit there would change, followed into open shadow roots and same-origin frames as
+ * the focus is. Read only in Sotto, never said back.
+ */
+const FIELD_TEXT = `function() {
+  let element = this
+  for (let depth = 0; element && depth < 32; depth++) {
+    let inner = element.shadowRoot ? element.shadowRoot.activeElement : null
+    if (!inner) { try { inner = element.contentDocument ? element.contentDocument.activeElement : null } catch { inner = null } }
+    if (!inner || inner === element) break
+    element = inner
+  }
+  if (!element) return ''
+  return typeof element.value === 'string' ? element.value : element.isContentEditable ? element.innerText : ''
+}`
 /** What a refusal ends with once a secret request's value was taken (ADR-0219): the reference is used up. */
 export const SECRET_SPENT = 'this secretRef is used. Ask for it again with request_secret.'
 /** An error's own words as a sentence, for a refusal that goes on to say the reference is spent. */
@@ -182,6 +225,8 @@ export abstract class PageAutomation {
    * a new attachment leave the field, and its value, where it was.
    */
   private secretInDocument = false
+  /** When the agent's last tap ended, so one straight after it waits (`DOUBLE_TAP_GAP_MS`). */
+  private tappedAt = 0
   /**
    * The agent ran its own script in the document loaded now (`evaluate`), so a listener it left could read whatever is
    * typed into the page and hide it anywhere, in any encoding no mask matches. No secret is typed into this document;
@@ -730,6 +775,8 @@ export abstract class PageAutomation {
       await this.send('DOM.focus', { backendNodeId: named })
     }
     const field = await this.focusedPassword(named)
+    // Typed beside a secret already there, this one could split it where the caret was, and neither half is masked.
+    if (!clear && await this.fieldHoldsSecret(field)) return fail('blocked', 'This password field already holds a secret you saved. Type this secretRef with clear: true, which replaces it.')
     if (clear) await this.selectAll()
     guard()
     // The last look: a page script could have moved the focus while the field was being focused or cleared, and the
@@ -803,6 +850,42 @@ export abstract class PageAutomation {
   }
   /** Whether the document loaded now holds a secret typed from a secret request, so no picture of it goes to the agent. */
   holdsSecret(): boolean { return this.secretInDocument }
+  /** Refuses, while the document holds a typed secret, an action that would select, copy, cut or carry text (`movesText`). */
+  private textStays(action: TargetedAction | PageInput): void {
+    const what = this.secretInDocument ? movesText(action) : null
+    if (what) fail('blocked', `This page holds a secret you saved, so ${what} is refused until it loads another document: it could select, copy or carry the secret where you can read it. Click once, and press keys without Shift, Control or Command.`)
+  }
+  /**
+   * Refuses an edit to a field that holds a typed secret, for the page's life: typing into it, or any key but one that
+   * submits it or moves the focus or the caret. What an edit left could be part of the secret, which no mask finds, for
+   * a form to send in its address or a later snapshot to read. Typing a secretRef with `clear` replaces the whole of it,
+   * so that goes. `backendNodeId` is the field the edit reaches, or none for the focused one.
+   */
+  private async noSecretEdit(action: TargetedAction | PageInput, backendNodeId?: number): Promise<void> {
+    const edits = action.type === 'key' ? !NON_EDITING_KEYS.has(action.key) : action.type === 'type' && !(action.secretRef && action.clear)
+    if (edits && await this.fieldHoldsSecret(backendNodeId)) fail('blocked', 'The field this reaches holds a secret you saved, so nothing is typed into it and no key edits it: what was left could be part of the secret, which no mask finds. Enter, Tab, Escape and the keys that move the caret still work. To type a secret into it again, use a secretRef with clear: true.')
+  }
+  /**
+   * Whether the field `backendNodeId` names, or the focused one, holds a secret typed into this page, in the text an edit
+   * there would change. The text is read here and never said back. One Sotto cannot check, as masking it failed, counts
+   * as holding one.
+   */
+  private async fieldHoldsSecret(backendNodeId?: number): Promise<boolean> {
+    if (!this.typedSecrets.size) return false
+    let text: unknown
+    if (backendNodeId === undefined) {
+      const read = await this.send('Runtime.evaluate', { expression: `(${FIELD_TEXT}).call(document.activeElement || document.body)`, returnByValue: true }) as { result?: { value?: unknown } }
+      text = read.result?.value
+    } else {
+      const resolved = await this.send('DOM.resolveNode', { backendNodeId, objectGroup: 'sotto-browser-field' }) as { object?: { objectId?: string } }
+      const objectId = resolved.object?.objectId
+      text = objectId ? await this.cleaningUp(async () => {
+        const read = await this.send('Runtime.callFunctionOn', { objectId, functionDeclaration: FIELD_TEXT, returnByValue: true }) as { result?: { value?: unknown } }
+        return read.result?.value
+      }, () => this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-field' })) : ''
+    }
+    return typeof text === 'string' && text !== '' && this.masked(text, '') !== text
+  }
   /**
    * One picture of the page as Chromium drew it, within the snapshot deadline. `rect` is in the visual viewport's CSS
    * pixels. PNG at full size by default; a JPEG at a smaller `scale` is what a host makes its smaller pictures from,
@@ -895,6 +978,7 @@ export abstract class PageAutomation {
   async target(action: TargetedAction): Promise<string> {
     if (action.type === 'dialog') return this.pendingKey('dialog')
     this.noDialog()
+    this.textStays(action)
     await this.ready()
     if (action.type === 'upload' && action.x === undefined && action.ref === undefined && action.selector === undefined) return this.pendingKey('chooser')
     if (action.type === 'drag') return `${await this.describeTarget(action.from)} -> ${await this.describeTarget(action.to)}`
@@ -912,6 +996,8 @@ export abstract class PageAutomation {
       backendNodeId = described.node?.backendNodeId
     }
     if (!backendNodeId) return fail('blocked', 'Nothing on the page is at that point. Inspect the page and use its coordinates.')
+    // Refused before the user is asked, as it would be when it ran.
+    if (action.type === 'key' || action.type === 'type') await this.noSecretEdit(action, backendNodeId)
     const result = await this.send('DOM.describeNode', { backendNodeId, depth: 1, pierce: true }) as { node?: { nodeName?: string; attributes?: string[]; shadowRoots?: { shadowRootType?: string }[] } }
     if (action.type === 'type') {
       const node = result.node
@@ -947,7 +1033,14 @@ export abstract class PageAutomation {
    */
   async input(action: PageInput, guard: () => void): Promise<string | undefined> {
     this.noDialog()
+    this.textStays(action)
     await this.ready()
+    // The focus may have moved since the action was asked for, so the field it reaches is looked at again.
+    if (action.type === 'key' || action.type === 'type') await this.noSecretEdit(action, action.type === 'type' && (action.ref !== undefined || action.selector !== undefined) ? await this.nodeOf(action) : undefined)
+    if (action.type === 'tap' && this.secretInDocument) {
+      const wait = this.tappedAt + DOUBLE_TAP_GAP_MS - Date.now()
+      if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait))
+    }
     guard()
     const release = this.prepareCapture()
     let intercepting = false
@@ -995,6 +1088,7 @@ export abstract class PageAutomation {
       // Start and end are one operation, as a click's press and release are.
       await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: Math.round(action.x), y: Math.round(action.y) }] })
       await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+      this.tappedAt = Date.now()
       this.markClick({ x: action.x, y: action.y })
     } else if (action.type === 'swipe') {
       await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: Math.round(action.x), y: Math.round(action.y) }] })

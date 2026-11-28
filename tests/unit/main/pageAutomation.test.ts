@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { attributeOf, CURSOR_ARROW, PageAutomation, SNAPSHOT_TOTAL, type PageDebugger, type PageEventListener, type PageFrame, type PagePicture } from '../../../src/main/tools/pageAutomation'
+import { attributeOf, CURSOR_ARROW, DOUBLE_TAP_GAP_MS, PageAutomation, SNAPSHOT_TOTAL, type PageDebugger, type PageEventListener, type PageFrame, type PageInput, type PagePicture } from '../../../src/main/tools/pageAutomation'
 import { ToolFailure } from '../../../src/main/tools/common'
 import { maskSecrets } from '../../../src/main/tools/secretMask'
 import { SECRET_VALUE_MAX } from '../../../src/shared/secretRequests'
@@ -483,6 +483,153 @@ describe('what is masked (ADR-0219)', () => {
     // Another site's address keeps its own origin when asked as an address, and only its own.
     expect(automation_.maskedUrl('https://workshop.example/?a=shop')).toBe('https://workshop.example/?a=••••••••')
     expect(automation_.masked('https://workshop.example/')).toBe('https://work••••••••.example/')
+  })
+})
+
+describe('nothing moves a typed secret\'s text out of its document (the third review, Q-L3)', () => {
+  type Key = Extract<PageInput, { type: 'key' }>
+  const key = (pressed: string, ...modifiers: NonNullable<Key['modifiers']>): Key => ({ type: 'key', key: pressed, modifiers })
+  /**
+   * A page whose fields keep what is typed into them, and answer Sotto's read of one, by the focus or by node, as
+   * Chromium would: the password field at 7 and the text field at 9.
+   */
+  const withFields = (focus: { node: number }): { fake: FakePage; values: Map<number, string> } => {
+    const fake = page(focus), base = fake.handle, values = new Map<number, string>()
+    fake.handle = (method, params) => {
+      if (method === 'Input.insertText') values.set(focus.node, (values.get(focus.node) ?? '') + String(params.text))
+      if (method === 'Runtime.evaluate' && String(params.expression).includes('.call(document.activeElement')) return { result: { value: values.get(focus.node) ?? '' } }
+      if (method === 'DOM.resolveNode') return { object: { objectId: `node-${String(params.backendNodeId)}` } }
+      if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('isContentEditable')) return { result: { value: values.get(Number(String(params.objectId).slice('node-'.length))) ?? '' } }
+      return base(method, params)
+    }
+    return { fake, values }
+  }
+  /** The secret typed into the password field, and the focus then on the text field beside it. */
+  const holding = async (focus = { node: 9 }, options: { parity?: boolean } = {}): Promise<{ fake: FakePage; automation_: TestAutomation; values: Map<number, string> }> => {
+    const { fake, values } = withFields(focus), automation_ = automation(fake, options)
+    await automation_.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
+    expect(values.get(7)).toBe('hunter2-secret')
+    focus.node = 9
+    return { fake, automation_, values }
+  }
+  /** Every chord that selects, copies or cuts on Windows, Linux or macOS, whichever platform Sotto runs on. */
+  const chords: Key[] = [
+    key('a', 'Control'), key('c', 'Control'), key('x', 'Control'), key('A', 'Control'), key('C', 'Control', 'Shift'),
+    key('a', 'Meta'), key('c', 'Meta'), key('x', 'Meta'), key('c', 'Meta', 'Alt'), key('X', 'Meta', 'Shift'),
+    key('Insert', 'Control'), key('Delete', 'Shift'),
+    key('ArrowLeft', 'Shift'), key('ArrowRight', 'Shift', 'Control'), key('Home', 'Shift'), key('End', 'Shift', 'Meta'), key('ArrowUp', 'Shift', 'Alt'), key('ArrowDown', 'Shift'), key('PageUp', 'Shift'), key('PageDown', 'Shift'),
+  ]
+  const selecting = [
+    { type: 'click', x: 5, y: 5, clickCount: 2 }, { type: 'click', x: 5, y: 5, clickCount: 3 }, { type: 'click', x: 5, y: 5, modifiers: ['Shift'] },
+    { type: 'click', x: 5, y: 5, button: 'middle' }, { type: 'drag', from: { x: 5, y: 5 }, to: { x: 50, y: 5 } },
+  ] as const satisfies readonly PageInput[]
+
+  it('refuses every chord that would select, copy or cut, on every platform, when asked and when run, and sends no key', async () => {
+    const { fake, automation_ } = await holding()
+    for (const chord of chords) {
+      const label = [...chord.modifiers ?? [], chord.key].join('+')
+      await expect(automation_.target(chord), label).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('holds a secret you saved') })
+      await expect(automation_.input(chord, go), label).rejects.toMatchObject({ code: 'blocked' })
+    }
+    expect(fake.calls('Input.dispatchKeyEvent')).toEqual([])
+  })
+
+  it('refuses a double or triple click, a click with Shift or the middle button, and a drag, and presses nothing', async () => {
+    const { fake, automation_ } = await holding()
+    for (const action of selecting) {
+      await expect(automation_.target(action), JSON.stringify(action)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('holds a secret you saved') })
+      await expect(automation_.input(action, go), JSON.stringify(action)).rejects.toMatchObject({ code: 'blocked' })
+    }
+    expect(fake.calls('Input.dispatchMouseEvent')).toEqual([])
+    // One click, a right click and a key that types still go.
+    await automation_.input({ type: 'click', x: 5, y: 5 }, go)
+    await automation_.input({ type: 'click', x: 5, y: 5, button: 'right' }, go)
+    await automation_.input(key('a'), go)
+    expect(fake.calls('Input.dispatchMouseEvent').filter(event => event.type === 'mousePressed')).toHaveLength(2)
+  })
+
+  it('types and deletes nothing in a field that holds the secret, while Enter, Tab, Escape and the caret keys still go', async () => {
+    const focus = { node: 9 }, { fake, automation_, values } = await holding(focus)
+    focus.node = 7
+    const edits = [
+      key('Backspace'), key('Delete'), key('Backspace', 'Control'), key('z'), key('z', 'Control'), key('Space'), key('v', 'Control'), key('v', 'Meta'), key('Insert', 'Shift'), key('Insert'), key('ContextMenu'),
+      { type: 'type', text: 'x' }, { type: 'type', text: 'x', clear: true }, { type: 'type', text: 'x', selector: '#password' },
+    ] as const satisfies readonly PageInput[]
+    for (const action of edits) {
+      await expect(automation_.target(action), JSON.stringify(action)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('holds a secret you saved') })
+      await expect(automation_.input(action, go), JSON.stringify(action)).rejects.toMatchObject({ code: 'blocked' })
+    }
+    // A secretRef typed beside it is refused before its value is taken, so the reference is not spent.
+    const take = vi.fn(given('another-secret'))
+    await expect(automation_.target({ type: 'type', secretRef: 'sr_next', selector: '#password' })).rejects.toMatchObject({ code: 'blocked' })
+    await expect(automation_.typeSecret(take, go, { selector: '#password' })).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('clear: true') })
+    expect(take).not.toHaveBeenCalled()
+    expect(fake.calls('Input.insertText')).toEqual([{ text: 'hunter2-secret' }])
+    expect(values.get(7)).toBe('hunter2-secret')
+    for (const pressed of [key('Enter'), key('Tab'), key('Tab', 'Shift'), key('Escape'), key('ArrowLeft'), key('End')]) {
+      await automation_.target(pressed)
+      await automation_.input(pressed, go)
+    }
+    expect(fake.calls('Input.dispatchKeyEvent').map(event => event.key)).toEqual(['Enter', 'Enter', 'Tab', 'Tab', 'Tab', 'Tab', 'Escape', 'Escape', 'ArrowLeft', 'ArrowLeft', 'End', 'End'])
+    // With clear, the secretRef replaces the whole of it.
+    await automation_.target({ type: 'type', secretRef: 'sr_next', selector: '#password', clear: true })
+    await automation_.typeSecret(take, go, { selector: '#password' }, true)
+    expect(take).toHaveBeenCalledOnce()
+  })
+
+  it('finds the secret by what a field holds, so a field a site copied it into is kept as well', async () => {
+    const focus = { node: 9 }, { fake, automation_, values } = await holding(focus)
+    // Another field takes typing, Backspace and any key while it holds none of it.
+    for (const action of [{ type: 'type', text: 'rez@example.com' }, key('Backspace'), key('a')] as const satisfies readonly PageInput[]) {
+      await automation_.target(action)
+      await automation_.input(action, go)
+    }
+    expect(fake.calls('Input.insertText')).toEqual([{ text: 'hunter2-secret' }, { text: 'rez@example.com' }])
+    // A site's "show password" that copies the value into this text field, or a paste of it there.
+    values.set(9, 'hunter2-secret')
+    for (const action of [key('Backspace'), { type: 'type', text: 'x' }, { type: 'type', text: 'x', selector: '#name' }] as const satisfies readonly PageInput[]) {
+      await expect(automation_.target(action), JSON.stringify(action)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('holds a secret you saved') })
+      await expect(automation_.input(action, go), JSON.stringify(action)).rejects.toMatchObject({ code: 'blocked' })
+    }
+    // One escaped as a page might keep it is found too.
+    values.set(9, 'hunter2%2Dsecret')
+    await expect(automation_.input(key('Backspace'), go)).rejects.toMatchObject({ code: 'blocked' })
+  })
+
+  it('lets every chord, click and drag through once another document loads, while a field holding the secret stays unedited', async () => {
+    const focus = { node: 9 }, { fake, automation_, values } = await holding(focus)
+    automation_.documentCommitted()
+    for (const action of [...chords, ...selecting, { type: 'type', text: 'x', clear: true }] as const satisfies readonly PageInput[]) await automation_.input(action, go)
+    expect(fake.calls('Input.dispatchKeyEvent')).toHaveLength(chords.length * 2)
+    expect(fake.calls('Input.dispatchMouseEvent').filter(event => event.type === 'mousePressed').length).toBeGreaterThanOrEqual(5)
+    // A site can write the secret back into a later document: a field holding it is still not edited, for the page's life.
+    values.set(9, 'hunter2-secret')
+    await expect(automation_.input(key('Backspace'), go)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('holds a secret you saved') })
+    // A page that never held a secret reads no field and refuses nothing.
+    const plain = page(), plainly = automation(plain)
+    for (const action of [...chords, ...selecting, key('Backspace')] as const satisfies readonly PageInput[]) await plainly.input(action, go)
+    expect(plain.calls('Input.dispatchKeyEvent')).toHaveLength((chords.length + 1) * 2)
+    expect(plain.calls('Runtime.callFunctionOn')).toEqual([])
+    expect(plain.calls('Runtime.evaluate').filter(call => String(call.expression).includes('.call(document.activeElement'))).toEqual([])
+  })
+
+  it('holds a tap straight after another back while the document holds a secret, so the two are never a double tap', async () => {
+    const touches = (fake: FakePage): number[] => {
+      const at: number[] = [], base = fake.handle
+      fake.handle = (method, params) => { if (method === 'Input.dispatchTouchEvent') at.push(Date.now()); return base(method, params) }
+      return at
+    }
+    const { fake, automation_ } = await holding(undefined, { parity: false })
+    const at = touches(fake)
+    await automation_.input({ type: 'tap', x: 5, y: 5 }, go)
+    await automation_.input({ type: 'tap', x: 5, y: 5 }, go)
+    // touchStart, touchEnd, then the second tap's touchStart.
+    expect(at[2]! - at[1]!).toBeGreaterThanOrEqual(DOUBLE_TAP_GAP_MS - 2)
+    // Another document: the second tap goes at once.
+    automation_.documentCommitted()
+    await automation_.input({ type: 'tap', x: 5, y: 5 }, go)
+    await automation_.input({ type: 'tap', x: 5, y: 5 }, go)
+    expect(at[6]! - at[5]!).toBeLessThan(DOUBLE_TAP_GAP_MS - 100)
   })
 })
 
