@@ -18,8 +18,6 @@
         "delegation-views",
         "detached-runs-elsewhere",
         "every-agent-picture",
-        "git-pull-request",
-        "git-pull-request-list",
         "host-delegation",
         "next-prompts",
         "owlets",
@@ -37,8 +35,6 @@
         "provider-deepseek",
         "provider-mode-lists",
         "provider-sign-in",
-        "pull-request-confirmation",
-        "pull-request-view",
         "settle-worktree-cleanup",
         "settled-threads-on-request",
         "step-window",
@@ -65,8 +61,6 @@
         "client-update-not-listed",
         "client-update-outcomes",
         "client-updates",
-        "git-pull-request",
-        "git-pull-request-list",
         "next-prompts",
         "owlets",
         "plugin-meshy-phone",
@@ -75,8 +69,6 @@
         "provider-deepseek",
         "provider-mode-lists",
         "provider-sign-in",
-        "pull-request-confirmation",
-        "pull-request-view",
         "settle-worktree-cleanup",
         "settled-threads-on-request",
         "step-window",
@@ -144,24 +136,8 @@
       "node": "refused",
       "rust": "invalid_request"
     },
-    "git-checkout-pull-request": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "git-link-pull-request": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
     "git-publish": {
       "node": "refused",
-      "rust": "invalid_request"
-    },
-    "git-pull-request-action": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "git-unlink-pull-request": {
-      "node": "ok",
       "rust": "invalid_request"
     },
     "queue-client-updates": {
@@ -222,14 +198,6 @@
       "node": "ok",
       "rust": "invalid_request"
     },
-    "git-pull-request": {
-      "node": "unavailable",
-      "rust": "invalid_request"
-    },
-    "git-pull-request-list": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "hermes-sign-out": {
       "node": "unavailable",
       "rust": "invalid_request"
@@ -276,10 +244,6 @@
     },
     "project-setup": {
       "node": "ok",
-      "rust": "invalid_request"
-    },
-    "pull-request-confirmation": {
-      "node": "forbidden",
       "rust": "invalid_request"
     },
     "sign-in-cancel": {
