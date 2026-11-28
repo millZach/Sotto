@@ -1407,3 +1407,13 @@ describe('a page no secret was typed into reads nothing more for the rules on se
   })
 })
 
+describe('a + in a secret is not a space (after the fourth review, P-N5.1)', () => {
+  it('masks a + as written and escaped, and leaves a space where the secret has a +', () => {
+    const plus = secretMatcher('a+b')!
+    for (const form of ['[a+b]', '[a%2Bb]', '[a%252Bb]', '[a\\u002bb]']) expect(maskSecrets(form, [plus]), form).toBe('[••••••••]')
+    for (const words of ['say a b now', 'q=a%20b', 'q=a%2520b']) expect(maskSecrets(words, [plus]), words).toBe(words)
+    // A space in the secret is still found however a form or an address writes it, a + for it included.
+    const spaced = secretMatcher('my pass')!
+    for (const form of ['my pass', 'my+pass', 'my%20pass', 'my%2Bpass', 'my%252Bpass']) expect(maskSecrets(`[${form}]`, [spaced]), form).toBe('[••••••••]')
+  })
+})

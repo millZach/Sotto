@@ -12,10 +12,11 @@
  * - as an address or a form escapes it once: `%` and two hex digits of either case;
  * - as an address escapes it once or twice, with JSON's escapes as well: `%25` and two hex digits is read as the byte
  *   the two digits name, as an address carried inside another address is written.
- * In the two readings an address gives, `+` and a space are the same byte on both sides, so a space a form sent as `+`,
- * or as `%2B` once that `+` is escaped again, is found, and so is a `+` sent as `%2B`. A reading takes the longest
- * escape at each place; the plain reading and the single escape find what that misses, such as a secret that holds
- * `%41` itself.
+ * In the two readings an address gives, a secret that holds a space is looked for a second time with each of its spaces
+ * a `+`, and the text's spaces read as `+` too, so a space a form sent as `+`, or as `%2B` once that `+` is escaped
+ * again, is found. A `+` in a secret is only ever a `+`, so a secret `a+b` does not mask the words `a b`. A reading
+ * takes the longest escape at each place; the plain reading and the single escape find what that misses, such as a
+ * secret that holds `%41` itself.
  *
  * In each reading the secret's UTF-8 bytes are looked for with the Knuth-Morris-Pratt search, which never goes back in
  * the text, and every character or escape a match touches is masked. Matches may overlap and may come from different
@@ -31,10 +32,13 @@ export const MASK_MINIMUM = 3
 interface Needle { readonly bytes: Uint8Array; readonly fallback: Int32Array }
 /** A typed secret as the search needs it, made once when it is typed. It holds the secret's bytes, so it stays in memory only. */
 export interface SecretMatcher {
-  /** For the readings in which `+` is itself. */
+  /** The secret's bytes as they are, for every reading. */
   readonly plain: Needle
-  /** For the readings an address gives, in which `+` is a space. */
-  readonly spaced: Needle
+  /**
+   * For the readings an address gives: the secret with each space a `+`, as a form sends it, looked for in the text with
+   * its spaces read as `+` too. Null for a secret that holds no space.
+   */
+  readonly spaced: Needle | null
 }
 
 const JSON_ESCAPES = 1, ESCAPED_ONCE = 2, ESCAPED_TWICE = 4
@@ -133,7 +137,7 @@ export function secretMatcher(secret: string): SecretMatcher | null {
     at += character.units
   }
   if (characters < MASK_MINIMUM) return null
-  return { plain: needleOf(Uint8Array.from(bytes)), spaced: needleOf(Uint8Array.from(bytes, byte => byte === PLUS ? SPACE : byte)) }
+  return { plain: needleOf(Uint8Array.from(bytes)), spaced: bytes.includes(SPACE) ? needleOf(Uint8Array.from(bytes, byte => byte === SPACE ? PLUS : byte)) : null }
 }
 /** The characters a file name cannot hold, which Chromium makes `_` in a download's name before Sotto is told it. */
 // eslint-disable-next-line no-control-regex -- A typed secret, which may hold any character.
@@ -164,20 +168,19 @@ function keptCounts(text: string, keep: string): Int32Array | null {
 
 /**
  * Marks in `covered` every character of `text` that a match of `needle` touches in `reading`, except a match that lies
- * wholly inside a kept stretch (`kept`). Each byte of the text is compared with the needle once, plus the fall-backs the
- * table allows, which are never more than the bytes compared.
+ * wholly inside a kept stretch (`kept`). With `plus`, each space the reading gives is read as `+`. Each byte of the text
+ * is compared with the needle once, plus the fall-backs the table allows, which are never more than the bytes compared.
  */
-function cover(text: string, reading: number, needle: Needle, covered: Uint8Array, kept: Int32Array | null): boolean {
+function cover(text: string, reading: number, needle: Needle, covered: Uint8Array, kept: Int32Array | null, plus = false): boolean {
   const { bytes, fallback } = needle, size = bytes.length
   // Where the character or escape holding each of the last `size` bytes began, so a match knows where it started.
   const starts = new Int32Array(size)
   const unit: Unit = { bytes: new Uint8Array(4), size: 0, end: 0 }
-  const spaced = (reading & ESCAPED_ONCE) !== 0
   let matched = 0, seen = 0, coveredTo = 0, found = false
   for (let at = 0; at < text.length; at = unit.end) {
     read(text, at, reading, unit)
     for (let index = 0; index < unit.size; index++) {
-      const byte = spaced && unit.bytes[index] === PLUS ? SPACE : unit.bytes[index]
+      const byte = plus && unit.bytes[index] === SPACE ? PLUS : unit.bytes[index]
       starts[seen % size] = at
       seen++
       while (matched > 0 && bytes[matched] !== byte) matched = fallback[matched - 1]!
@@ -243,7 +246,10 @@ export function tidyWords(text: string, tidy: Tidy): string { return tidied(text
 function coverAll(text: string, secrets: readonly SecretMatcher[], keep: string, covered: Uint8Array): boolean {
   const kept = keptCounts(text, keep)
   let found = false
-  for (const secret of secrets) for (const reading of READINGS) if (cover(text, reading, reading & ESCAPED_ONCE ? secret.spaced : secret.plain, covered, kept)) found = true
+  for (const secret of secrets) for (const reading of READINGS) {
+    if (cover(text, reading, secret.plain, covered, kept)) found = true
+    if (reading & ESCAPED_ONCE && secret.spaced && cover(text, reading, secret.spaced, covered, kept, true)) found = true
+  }
   return found
 }
 
