@@ -11,6 +11,7 @@ import { BrowserProfiles, ProfileProblem } from '../../../src/main/tools/browser
 import { BrowserFiles } from '../../../src/main/tools/browserFiles'
 import { AGENT_DOWNLOAD_MS } from '../../../src/main/tools/browserTasks'
 import { BROWSER_COMMAND_DEADLINE_MS } from '../../../src/main/tools/browserAutomation'
+import { PageAutomation } from '../../../src/main/tools/pageAutomation'
 import { FilesService } from '../../../src/main/files/service'
 import type { ToolsResult } from '../../../src/shared/tools'
 import { deferred } from '../../fixtures/deferred'
@@ -1533,6 +1534,61 @@ describe('downloads in the service (ADR-0222)', () => {
     expect(await service.agentDownloads(target.threadId)).toEqual([{ file: 'shared.pdf', state: 'asking', byAgent: false }])
     // Stop sharing takes the page's downloads out of what the agent is told.
     unwrap(await service.share({ ...target, enabled: false }))
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+  })
+
+  it('tells the agent nothing of a download from a page the user made private a moment after the agent read it', async () => {
+    const { service, target, started } = await withDownloads()
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Read the page' }))
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'snapshot' } }))
+    // Stop sharing within the moment a download would count as the agent's: what the page downloads now is the user's.
+    unwrap(await service.share({ ...target, enabled: false }))
+    started('statement-acct-4417-nov.pdf')
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+    expect(unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))[0]).toMatchObject({ byAgent: false })
+  })
+
+  it('masks a secret typed into the page in the name of a download it gives the agent, as in anything else the page says', async () => {
+    const { service, target, started } = await withDownloads()
+    unwrap(await service.share({ ...target, enabled: true }))
+    // The page's mask stands for a secret typed into it; the site names its file with that secret.
+    const mask = vi.spyOn(PageAutomation.prototype, 'masked').mockImplementation(text => text.split('hunter2-secret').join('••••••••'))
+    try {
+      started('export-hunter2-secret.csv')
+      expect(await service.agentDownloads(target.threadId)).toEqual([expect.objectContaining({ file: 'export-••••••••.csv' })])
+    } finally { mask.mockRestore() }
+  })
+
+  it('tells the agent nothing of a download from a page that left the site it was shared on, however lately the agent acted', async () => {
+    const { service, target, view, started } = await withDownloads()
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Press Save' }))
+    const pending = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    unwrap(await service.answerAction({ ...target, taskId: task.id, actionId: pending.task.pendingAction!.id, allow: true }))
+    // The page goes to another site; without a grant its sharing ends there, and so does what the agent may know of it.
+    view.webContents.emit('did-start-navigation', {}, 'https://bank.example/statements', false, true)
+    started('statement-acct-4417-nov.pdf')
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+    // Shared again, the download that started while it was private stays the user's.
+    unwrap(await service.share({ ...target, enabled: true }))
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+  })
+
+  it('names a download in an action\'s answer only when its page was shared as it started', async () => {
+    const { service, target, view, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Download the report' }))
+    const send = vi.mocked(view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => {
+      // The user stops sharing while the agent's click runs, the page downloads, and the user shares it again.
+      if (method === 'Input.dispatchMouseEvent' && (params as { type?: string }).type === 'mousePressed') {
+        unwrap(await service.share({ ...target, enabled: false })); started('private.pdf'); unwrap(await service.share({ ...target, enabled: true }))
+      }
+      return plain(method, params)
+    })
+    const clicked = await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } })
+    expect(JSON.stringify(clicked)).not.toContain('private.pdf')
     expect(await service.agentDownloads(target.threadId)).toEqual([])
   })
 

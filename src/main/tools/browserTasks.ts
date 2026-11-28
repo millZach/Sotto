@@ -96,7 +96,10 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   private readonly pending = new Map<string, { generation: number; url: string; initial: boolean; target?: string; staged?: StagedUpload }>()
   /** Upload copies a page was given, kept while it may still read them and deleted when it closes (ADR-0220, decision 5). */
   private readonly givenUploads = new Map<string, StagedUpload[]>()
-  /** When an agent's action last ended on each page, so a download it set off is known as the agent's (ADR-0222). */
+  /**
+   * When an agent's action that can set off a download last ended on each page, so the pane says a download it set off
+   * is the agent's (ADR-0222). It says nothing of what the agent is told: that follows the page's sharing alone.
+   */
   private readonly agentActedAt = new Map<string, number>()
   /** Each page's timer for the end of the user's hold, moved on by every input (ADR-0220, decision 8). */
   private readonly userTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -419,6 +422,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   }
   private revoke(record: R): void {
     record.page.sharedOrigin = null
+    // The page is the user's again: a download that starts on it now is not the agent's, however lately it acted.
+    this.agentActedAt.delete(record.page.id)
     this.invalidate(record)
     this.pageLeft(record, 'hidden')
     record.automation.dispose()
@@ -473,6 +478,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     record.madePrivate = !request.enabled
     if (request.enabled) record.automation.observe()
     if (!request.enabled) {
+      this.agentActedAt.delete(record.page.id)
       // Detaching from the page turns its overlay off with it.
       this.pageLeft(record, 'hidden')
       record.automation.dispose()
@@ -673,6 +679,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     if (this.executing.has(record.page.id)) { if (staged) void this.base.browserFiles?.discard(staged); return fail('busy', 'A browser action is still running.') }
     this.executing.add(record.page.id)
     const generation = record.generation, startedAt = Date.now()
+    // An action that only reads the page, or sets how it looks or is recorded, cannot set off a download.
+    const reading = READS.has(action.type) || action.type === 'appearance' || action.type === 'record_start'
     const observedUrl = action.type === 'navigate' ? action.url : record.page.url
     const guard = (checkGeneration = true): void => {
       this.working(task)
@@ -755,7 +763,6 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
         }
         output = said ? `${action.type} completed. ${said}` : `${action.type} completed.`
       }
-      const reading = READS.has(action.type) || action.type === 'appearance' || action.type === 'record_start'
       if (action.type !== 'navigate') guard(reading)
       if (capture) {
         const evidence = await record.automation.evidence(capture)
@@ -784,7 +791,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       throw error
     } finally {
       this.executing.delete(record.page.id)
-      if (this.pages.has(record.page.id)) this.agentActedAt.set(record.page.id, Date.now())
+      if (this.pages.has(record.page.id) && !reading) this.agentActedAt.set(record.page.id, Date.now())
       // Copies made for an upload that was not given go now.
       if (staged) void this.base.browserFiles?.discard(staged)
       for (const listener of this.taskListeners) listener()

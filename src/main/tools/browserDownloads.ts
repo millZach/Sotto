@@ -146,16 +146,25 @@ export class BrowserDownloads {
   }
   /**
    * What an agent may know of its thread's downloads: names and states, and a path only for one the user saved in the
-   * thread's folder. Only a download its own action started, or one from a page that was shared with it when the
-   * download started and that `shared` says is shared with it still, is listed: a page the user keeps private, or kept
-   * private then, keeps its downloads too.
+   * thread's folder. Only a download from a page that was shared with it when the download started, and that `shared`
+   * says is shared with it still, is listed, its own action's among them: a page the user keeps private, or kept
+   * private then, keeps its downloads too, however lately the agent acted there. `masked` gives a name as its page says
+   * anything back, with a secret typed there masked, since a site names its own file.
    */
-  agentView(threadId: string, workingDirectory: string, shared: (pageId: string) => boolean): { file: string; state: BrowserDownload['state']; byAgent: boolean; path?: string }[] {
-    return this.list(threadId).filter(download => download.byAgent || (this.records.get(download.id)!.sharedAtStart && download.pageId !== null && shared(download.pageId))).map(download => {
+  agentView(threadId: string, workingDirectory: string, shared: (pageId: string) => boolean, masked: (pageId: string, text: string) => string = (_pageId, text) => text): { file: string; state: BrowserDownload['state']; byAgent: boolean; path?: string }[] {
+    return this.list(threadId).filter(download => this.known(download, shared)).map(download => {
       const record = this.records.get(download.id)!
       const inside = download.state === 'saved' && record.chosen ? relative(workingDirectory, record.chosen) : null
-      return { file: download.file, state: download.state, byAgent: download.byAgent, ...(inside && !inside.startsWith('..') && !isAbsolute(inside) ? { path: inside.replace(/\\/gu, '/') } : {}) }
+      const mask = (text: string): string => masked(download.pageId!, text)
+      return { file: mask(download.file), state: download.state, byAgent: download.byAgent, ...(inside && !inside.startsWith('..') && !isAbsolute(inside) ? { path: mask(inside.replace(/\\/gu, '/')) } : {}) }
     })
+  }
+  /** The names of the downloads a page started since `since` that the agent may know of, for its action's answer. */
+  startedSince(threadId: string, pageId: string, since: number, shared: (pageId: string) => boolean): string[] {
+    return this.list(threadId).filter(download => download.pageId === pageId && download.startedAt >= since && this.known(download, shared)).map(download => download.file)
+  }
+  private known(download: BrowserDownload, shared: (pageId: string) => boolean): boolean {
+    return this.records.get(download.id)?.sharedAtStart === true && download.pageId !== null && shared(download.pageId)
   }
   /** The user's answer to one of their thread's downloads. Answers null when it was taken off the list. */
   async act(threadId: string, id: string, action: 'save' | 'save-as' | 'cancel' | 'open' | 'show' | 'dismiss'): Promise<BrowserDownload | null> {
