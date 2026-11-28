@@ -920,7 +920,7 @@ export abstract class PageAutomation {
     }
     const field = await this.focusedPassword(named)
     // Typed beside a secret already there, this one could split it where the caret was, and neither half is masked.
-    if (!clear && await this.fieldHoldsSecret(field)) return fail('blocked', 'This password field already holds a secret you saved. Type this secretRef with clear: true, which replaces it.')
+    if (!clear && await this.fieldHoldsSecret(field)) return fail('blocked', `This password field already holds a secret you saved. ${this.parity ? 'Type this secretRef with clear: true, which replaces it.' : 'Load the page again with navigate, then type this secretRef into its empty field.'}`)
     if (clear) await this.selectAll()
     guard()
     // The last look: a page script could have moved the focus while the field was being focused or cleared, and the
@@ -1036,7 +1036,7 @@ export abstract class PageAutomation {
     if (action.type === 'key' ? NON_EDITING_KEYS.has(action.key) : action.type !== 'type' || (action.secretRef && action.clear)) return
     const field = await this.field(backendNodeId)
     if (!this.keepsSecret(field) || (action.type === 'key' && ONE_LINE_KEYS.has(action.key) && field?.singleLine === true)) return
-    fail('blocked', 'The field this reaches holds a secret you saved, so nothing is typed into it and no key edits it: what was left could be part of the secret, which no mask finds. Escape and the keys that move the caret still work, and so do Enter and Tab in a one-line field. To type a secret into it again, use a secretRef with clear: true.')
+    fail('blocked', `The field this reaches holds a secret you saved, so nothing is typed into it and no key edits it: what was left could be part of the secret, which no mask finds. Escape and the keys that move the caret still work, and so do Enter and Tab in a one-line field. ${this.parity ? 'To type a secret into it again, use a secretRef with clear: true.' : 'To type a secret into it, load the page again with navigate, then type it into the empty field.'}`)
   }
   /**
    * Whether the field `backendNodeId` names, or the focused one, holds a secret typed into this page, in the text an edit

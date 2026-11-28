@@ -3,7 +3,8 @@
  * Fields on a page a secret was typed into (ADR-0219 and ADR-0222, after the fourth review of the browser-parity
  * branch), with every read Sotto makes of the page run in a DOM, as Chromium runs it in the page: which keys a field
  * that holds the secret still takes, by the kind of field it is; that the page's own origin is not taken for the
- * secret; and that a field Sotto cannot read counts as one that holds it.
+ * secret; that a field Sotto cannot read counts as one that holds it; and that each refusal names only what the agent's
+ * catalog has.
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { PageAutomation, type PageDebugger, type PageEventListener, type PageFrame, type PageInput, type PagePicture } from '../../../src/main/tools/pageAutomation'
@@ -94,11 +95,11 @@ type Key = Extract<PageInput, { type: 'key' }>
 const key = (pressed: string, ...modifiers: NonNullable<Key['modifiers']>): Key => ({ type: 'key', key: pressed, modifiers })
 
 /** A sign-in page with a password field, `value` typed into it from a secret request, and the focus then on `field`. */
-async function typedInto(value: string, field?: HTMLElement, options: { address?: string } = {}): Promise<{ fake: DomPage; automation: TestAutomation }> {
+async function typedInto(value: string, field?: HTMLElement, options: { parity?: boolean; address?: string } = {}): Promise<{ fake: DomPage; automation: TestAutomation }> {
   document.body.innerHTML = '<input id="password" type="password">'
   const fake = new DomPage(), automation = new TestAutomation(fake)
   if (options.address) fake.address = options.address
-  automation.parity = true
+  automation.parity = options.parity ?? true
   await automation.typeSecret(async () => value, go, { selector: '#password' })
   expect((document.getElementById('password') as HTMLInputElement).value).toBe(value)
   if (field) { document.body.append(field); field.focus(); expect(document.activeElement).toBe(field) }
@@ -187,3 +188,20 @@ describe('a field Sotto cannot read counts as one that holds the secret (after t
   })
 })
 
+describe('a refusal names only what the agent\'s catalog has (after the fourth review, P-N4.1)', () => {
+  it('offers clear: true in the full catalog, and navigate in the stable one, which has no clear', async () => {
+    for (const parity of [true, false]) {
+      const { automation } = await typedInto('hunter2-secret', undefined, { parity })
+      // A second secret typed beside the first, and a key in the field that holds it.
+      const refusals = [
+        await automation.typeSecret(async () => 'another-secret', go, { selector: '#password' }).then(() => '', (error: Error) => error.message),
+        await automation.input(key('Backspace'), go).then(() => '', (error: Error) => error.message),
+      ]
+      for (const message of refusals) {
+        expect(message, `parity ${String(parity)}`).toContain('holds a secret you saved')
+        if (parity) expect(message).toContain('clear: true')
+        else { expect(message).not.toContain('clear'); expect(message).toContain('navigate') }
+      }
+    }
+  })
+})
