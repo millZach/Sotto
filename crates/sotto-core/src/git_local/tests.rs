@@ -346,10 +346,14 @@ fn git_publish_validates_schema_repo_name_existing_origin_and_lost_reply() {
     let url = publish_with_gh(&repo_str, "org/app", "public", |_, args| {
         assert!(args.contains(&"--public"));
         assert!(args.contains(&"--push"));
-        Ok("https://github.com/org/app\n".into())
+        Ok("note: https:// then https://github.com/org/app\n".into())
     })
     .unwrap();
     assert_eq!(url, "https://github.com/org/app");
+    assert_eq!(
+        publish_with_gh(&repo_str, "org/app", "internal", |_, _| Ok(String::new())),
+        Err("Choose private or public visibility.".into())
+    );
 
     let bare = tempfile::tempdir().unwrap();
     sh_git(bare.path(), &["init", "--bare", "-q", "-b", "main"]);

@@ -4563,10 +4563,22 @@ impl CoordinatorActor {
         Ok(())
     }
 
-    /// Adds an existing folder as a project (reusing an existing project at the same path) for `project-setup` (#1690).
+    /// Adds an existing folder as a project (reusing an existing project at the same path) for `project-setup` (#1690),
+    /// matching Node's `addProjectForPlacement` / `create-project` (`control.ts:724-750, 4777-4828`).
     fn add_project_for_setup(&mut self, title: &str, path: &str) -> Result<String, String> {
-        let title = title.trim();
-        if !usable_folder_name(title) {
+        let provider = self.configuration.provider.clone();
+        if !self.host_connected() {
+            return Err(NO_PROVIDER_ON_HOST.into());
+        }
+        let status = self.provider_statuses.get(&provider);
+        if status.is_some_and(|status| status.connection != "connected") {
+            return Err(format!("Connect {} before creating a project.", provider_label(&provider)));
+        }
+        let host_projects = || self.provider_statuses.values().any(|s| s.connection == "connected" && s.capabilities.projects);
+        if !status.map_or_else(host_projects, |status| status.capabilities.projects) {
+            return Err("This provider does not support creating projects.".into());
+        }
+        if title.trim().is_empty() || !usable_folder_name(title) {
             return Err("Choose a project name that can be used as a folder name.".into());
         }
         let target = PathBuf::from(path);
@@ -4584,16 +4596,13 @@ impl CoordinatorActor {
             Err(err) => return Err(err.to_string()),
         }
         let key = folder_key(&resolved);
-        if let Some(existing) = self.projects.iter().find(|p| folder_key(&p.path) == key) {
+        if let Some(existing) = self
+            .projects
+            .iter()
+            .find(|p| folder_key(&p.path) == key && p.provider_id.as_deref().is_none_or(|id| id == provider))
+        {
             return Ok(existing.id.clone());
         }
-        let provider = self
-            .providers
-            .iter()
-            .find(|(_, adapter)| adapter.status().connection == "connected")
-            .map(|(id, _)| id.clone())
-            .or_else(|| self.providers.keys().next().cloned())
-            .unwrap_or_else(|| "codex".to_string());
         let id = Uuid::new_v4().to_string();
         let project = AgentProject {
             id: id.clone(),

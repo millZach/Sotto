@@ -1,10 +1,10 @@
-//! Pull, Switch branch and Initialize Git on a thread's working copy (T3's Git commands, ADR-0027), as Node's
-//! `GitActions` runs them (`pull`, `switchBranch` and `init` in `src/main/agents/git/gitActions.ts`) in the folder Node's
-//! `threadWorkingDirectory` gives them, and the notice Node's coordinator says for each (`gitCommand` in
-//! `src/main/agents/control.ts`). None of them reaches GitHub. A pull only fast-forwards; a switch never forces, so Git
-//! refuses one that would lose work; nothing answers a prompt. Every refusal is in T3's words, or Git's, and leaves the
-//! folder as it was. The checkout these run in is held by the coordinator while they run, and the folder by the hold a Git
-//! action takes, so one Git action or command runs in a folder at a time.
+//! Pull, Switch branch, Initialize Git, and Publish on a thread's working copy (T3's Git commands, ADR-0027), as Node's
+//! `GitActions` runs them (`pull`, `switchBranch`, `init`, and `publish` in `src/main/agents/git/gitActions.ts`) in the
+//! folder Node's `threadWorkingDirectory` gives them, and the notice Node's coordinator says for each (`gitCommand` in
+//! `src/main/agents/control.ts`). Only `git-publish` reaches GitHub. A pull only fast-forwards; a switch never forces, so
+//! Git refuses one that would lose work; nothing answers a prompt. Every refusal is in T3's words, or Git's, and leaves
+//! the folder as it was. The checkout these run in is held by the coordinator while they run, and the folder by the hold a
+//! Git action takes, so one Git action or command runs in a folder at a time.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -366,10 +366,14 @@ fn is_valid_publish_repository(repository: &str) -> bool {
 }
 
 fn extract_https_url(output: &str) -> Option<String> {
-    let idx = output.find("https://")?;
-    let rest = &output[idx..];
-    let end = rest.find(js_space).unwrap_or(rest.len());
-    (end > "https://".len()).then(|| rest[..end].to_string())
+    for (idx, _) in output.match_indices("https://") {
+        let rest = &output[idx..];
+        let end = rest.find(js_space).unwrap_or(rest.len());
+        if end > "https://".len() {
+            return Some(rest[..end].to_string());
+        }
+    }
+    None
 }
 
 fn tail_utf16(text: &str, max_units: usize) -> &str {
@@ -401,6 +405,9 @@ where
     F: FnOnce(&str, &[&str]) -> Result<String, String>,
 {
     let _held = Exclusive::hold(cwd)?;
+    if !matches!(visibility, "private" | "public") {
+        return Err("Choose private or public visibility.".into());
+    }
     if !is_valid_publish_repository(repository) {
         return Err("Name the repository as owner/name.".into());
     }
@@ -445,7 +452,7 @@ where
             } else {
                 String::new()
             };
-            if origin.is_empty() || (has_commit && pushed != head) {
+            if origin.is_empty() || (has_commit && (head.is_empty() || pushed != head)) {
                 let scrubbed = safe_remote(&err);
                 return Err(js_trim(&format!("Publish failed. {}", tail_utf16(&scrubbed, 400))).to_string());
             }

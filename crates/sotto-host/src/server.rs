@@ -3551,7 +3551,7 @@ async fn handle_ws_request(
             HostResponseEnvelope::ok(req.id, result)
         }
         "project-origins" => {
-            if !req.fields.is_empty() || !wire.hello_done {
+            if !req.fields.is_empty() {
                 return HostResponseEnvelope::err(
                     req.id,
                     HostErrorCode::InvalidRequest,
@@ -3598,7 +3598,7 @@ async fn handle_ws_request(
                     HostErrorCode::InvalidRequest.default_message(),
                 );
             };
-            if !wire.hello_done || !offered_features(state, mode, client_id).iter().any(|f| f == "project-setup") {
+            if !offered_features(state, mode, client_id).iter().any(|f| f == "project-setup") {
                 return HostResponseEnvelope::err(
                     req.id,
                     HostErrorCode::InvalidRequest,
@@ -3609,9 +3609,21 @@ async fn handle_ws_request(
                 Ok(ctx) => ctx,
                 Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
             };
-            let home = std::env::var_os("HOME")
-                .or_else(|| std::env::var_os("USERPROFILE"))
-                .map(PathBuf::from)
+            let home_vars: [&str; 2] = if cfg!(windows) {
+                ["USERPROFILE", "HOME"]
+            } else {
+                ["HOME", "USERPROFILE"]
+            };
+            let home = home_vars
+                .iter()
+                .find_map(|key| {
+                    let val = std::env::var_os(key)?;
+                    if val.is_empty() {
+                        return None;
+                    }
+                    let path = PathBuf::from(val);
+                    path.is_absolute().then_some(path)
+                })
                 .unwrap_or_else(|| own_folder.clone());
             let context = sotto_core::project_setup::ProjectSetupContext {
                 projects_directory,
@@ -3619,12 +3631,24 @@ async fn handle_ws_request(
                 home,
                 own_folder: Some(own_folder),
             };
-            let coordinator = state.coordinator.clone();
+            let coord_for_check = state.coordinator.clone();
+            let coord_for_add = state.coordinator.clone();
             let result = state
                 .project_copies
-                .set_up(parsed, context, move |title, path| async move {
-                    coordinator.add_project_for_setup(title, path).await
-                })
+                .set_up(
+                    parsed,
+                    context,
+                    move || async move {
+                        coord_for_check
+                            .project_setup_context()
+                            .await
+                            .map(|(_, paths, _)| paths)
+                            .unwrap_or_default()
+                    },
+                    move |title, path| async move {
+                        coord_for_add.add_project_for_setup(title, path).await
+                    },
+                )
                 .await;
             HostResponseEnvelope::ok(req.id, result.to_json())
         }

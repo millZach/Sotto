@@ -6,11 +6,11 @@
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Component, Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{json, Map, Value};
-use tokio::sync::{watch, Mutex};
+use tokio::sync::watch;
 
 use crate::ops::{parse_github_remote, run_action_git_with, ActionGitExtras, GitHubRepository, GIT_MISSING};
 
@@ -155,13 +155,16 @@ impl ProjectCopies {
         Self::default()
     }
 
-    pub async fn set_up<F, Fut>(
+    pub async fn set_up<C, CFut, F, Fut>(
         &self,
         request: ProjectSetupRequest,
         context: ProjectSetupContext,
+        current_projects: C,
         add_project: F,
     ) -> ProjectSetupResult
     where
+        C: FnOnce() -> CFut + Send + 'static,
+        CFut: Future<Output = Vec<String>> + Send,
         F: FnOnce(String, String) -> Fut + Send + 'static,
         Fut: Future<Output = Result<String, String>> + Send,
     {
@@ -170,52 +173,48 @@ impl ProjectCopies {
             request.repository.host, request.repository.owner, request.repository.name
         )
         .to_lowercase();
+        let fallback_err = format!(
+            "Sotto could not set up a copy of {}/{} there. Try again, or add the project there yourself.",
+            request.repository.owner, request.repository.name
+        );
 
-        let tx = {
-            let mut running = self.running.lock().await;
-            if let Some(mut rx) = running.get(&key).cloned() {
-                drop(running);
-                loop {
-                    if let Some(result) = rx.borrow().clone() {
-                        return result;
+        let mut rx = {
+            let mut running = self.running.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(existing) = running.get(&key).cloned() {
+                existing
+            } else {
+                let (tx, rx) = watch::channel(None);
+                running.insert(key.clone(), rx.clone());
+                let running_map = Arc::clone(&self.running);
+                let slot_key = key.clone();
+                // Run the setup in its own task so a single caller disconnecting never cancels
+                // an in-flight clone/fetch or breaks single-flight mutual exclusion.
+                tokio::spawn(async move {
+                    struct SlotGuard {
+                        running: Arc<Mutex<HashMap<String, watch::Receiver<Option<ProjectSetupResult>>>>>,
+                        key: String,
                     }
-                    if rx.changed().await.is_err() {
-                        return ProjectSetupResult::Err {
-                            message: format!(
-                                "Sotto could not set up a copy of {}/{} there. Try again, or add the project there yourself.",
-                                request.repository.owner, request.repository.name
-                            ),
-                        };
+                    impl Drop for SlotGuard {
+                        fn drop(&mut self) {
+                            self.running.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.key);
+                        }
                     }
-                }
+                    let _guard = SlotGuard { running: running_map, key: slot_key };
+                    let result = set_up_now(request, context, None, current_projects, add_project).await;
+                    let _ = tx.send(Some(result));
+                });
+                rx
             }
-            let (tx, rx) = watch::channel(None);
-            running.insert(key.clone(), rx);
-            tx
         };
 
-        struct SlotGuard {
-            running: Arc<Mutex<HashMap<String, watch::Receiver<Option<ProjectSetupResult>>>>>,
-            key: String,
-        }
-        impl Drop for SlotGuard {
-            fn drop(&mut self) {
-                if let Ok(mut guard) = self.running.try_lock() {
-                    guard.remove(&self.key);
-                } else {
-                    let running = Arc::clone(&self.running);
-                    let key = self.key.clone();
-                    tokio::spawn(async move {
-                        running.lock().await.remove(&key);
-                    });
-                }
+        loop {
+            if let Some(result) = rx.borrow().clone() {
+                return result;
+            }
+            if rx.changed().await.is_err() {
+                return ProjectSetupResult::Err { message: fallback_err };
             }
         }
-        let _guard = SlotGuard { running: Arc::clone(&self.running), key };
-
-        let result = set_up_now(request, context, None, add_project).await;
-        let _ = tx.send(Some(result.clone()));
-        result
     }
 }
 
@@ -244,19 +243,32 @@ fn normalize_lexical(path: &Path) -> PathBuf {
 fn folder_key(path: &Path) -> String {
     let norm = normalize_lexical(path);
     let s = norm.to_string_lossy();
-    let trimmed = if s.len() > 1 {
-        let t = s.trim_end_matches(['\\', '/']);
-        if t.is_empty() { s.as_ref() } else { t }
-    } else {
-        s.as_ref()
-    };
     #[cfg(windows)]
     {
-        trimmed.replace('/', "\\").to_lowercase()
+        let normalized = s.replace('/', "\\").to_lowercase();
+        // Preserve Windows drive roots like `c:\` so they never collide with drive-relative `c:`.
+        let is_drive_root = normalized.len() == 3 && normalized.as_bytes()[1] == b':' && normalized.as_bytes()[2] == b'\\';
+        if is_drive_root || normalized.len() <= 1 {
+            normalized
+        } else {
+            let trimmed = normalized.trim_end_matches('\\');
+            if trimmed.len() == 2 && trimmed.as_bytes()[1] == b':' {
+                format!("{trimmed}\\")
+            } else if trimmed.is_empty() {
+                normalized
+            } else {
+                trimmed.to_string()
+            }
+        }
     }
     #[cfg(not(windows))]
     {
-        trimmed.to_string()
+        if s.len() > 1 {
+            let t = s.trim_end_matches('/');
+            if t.is_empty() { "/".to_string() } else { t.to_string() }
+        } else {
+            s.into_owned()
+        }
     }
 }
 
@@ -267,7 +279,11 @@ fn inside(folder: &Path, path: &Path) -> bool {
         return true;
     }
     let sep = std::path::MAIN_SEPARATOR;
-    b.starts_with(&a) && b.as_bytes().get(a.len()) == Some(&(sep as u8))
+    if a.ends_with(sep) {
+        b.starts_with(&a)
+    } else {
+        b.starts_with(&a) && b.as_bytes().get(a.len()) == Some(&(sep as u8))
+    }
 }
 
 fn same_repository(left: &GitHubRepository, right: &GitHubRepository) -> bool {
@@ -372,7 +388,7 @@ fn find_clone(folder: &Path, repository: &GitHubRepository) -> Option<PathBuf> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CheckoutBlock {
     InProgress(&'static str),
-    Branch(Option<String>),
+    Branch(bool),
     Diverged,
     Changes,
 }
@@ -380,8 +396,8 @@ enum CheckoutBlock {
 fn block_words(block: &CheckoutBlock) -> String {
     match block {
         CheckoutBlock::InProgress(op) => format!("a {op} is under way in it"),
-        CheckoutBlock::Branch(Some(_)) => "it is on another branch".into(),
-        CheckoutBlock::Branch(None) => "it has no branch checked out".into(),
+        CheckoutBlock::Branch(true) => "it is on another branch".into(),
+        CheckoutBlock::Branch(false) => "it has no branch checked out".into(),
         CheckoutBlock::Diverged => "it has commits GitHub does not have".into(),
         CheckoutBlock::Changes => "it has uncommitted changes".into(),
     }
@@ -422,7 +438,7 @@ fn checkout_block(top: &Path, branch: &str, ahead: u64) -> Result<Option<Checkou
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
     if current != branch {
-        return Ok(Some(CheckoutBlock::Branch((!current.is_empty()).then_some(current))));
+        return Ok(Some(CheckoutBlock::Branch(!current.is_empty())));
     }
     if ahead > 0 {
         return Ok(Some(CheckoutBlock::Diverged));
@@ -453,13 +469,18 @@ struct UpdateOutcome {
     fetched: Option<String>,
 }
 
-fn bring_up_to_date(top: &Path, existing_projects: &[String]) -> UpdateOutcome {
+enum FetchInspect {
+    Done(UpdateOutcome),
+    ReadyToFastForward { remote: String, fetched: Option<String> },
+}
+
+fn fetch_and_inspect_for_ff(top: &Path) -> FetchInspect {
     if git_quiet(top, &["fetch", "--quiet", "origin"], FETCH_TIMEOUT).is_err() {
-        return UpdateOutcome {
+        return FetchInspect::Done(UpdateOutcome {
             current: false,
             reason: Some("Sotto could not fetch it from GitHub".into()),
             fetched: None,
-        };
+        });
     }
     let head = git_quiet(top, &["symbolic-ref", "-q", "refs/remotes/origin/HEAD"], QUICK_TIMEOUT)
         .map(|s| s.trim().to_string())
@@ -468,11 +489,11 @@ fn bring_up_to_date(top: &Path, existing_projects: &[String]) -> UpdateOutcome {
         let _ = git_quiet(top, &["remote", "set-head", "origin", "--auto"], FETCH_TIMEOUT);
     }
     let Some(branch) = origin_default_branch(top) else {
-        return UpdateOutcome {
+        return FetchInspect::Done(UpdateOutcome {
             current: false,
             reason: Some("Sotto could not tell which branch is its default".into()),
             fetched: None,
-        };
+        });
     };
     let local = format!("refs/heads/{branch}");
     let remote = format!("refs/remotes/origin/{branch}");
@@ -492,27 +513,31 @@ fn bring_up_to_date(top: &Path, existing_projects: &[String]) -> UpdateOutcome {
     let ahead = counts.map_or(0, |(a, _)| a);
     let block = checkout_block(top, &branch, ahead).unwrap_or(Some(CheckoutBlock::Changes));
     if matches!(block, Some(CheckoutBlock::Branch(_))) {
-        return UpdateOutcome {
+        return FetchInspect::Done(UpdateOutcome {
             current: false,
             reason: block.as_ref().map(block_words),
             fetched,
-        };
+        });
     }
     let Some((_, behind)) = counts else {
-        return UpdateOutcome {
+        return FetchInspect::Done(UpdateOutcome {
             current: false,
             reason: Some("Sotto could not compare it with GitHub".into()),
             fetched,
-        };
+        });
     };
     if behind == 0 && matches!(block, None | Some(CheckoutBlock::Changes)) {
-        return UpdateOutcome { current: true, reason: None, fetched: None };
+        return FetchInspect::Done(UpdateOutcome { current: true, reason: None, fetched: None });
     }
     if let Some(ref b) = block {
-        return UpdateOutcome { current: false, reason: Some(block_words(b)), fetched };
+        return FetchInspect::Done(UpdateOutcome { current: false, reason: Some(block_words(b)), fetched });
     }
+    FetchInspect::ReadyToFastForward { remote, fetched }
+}
+
+fn finish_fast_forward(top: &Path, remote: &str, fetched: Option<String>, live_projects: &[String]) -> UpdateOutcome {
     let top_key = folder_key(top);
-    if existing_projects.iter().any(|p| !p.trim().is_empty() && folder_key(Path::new(p)) == top_key) {
+    if live_projects.iter().any(|p| !p.trim().is_empty() && folder_key(Path::new(p)) == top_key) {
         return UpdateOutcome {
             current: false,
             reason: Some("another project there already uses that folder".into()),
@@ -521,7 +546,7 @@ fn bring_up_to_date(top: &Path, existing_projects: &[String]) -> UpdateOutcome {
     }
     match git_quiet(
         top,
-        &["merge", "--ff-only", "--no-autostash", "--no-overwrite-ignore", "--quiet", "--end-of-options", &remote],
+        &["merge", "--ff-only", "--no-autostash", "--no-overwrite-ignore", "--quiet", "--end-of-options", remote],
         MERGE_TIMEOUT,
     ) {
         Ok(_) => UpdateOutcome { current: true, reason: None, fetched: None },
@@ -582,7 +607,7 @@ fn clone_repo(
                 "Git is not installed there, so Sotto could not clone {named}. Install Git there, or name another machine."
             ));
         }
-        if err.to_ascii_lowercase().contains("did not finish in time") {
+        if err == "git did not finish in time." {
             return Err(format!(
                 "Cloning {named} into {target_disp} took more than ten minutes, so Sotto stopped it. {leftover} Clone it there yourself, or name another machine."
             ));
@@ -595,17 +620,21 @@ fn clone_repo(
 }
 
 enum PreparedCopy {
-    Added { path: PathBuf, update: UpdateOutcome },
+    AddedDone { path: PathBuf, update: UpdateOutcome },
+    AddedReadyToFastForward { path: PathBuf, remote: String, fetched: Option<String> },
     Cloned { path: PathBuf },
 }
 
-async fn set_up_now<F, Fut>(
+async fn set_up_now<C, CFut, F, Fut>(
     request: ProjectSetupRequest,
     context: ProjectSetupContext,
     clone_url_override: Option<String>,
+    current_projects: C,
     add_project: F,
 ) -> ProjectSetupResult
 where
+    C: FnOnce() -> CFut + Send + 'static,
+    CFut: Future<Output = Vec<String>> + Send,
     F: FnOnce(String, String) -> Fut + Send + 'static,
     Fut: Future<Output = Result<String, String>> + Send,
 {
@@ -620,22 +649,33 @@ where
     let named_for_work = named.clone();
     let prepared = tokio::task::spawn_blocking(move || -> Result<PreparedCopy, String> {
         let folder = usual_folder(&context);
+        if !folder.is_absolute() {
+            return Err(format!(
+                "Sotto could not find an absolute projects folder there for {named_for_work}. Configure a default projects folder there, or add the project yourself."
+            ));
+        }
         if let Some(found) = find_clone(&folder, &repo_for_work) {
             let found_key = folder_key(&found);
             let listed = context
                 .project_paths
                 .iter()
                 .any(|p| !p.trim().is_empty() && folder_key(Path::new(p)) == found_key);
-            let update = if listed {
-                UpdateOutcome {
-                    current: false,
-                    reason: Some("another project there already uses that folder".into()),
-                    fetched: None,
+            if listed {
+                return Ok(PreparedCopy::AddedDone {
+                    path: found,
+                    update: UpdateOutcome {
+                        current: false,
+                        reason: Some("another project there already uses that folder".into()),
+                        fetched: None,
+                    },
+                });
+            }
+            return match fetch_and_inspect_for_ff(&found) {
+                FetchInspect::Done(update) => Ok(PreparedCopy::AddedDone { path: found, update }),
+                FetchInspect::ReadyToFastForward { remote, fetched } => {
+                    Ok(PreparedCopy::AddedReadyToFastForward { path: found, remote, fetched })
                 }
-            } else {
-                bring_up_to_date(&found, &context.project_paths)
             };
-            return Ok(PreparedCopy::Added { path: found, update });
         }
         let target = folder.join(&repo_for_work.name);
         if target.parent().map(folder_key) != Some(folder_key(&folder)) {
@@ -658,7 +698,24 @@ where
     };
 
     let (path, how, current, reason, fetched, done_lead) = match prepared {
-        PreparedCopy::Added { path, update } => {
+        PreparedCopy::AddedDone { path, update } => {
+            let path_str = path.to_string_lossy().into_owned();
+            let lead = format!("Sotto found {named} at {path_str}");
+            (path_str, "added", update.current, update.reason, update.fetched, lead)
+        }
+        PreparedCopy::AddedReadyToFastForward { path, remote, fetched } => {
+            // Re-read live projects after fetch so a project added meanwhile is never fast-forwarded underneath active work (projectSetup.ts:197).
+            let live_projects = current_projects().await;
+            let path_for_ff = path.clone();
+            let update = tokio::task::spawn_blocking(move || {
+                finish_fast_forward(&path_for_ff, &remote, fetched, &live_projects)
+            })
+            .await
+            .unwrap_or(UpdateOutcome {
+                current: false,
+                reason: Some("Git could not move it forward".into()),
+                fetched: None,
+            });
             let path_str = path.to_string_lossy().into_owned();
             let lead = format!("Sotto found {named} at {path_str}");
             (path_str, "added", update.current, update.reason, update.fetched, lead)
@@ -776,6 +833,11 @@ mod tests {
             own_folder: None,
         };
         assert_eq!(folder_key(&usual_folder(&fallback)), folder_key(&home.join("Projects")));
+
+        #[cfg(not(windows))]
+        assert!(inside(Path::new("/"), Path::new("/foo")));
+        #[cfg(windows)]
+        assert!(inside(Path::new(r"C:\"), Path::new(r"C:\foo")));
     }
 
     #[tokio::test]
@@ -796,6 +858,7 @@ mod tests {
             req.clone(),
             ctx.clone(),
             Some(remote.to_string_lossy().into_owned()),
+            || async { Vec::new() },
             |_, _| async { Ok("proj-1".into()) },
         )
         .await;
@@ -818,6 +881,7 @@ mod tests {
                 ..ctx.clone()
             },
             Some(remote.to_string_lossy().into_owned()),
+            || async { Vec::new() },
             |_, _| async { Ok("proj-x".into()) },
         )
         .await;
@@ -828,14 +892,28 @@ mod tests {
             ProjectSetupResult::Ok { .. } => panic!("expected collision refusal"),
         }
 
-        // 3. Push a new commit to remote, make clone look like github.com/org/app for find_clone,
-        //    and verify bring_up_to_date fast-forwards it cleanly.
+        // 3. Push a new commit to remote and verify fetch + live post-fetch collision check + fast-forward.
         let cloned_path = projects_root.join("app");
+        git_ok(&cloned_path, &["config", "core.autocrlf", "false"]);
         fs::write(seed.join("README.md"), "v2\n").unwrap();
         git_ok(&seed, &["add", "-A"]);
         git_ok(&seed, &["commit", "-m", "Second"]);
         git_ok(&seed, &["push", "origin", "main"]);
-        let update = bring_up_to_date(&cloned_path, &[]);
+        let FetchInspect::ReadyToFastForward { remote: ff_remote, fetched } = fetch_and_inspect_for_ff(&cloned_path) else {
+            panic!("expected ReadyToFastForward");
+        };
+        // If another project appeared on the folder during fetch, fast-forward is skipped.
+        let blocked = finish_fast_forward(
+            &cloned_path,
+            &ff_remote,
+            fetched.clone(),
+            &[cloned_path.to_string_lossy().into_owned()],
+        );
+        assert!(!blocked.current);
+        assert_eq!(blocked.reason.as_deref(), Some("another project there already uses that folder"));
+        assert_eq!(blocked.fetched.as_deref(), Some("main"));
+        // Otherwise fast-forward succeeds cleanly.
+        let update = finish_fast_forward(&cloned_path, &ff_remote, fetched, &[]);
         assert!(update.current, "reason={:?}", update.reason);
         assert_eq!(fs::read_to_string(cloned_path.join("README.md")).unwrap(), "v2\n");
     }
