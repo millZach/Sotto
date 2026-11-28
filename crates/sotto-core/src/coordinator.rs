@@ -1538,6 +1538,8 @@ struct CoordinatorActor {
     credentials_secure: bool,
     thread_store: ThreadStore,
     providers: BTreeMap<String, Arc<dyn ProviderAdapter>>,
+    /// Process-wide GitHub host and SSH-alias cache shared across `git-action` runs (10-minute TTL, matching Node).
+    github_hosts: Arc<crate::github_pr::GitHubHosts>,
     provider_events_tx: mpsc::UnboundedSender<ProviderEvent>,
     self_tx: mpsc::UnboundedSender<ActorMessage>,
     broadcast_tx: broadcast::Sender<CoordinatorBroadcast>,
@@ -1706,13 +1708,34 @@ impl CoordinatorActor {
             followups.receipts().iter().any(|r| r.thread_id == thread && r.draft_id == draft)
                 || followups.items().iter().any(|i| i.thread_id == thread && i.draft_id == draft)
         });
-        let threads = with_real_worktree_folders(&data_directory, persisted.threads);
-        Self {
+        let mut threads = with_real_worktree_folders(&data_directory, persisted.threads);
+        // Mirror Node workspace startup (`workspace.ts`): a `gitAction` left `running` in `workspace.json` when the
+        // host stopped is transitioned to `failed` so the thread does not stay permanently stuck or undeletable.
+        let mut recovered_git_action = false;
+        let recovered_at = now_iso();
+        for thread in &mut threads {
+            if let Some(action) = thread.extra.get_mut("gitAction").and_then(Value::as_object_mut) {
+                if action.get("status").and_then(Value::as_str) == Some("running") {
+                    action.insert("status".into(), Value::String("failed".into()));
+                    action.insert("phase".into(), Value::Null);
+                    action.insert("stage".into(), Value::Null);
+                    action.insert("hook".into(), Value::Null);
+                    action.insert("finishedAt".into(), Value::String(recovered_at.clone()));
+                    action.insert(
+                        "error".into(),
+                        Value::String("Sotto stopped while this action ran. Check the folder before running it again.".into()),
+                    );
+                    recovered_git_action = true;
+                }
+            }
+        }
+        let actor = Self {
             data_directory,
             host_id,
             credentials_secure,
             thread_store,
             providers,
+            github_hosts: Arc::new(crate::github_pr::GitHubHosts::new(Arc::new(crate::github_pr::SystemGh))),
             provider_events_tx,
             self_tx,
             broadcast_tx,
@@ -1764,7 +1787,11 @@ impl CoordinatorActor {
             shell_dirty: false,
             dirty_details: HashSet::new(),
             watched_threads: None,
+        };
+        if recovered_git_action {
+            actor.save_workspace();
         }
+        actor
     }
 
     fn available_providers(&self) -> Vec<String> {
@@ -2356,11 +2383,18 @@ impl CoordinatorActor {
             ActorMessage::FollowupSent { item_id, draft_id, outcome } => self.followup_sent(&item_id, &draft_id, outcome),
             ActorMessage::GitActionProgress { thread_id, progress } => {
                 if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
-                    if let Ok(value) = serde_json::to_value(&progress) {
-                        thread.extra.insert("gitAction".into(), value);
+                    // Never overwrite a completed/failed record for the same actionId with a late in-flight event.
+                    let already_finished = thread.extra.get("gitAction").and_then(Value::as_object).is_some_and(|cur| {
+                        cur.get("actionId").and_then(Value::as_str) == Some(progress.action_id.as_str())
+                            && cur.get("status").and_then(Value::as_str) != Some("running")
+                    });
+                    if !already_finished {
+                        if let Ok(value) = serde_json::to_value(&progress) {
+                            thread.extra.insert("gitAction".into(), value);
+                        }
+                        // Coalesced by the 50 ms publish ticker (matching Node's `publishSoon()`).
+                        self.shell_dirty = true;
                     }
-                    self.shell_dirty = true;
-                    self.flush_dirty();
                 }
             }
             ActorMessage::AsyncCommandDone {
@@ -3789,16 +3823,18 @@ impl CoordinatorActor {
                 if checkout_held {
                     self.checkout_holds.remove(&thread_id);
                 }
-                if let Some(record) = record {
-                    self.keep_worktree_record(&thread_id, record);
-                }
                 if started {
                     let mut failed_error: Option<String> = None;
-                    if let Some(progress) = progress {
-                        if progress.status == "failed" {
-                            failed_error = Some(progress.error.clone().unwrap_or_else(|| "The Git action failed.".into()));
+                    let mut dirty = false;
+                    if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                        if let Some(record) = record {
+                            thread.worktree = Some(record);
+                            dirty = true;
                         }
-                        if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                        if let Some(progress) = progress {
+                            if progress.status == "failed" {
+                                failed_error = Some(progress.error.clone().unwrap_or_else(|| "The Git action failed.".into()));
+                            }
                             if let Ok(value) = serde_json::to_value(&progress) {
                                 thread.extra.insert("gitAction".into(), value);
                             }
@@ -3814,16 +3850,28 @@ impl CoordinatorActor {
                                     }
                                 }
                             }
+                            dirty = true;
                         }
+                    } else if let Some(progress) = progress {
+                        if progress.status == "failed" {
+                            failed_error = Some(progress.error.clone().unwrap_or_else(|| "The Git action failed.".into()));
+                        }
+                    }
+                    if dirty {
                         self.save_workspace();
                         self.shell_dirty = true;
                     }
                     self.error = failed_error;
-                } else if let Err(refused) = result {
-                    let hold = refused.checkout_hold();
-                    self.error = Some(refused.words);
-                    if let Some(hold) = hold {
-                        return Ok(self.shell_with_checkout_hold(client, hold));
+                } else {
+                    if let Some(record) = record {
+                        self.keep_worktree_record(&thread_id, record);
+                    }
+                    if let Err(refused) = result {
+                        let hold = refused.checkout_hold();
+                        self.error = Some(refused.words);
+                        if let Some(hold) = hold {
+                            return Ok(self.shell_with_checkout_hold(client, hold));
+                        }
                     }
                 }
             }
@@ -4769,6 +4817,7 @@ impl CoordinatorActor {
                     let (mut record, result) = crate::git_local::run(&data_directory, &working, &git);
                     // The folder's status as Git left it, read before the reply, as Node's `followGitChange` awaits it.
                     if result.is_ok() {
+                        crate::ops::invalidate_refs_cache(&checkout);
                         let read = record.clone().or_else(|| working.worktree.clone()).filter(|wt| wt.status == "ready" && !wt.reclaimed());
                         if let Some(mut wt) = read {
                             if let Some(path) = wt.path.clone() {
@@ -4814,9 +4863,9 @@ impl CoordinatorActor {
             project_path,
             started: session_started(thread),
         };
-        // Side-writing eligibility matches Node's `workspace.writeShortText`: visible, not a council judge, session
-        // started, and provider adapter present; Watcher's thread carries `watcher: true`.
-        let visible = thread.extra.get("hidden") != Some(&Value::Bool(true));
+        // Side-writing eligibility matches Node's `workspace.writeShortText`: visible (not an owlet), not a council
+        // judge, session started, and provider adapter present; Watcher's thread carries `watcher: true`.
+        let visible = thread.extra.get("owlet").is_none();
         let council_judge = thread.extra.get("councilJudge") == Some(&Value::Bool(true));
         let provider_id = if !thread.provider_id.is_empty() {
             thread.provider_id.clone()
@@ -4838,47 +4887,139 @@ impl CoordinatorActor {
             let entry = (id == expected_id).then(|| side_thread.clone()).flatten();
             Box::pin(async move { entry })
         });
-        let (self_tx, data_directory, runtime) = (self.self_tx.clone(), self.data_directory.clone(), tokio::runtime::Handle::current());
+        let (self_tx, data_directory, github_hosts, runtime) = (
+            self.self_tx.clone(),
+            self.data_directory.clone(),
+            Arc::clone(&self.github_hosts),
+            tokio::runtime::Handle::current(),
+        );
         tokio::task::spawn_blocking(move || {
+            // Releases holds and the thread's command lane even if the blocking task unwinds on panic.
+            struct GitActionGuard {
+                self_tx: mpsc::UnboundedSender<ActorMessage>,
+                lane: Option<String>,
+                client: Option<ClientContext>,
+                reply: Option<oneshot::Sender<Result<Value, CoordinatorError>>>,
+                thread_id: String,
+                action_id: String,
+                action: crate::git_action::GitStackedAction,
+                folder: Option<String>,
+                checkout_held: bool,
+                started: bool,
+                progress_state: Option<Arc<std::sync::Mutex<crate::git_action::GitActionProgress>>>,
+            }
+            impl Drop for GitActionGuard {
+                fn drop(&mut self) {
+                    let (Some(client), Some(reply)) = (self.client.take(), self.reply.take()) else {
+                        return;
+                    };
+                    let err_msg = "The Git action stopped unexpectedly.".to_string();
+                    let progress = if self.started {
+                        Some(Box::new(match self.progress_state.as_ref() {
+                            Some(state) => {
+                                let mut guard = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                                if guard.finished_at.is_none() {
+                                    guard.finish(Err(err_msg.clone()), now_iso());
+                                }
+                                guard.clone()
+                            }
+                            None => {
+                                let mut p = crate::git_action::GitActionProgress::running(&self.action_id, self.action, now_iso());
+                                p.finish(Err(err_msg.clone()), now_iso());
+                                p
+                            }
+                        }))
+                    } else {
+                        None
+                    };
+                    let outcome = AsyncCommandOutcome::GitAction {
+                        folder: self.folder.take(),
+                        checkout_held: self.checkout_held,
+                        thread_id: self.thread_id.clone(),
+                        record: None,
+                        started: self.started,
+                        progress,
+                        result: Err(ChangeRefused::from(err_msg)),
+                    };
+                    let _ = self.self_tx.send(ActorMessage::AsyncCommandDone {
+                        lane: self.lane.take(),
+                        client,
+                        outcome: Box::new(outcome),
+                        reply,
+                    });
+                }
+            }
+
+            let mut guard = GitActionGuard {
+                self_tx: self_tx.clone(),
+                lane,
+                client: Some(client),
+                reply: Some(reply),
+                thread_id: thread_id.clone(),
+                action_id: git_cmd.action_id.clone(),
+                action: git_cmd.action,
+                folder: None,
+                checkout_held: false,
+                started: false,
+                progress_state: None,
+            };
+
             let kept = |current: Option<AgentThreadWorktree>| current.filter(|record| Some(record) != working.worktree.as_ref());
             let held = crate::worktree_reclaim::threads_in_checkout(&checkout, &candidates)
                 .map_err(ChangeRefused::from)
                 .and_then(|(key, sharing)| hold_checkout(&self_tx, &thread_id, &checkout, key, sharing));
-            let checkout_held = held.is_ok();
-            let (folder, record, started, progress, result) = match held {
-                Err(refused) => (None, None, false, None, Err(refused)),
+            guard.checkout_held = held.is_ok();
+            let (record, progress, result) = match held {
+                Err(refused) => (None, None, Err(refused)),
                 Ok(()) => {
-                    let folder = working
+                    guard.folder = working
                         .worktree
                         .as_ref()
                         .and_then(|wt| wt.path.clone())
                         .filter(|folder| hold_folder(&self_tx, &thread_id, folder, false).is_some());
                     let (mut current, cwd_res) = crate::git_local::prepare_folder(&data_directory, &working);
                     match cwd_res {
-                        Err(words) => (folder, kept(current), false, None, Err(ChangeRefused::from(words))),
+                        Err(words) => (kept(current), None, Err(ChangeRefused::from(words))),
                         Ok(cwd) => {
                             let initial = crate::git_action::GitActionProgress::running(&git_cmd.action_id, git_cmd.action, now_iso());
-                            let _ = self_tx.send(ActorMessage::GitActionProgress { thread_id: thread_id.clone(), progress: Box::new(initial.clone()) });
-                            let state = Arc::new(std::sync::Mutex::new(initial));
+                            let state = Arc::new(std::sync::Mutex::new(initial.clone()));
+                            guard.started = true;
+                            guard.progress_state = Some(Arc::clone(&state));
+                            {
+                                let _lock = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                                let _ = self_tx.send(ActorMessage::GitActionProgress { thread_id: thread_id.clone(), progress: Box::new(initial) });
+                            }
                             let progress_state = Arc::clone(&state);
                             let progress_tx = self_tx.clone();
                             let progress_tid = thread_id.clone();
                             let progress_cb: crate::git_action::Progress = Arc::new(move |event| {
-                                let snapshot = {
-                                    let mut guard = progress_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                                    guard.apply(&event);
-                                    guard.clone()
-                                };
-                                let _ = progress_tx.send(ActorMessage::GitActionProgress { thread_id: progress_tid.clone(), progress: Box::new(snapshot) });
+                                // Hold `progress_state` across `send` so concurrent hook/reader threads deliver
+                                // snapshots in strict monotonic order and never emit after `finish`.
+                                let mut lock = progress_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                                if lock.finished_at.is_some() {
+                                    return;
+                                }
+                                lock.apply(&event);
+                                let _ = progress_tx.send(ActorMessage::GitActionProgress {
+                                    thread_id: progress_tid.clone(),
+                                    progress: Box::new(lock.clone()),
+                                });
                             });
-                            let services = crate::github_pr::HostGitActionServices::new(data_directory.clone(), runtime, side_threads);
-                            let input = crate::git_action::GitActionInput::new(&git_cmd, cwd);
+                            let services = crate::github_pr::HostGitActionServices::with_shared_hosts(
+                                data_directory.clone(),
+                                runtime,
+                                side_threads,
+                                Arc::new(crate::github_pr::SystemGh),
+                                github_hosts,
+                            );
+                            let input = crate::git_action::GitActionInput::new(&git_cmd, cwd.clone());
                             let action_res = crate::git_action::run_stacked_action(&input, true, &services, &progress_cb);
                             let final_progress = {
-                                let mut guard = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                                guard.finish(action_res.clone(), now_iso());
-                                guard.clone()
+                                let mut lock = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                                lock.finish(action_res.clone(), now_iso());
+                                lock.clone()
                             };
+                            crate::ops::invalidate_refs_cache(&cwd);
                             current = crate::git_local::inspect_after_change(current, false);
                             let mut record = kept(current.clone());
                             let read = record.clone().or_else(|| current.clone()).or_else(|| working.worktree.clone()).filter(|wt| wt.status == "ready" && !wt.reclaimed());
@@ -4888,13 +5029,28 @@ impl CoordinatorActor {
                                     record = Some(wt);
                                 }
                             }
-                            (folder, record, true, Some(Box::new(final_progress)), action_res.map(Box::new).map_err(ChangeRefused::from))
+                            (record, Some(Box::new(final_progress)), action_res.map(Box::new).map_err(ChangeRefused::from))
                         }
                     }
                 }
             };
-            let outcome = AsyncCommandOutcome::GitAction { folder, checkout_held, thread_id, record, started, progress, result };
-            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+            let outcome = AsyncCommandOutcome::GitAction {
+                folder: guard.folder.take(),
+                checkout_held: guard.checkout_held,
+                thread_id,
+                record,
+                started: guard.started,
+                progress,
+                result,
+            };
+            if let (Some(client), Some(reply)) = (guard.client.take(), guard.reply.take()) {
+                let _ = self_tx.send(ActorMessage::AsyncCommandDone {
+                    lane: guard.lane.take(),
+                    client,
+                    outcome: Box::new(outcome),
+                    reply,
+                });
+            }
         });
     }
 
@@ -6820,10 +6976,11 @@ fn github_pull_request_key(url: &str) -> Option<String> {
         return None;
     }
     let num_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
-    let number = &rest[..num_end];
-    if number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
+    let number_str = &rest[..num_end];
+    if number_str.is_empty() || !number_str.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
+    let number = number_str.parse::<u64>().ok().filter(|&n| n > 0)?;
     if rest[num_end..].chars().any(char::is_whitespace) {
         return None;
     }
@@ -6833,6 +6990,7 @@ fn github_pull_request_key(url: &str) -> Option<String> {
 /// Mirrors `linkPullRequestRecord` (`src/main/agents/workspace.ts`): deduplicates by `github_pull_request_key`,
 /// preserves `source` and `linkedAt` on update, and evicts settled links before open ones when at the 50-link limit.
 fn link_pull_request_record(thread: &mut AgentThread, number: u64, url: &str, title: &str, source: &str) {
+    let url = url.trim();
     let Some(key) = github_pull_request_key(url) else {
         return;
     };
@@ -7902,9 +8060,10 @@ mod tests {
             messages: Vec::new(), requests: Vec::new(), activities: Vec::new(), summary: crate::AgentThreadSummary::default(),
             worktree: None, extra: Map::new(),
         };
-        link_pull_request_record(&mut thread, 12, "https://github.com/Org/Repo/pull/12", "First title", "linked");
+        link_pull_request_record(&mut thread, 12, "  https://github.com/Org/Repo/pull/0012  ", "First title", "linked");
         let original_at = thread.extra["pullRequests"][0]["linkedAt"].as_str().unwrap().to_string();
-        // Same PR with different casing updates title while preserving source and linkedAt.
+        assert_eq!(thread.extra["pullRequests"][0]["url"], "https://github.com/Org/Repo/pull/0012");
+        // Same PR with different casing and unpadded number updates title while preserving source and linkedAt.
         link_pull_request_record(&mut thread, 12, "https://github.com/org/repo/pull/12/files", "Updated title", "created");
         assert_eq!(thread.extra["pullRequests"].as_array().unwrap().len(), 1);
         assert_eq!(thread.extra["pullRequests"][0]["title"], "Updated title");
@@ -7923,6 +8082,114 @@ mod tests {
         let links = thread.extra["pullRequests"].as_array().unwrap();
         assert_eq!(links.len(), GIT_PULL_REQUEST_LINKS_MAX);
         assert!(!links.iter().any(|l| l["number"] == 12), "merged PR #12 should have been evicted first");
+    }
+
+    #[tokio::test]
+    async fn startup_recovers_persisted_running_git_action_to_failed() {
+        let dir = tempdir().unwrap();
+        let data = dir.path().join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let workspace = json!({
+            "version": 1,
+            "snapshot": {
+                "projects": [],
+                "threads": [{
+                    "id": "00000000-0000-4000-8000-0000000000e1",
+                    "projectId": "p1",
+                    "providerId": "codex",
+                    "title": "Interrupted",
+                    "status": "idle",
+                    "modelId": "native:codex:model:fixture-model",
+                    "gitAction": {
+                        "actionId": "123e4567-e89b-42d3-a456-426614174010",
+                        "action": "commit_push",
+                        "status": "running",
+                        "phases": ["commit", "push"],
+                        "phase": "commit",
+                        "stage": "Committing...",
+                        "hook": { "name": "pre-commit", "output": "running..." },
+                        "startedAt": "2026-11-27T00:00:00.000Z",
+                        "finishedAt": null,
+                        "result": null,
+                        "error": null
+                    }
+                }]
+            }
+        });
+        std::fs::write(data.join("workspace.json"), workspace.to_string()).unwrap();
+
+        let coord = CoordinatorHandle::spawn(data.clone(), "h1".into(), true, mock_providers()).unwrap();
+        let shell = coord.shell(true).await.unwrap();
+        let action = &shell["host"]["threads"][0]["gitAction"];
+        assert_eq!(action["status"], "failed");
+        assert_eq!(action["phase"], Value::Null);
+        assert_eq!(action["stage"], Value::Null);
+        assert_eq!(action["hook"], Value::Null);
+        assert!(action["finishedAt"].as_str().is_some());
+        assert_eq!(action["error"], "Sotto stopped while this action ran. Check the folder before running it again.");
+        coord.shutdown().await;
+
+        let persisted: Value = serde_json::from_str(&std::fs::read_to_string(data.join("workspace.json")).unwrap()).unwrap();
+        assert_eq!(persisted["snapshot"]["threads"][0]["gitAction"]["status"], "failed");
+    }
+
+    #[tokio::test]
+    async fn git_action_drafts_commit_message_via_provider_when_none_given() {
+        struct DraftingMock(MockProviderAdapter);
+        impl ProviderAdapter for DraftingMock {
+            fn id(&self) -> &str { self.0.id() }
+            fn name(&self) -> &str { self.0.name() }
+            fn status(&self) -> AgentProviderStatus { self.0.status() }
+            fn models(&self) -> Vec<AgentModel> { self.0.models() }
+            fn connect(&self, events: mpsc::UnboundedSender<ProviderEvent>) -> crate::provider::BoxFuture<'_, Result<(), String>> { self.0.connect(events) }
+            fn disconnect(&self) -> crate::provider::BoxFuture<'_, Result<(), String>> { self.0.disconnect() }
+            fn create_thread(&self, a: String, b: String, c: Option<String>, d: Option<String>, e: Option<String>) -> crate::provider::BoxFuture<'_, Result<(), String>> { self.0.create_thread(a, b, c, d, e) }
+            fn send_message(&self, r: crate::provider::SendMessageRequest) -> crate::provider::BoxFuture<'_, Result<crate::provider::SendMessageAck, String>> { self.0.send_message(r) }
+            fn answer_request(&self, r: crate::provider::AnswerRequestInput) -> crate::provider::BoxFuture<'_, Result<(), String>> { self.0.answer_request(r) }
+            fn interrupt(&self, t: String) -> crate::provider::BoxFuture<'_, Result<(), String>> { self.0.interrupt(t) }
+            fn compact(&self, t: String) -> crate::provider::BoxFuture<'_, Result<(), String>> { self.0.compact(t) }
+            fn write_short_text(&self, _: String, prompt: crate::side_writing::ShortTextPrompt) -> crate::provider::BoxFuture<'_, Result<Option<String>, String>> {
+                assert_eq!(prompt.purpose, crate::side_writing::ShortTextPurpose::CommitMessage);
+                Box::pin(async { Ok(Some("Drafted by thread provider".into())) })
+            }
+        }
+
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let project = base.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        fixture_git(&project, &["init", "-q", "-b", "main"]);
+        std::fs::write(project.join("README.md"), "hello\n").unwrap();
+        fixture_git(&project, &["add", "."]);
+        fixture_git(&project, &["commit", "-q", "-m", "First"]);
+
+        let provider = Arc::new(DraftingMock(MockProviderAdapter::new("codex")));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), provider.clone());
+        let coord = CoordinatorHandle::spawn(base.join("data"), "h1".into(), true, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| {
+            let (coord, client) = (coord.clone(), client.clone());
+            async move { coord.run_command(client, command.as_object().unwrap().clone()).await }
+        };
+        run(json!({ "type": "connect", "provider": "codex" })).await.unwrap();
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "Draft", "path": project.to_string_lossy(), "useExisting": true })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let tid = "00000000-0000-4000-8000-0000000000e2";
+        run(json!({ "type": "create-thread", "threadId": tid, "projectId": project_id, "title": "Drafting", "titleSource": "user",
+            "modelId": "native:codex:model:fixture-model", "workingCopy": "shared" })).await.unwrap();
+
+        // Start the thread's session first so it is eligible for provider commit drafting.
+        run(json!({ "type": "manual-send", "threadId": tid, "text": "Hello" })).await.unwrap();
+        provider.0.complete_turn(tid, "Hi");
+        wait_until_idle(&coord, tid).await;
+
+        std::fs::write(project.join("README.md"), "changed\n").unwrap();
+        let shell = run(json!({ "type": "git-action", "threadId": tid, "actionId": "123e4567-e89b-42d3-a456-426614174020", "action": "commit" })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        let thread = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == tid).unwrap();
+        assert_eq!(thread["gitAction"]["result"]["commit"]["subject"], "Drafted by thread provider");
+        coord.shutdown().await;
     }
 
     /// Restore branch in a project checkout two threads share, as Node's `acquireCheckoutMutationInFolder` admits it:

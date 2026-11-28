@@ -22,7 +22,9 @@ use crate::git_action::{
     STAND_IN_SUBJECT,
 };
 use crate::git_local::{js_space, js_trim, safe_remote};
-use crate::ops::{run_action_gh_with, run_action_git as git, GitHubRepository};
+use crate::ops::{
+    run_action_gh_combined, run_action_gh_with, run_action_git as git, run_action_git_config_regexp, GitHubRepository,
+};
 use crate::pull_request_draft::{PullRequestDrafts, PullRequestMaterial, PullRequestText};
 use crate::side_writing::SideWritingThreads;
 use crate::workspace::clip_utf16;
@@ -48,6 +50,12 @@ const SINGLE_TEMPLATE_PATHS: [&str; 6] = [
 /// Runs `gh` commands for the GitHub pull request step (real `gh` in production, scripted stand-in in tests).
 pub trait GhRunner: Send + Sync {
     fn run_gh(&self, cwd: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, String>;
+    /// Runs `gh` returning stdout and stderr combined regardless of exit status (used for legacy `gh auth status`).
+    fn run_gh_combined(&self, cwd: &str, args: &[&str], deadline: Duration) -> String {
+        match self.run_gh(cwd, args, deadline, None) {
+            Ok(out) | Err(out) => out,
+        }
+    }
     /// Looks up an SSH alias via `ssh -G <alias>` (connects to nothing). Override in tests to avoid reading the host's `~/.ssh/config`.
     fn ssh_hostname(&self, alias: &str) -> Option<String> {
         read_ssh_hostname(alias)
@@ -61,6 +69,10 @@ pub struct SystemGh;
 impl GhRunner for SystemGh {
     fn run_gh(&self, cwd: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, String> {
         run_action_gh_with(cwd, args, deadline, stdin)
+    }
+
+    fn run_gh_combined(&self, cwd: &str, args: &[&str], deadline: Duration) -> String {
+        run_action_gh_combined(cwd, args, deadline)
     }
 }
 
@@ -91,43 +103,88 @@ struct ParsedRemote {
     name: String,
 }
 
+fn strip_ascii_prefix<'a>(text: &'a str, prefix: &str) -> Option<&'a str> {
+    text.get(..prefix.len())
+        .filter(|head| head.eq_ignore_ascii_case(prefix))
+        .map(|_| &text[prefix.len()..])
+}
+
+fn valid_userinfo(userinfo: &str) -> bool {
+    !userinfo.is_empty() && !userinfo.chars().any(|c| c == '@' || c == '/' || js_space(c))
+}
+
+fn parse_authority_host(authority: &str) -> Option<String> {
+    let host_port = match authority.split_once('@') {
+        Some((userinfo, rest)) => {
+            if !valid_userinfo(userinfo) {
+                return None;
+            }
+            rest
+        }
+        None => authority,
+    };
+    let (host, port) = match host_port.split_once(':') {
+        Some((h, p)) => (h, Some(p)),
+        None => (host_port, None),
+    };
+    if let Some(port) = port {
+        if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+    }
+    if host.is_empty() || host.chars().any(|c| c == '/' || c == ':' || c == '@' || js_space(c)) {
+        return None;
+    }
+    Some(host.to_ascii_lowercase())
+}
+
 fn parse_remote_url(url: &str) -> Option<ParsedRemote> {
-    let trimmed = js_trim(url).trim_end_matches('/');
+    let trimmed = js_trim(url);
+    // Node's regex allows at most one trailing `/` (`\/?$`).
+    let trimmed = trimmed.strip_suffix('/').unwrap_or(trimmed);
     if trimmed.is_empty() {
         return None;
     }
-    let (raw_host, ssh, rest) = if let Some(after) = trimmed.strip_prefix("https://").or_else(|| trimmed.strip_prefix("HTTPS://")) {
+    let (raw_host, ssh, rest) = if let Some(after) = strip_ascii_prefix(trimmed, "https://") {
         let (authority, path) = after.split_once('/')?;
-        let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
-        let host = host_port.split_once(':').map_or(host_port, |(h, _)| h);
-        (host.to_ascii_lowercase(), false, path)
-    } else if let Some(after) = trimmed.strip_prefix("ssh://").or_else(|| trimmed.strip_prefix("SSH://")) {
+        (parse_authority_host(authority)?, false, path)
+    } else if let Some(after) = strip_ascii_prefix(trimmed, "ssh://") {
         let (authority, path) = after.split_once('/')?;
-        let host_port = authority.rsplit_once('@').map_or(authority, |(_, h)| h);
-        let host = host_port.split_once(':').map_or(host_port, |(h, _)| h);
-        (host.to_ascii_lowercase(), true, path)
+        (parse_authority_host(authority)?, true, path)
     } else if let Some((left, path)) = trimmed.split_once(':') {
         if path.starts_with('/') || left.contains('/') {
             return None;
         }
-        let host = left.rsplit_once('@').map_or(left, |(_, h)| h);
+        let host = match left.split_once('@') {
+            Some((userinfo, host)) => {
+                if !valid_userinfo(userinfo) {
+                    return None;
+                }
+                host
+            }
+            None => left,
+        };
+        if host.is_empty() || host.chars().any(|c| c == '/' || c == ':' || c == '@' || js_space(c)) {
+            return None;
+        }
         (host.to_ascii_lowercase(), true, path)
     } else {
         return None;
     };
-    if raw_host.is_empty() || raw_host.chars().any(char::is_whitespace) {
-        return None;
-    }
     let (owner, name_raw) = rest.split_once('/')?;
     if owner.is_empty()
         || name_raw.is_empty()
         || name_raw.contains('/')
-        || owner.chars().any(char::is_whitespace)
-        || name_raw.chars().any(char::is_whitespace)
+        || owner.chars().any(js_space)
+        || name_raw.chars().any(js_space)
     {
         return None;
     }
-    let name = name_raw.strip_suffix(".git").or_else(|| name_raw.strip_suffix(".GIT")).unwrap_or(name_raw);
+    let name = if name_raw.len() >= 4 && name_raw[name_raw.len() - 4..].eq_ignore_ascii_case(".git") {
+        &name_raw[..name_raw.len() - 4]
+    } else {
+        name_raw
+    };
     if name.is_empty() {
         return None;
     }
@@ -164,6 +221,7 @@ fn valid_ssh_alias(alias: &str) -> bool {
 }
 
 fn read_ssh_hostname(alias: &str) -> Option<String> {
+    const SSH_MAX_BUFFER: u64 = 1_000_000;
     if !valid_ssh_alias(alias) {
         return None;
     }
@@ -175,6 +233,17 @@ fn read_ssh_hostname(alias: &str) -> Option<String> {
         cmd.creation_flags(0x0800_0000);
     }
     let mut child = cmd.spawn().ok()?;
+    // Drain stdout concurrently on a bounded reader thread before waiting so large `ssh -G` outputs never fill
+    // Windows' 4 KiB anonymous pipe buffer and deadlock.
+    let stdout = child.stdout.take();
+    let reader = std::thread::spawn(move || -> Vec<u8> {
+        let mut buf = Vec::new();
+        if let Some(pipe) = stdout {
+            let mut limited = std::io::Read::take(pipe, SSH_MAX_BUFFER);
+            let _ = std::io::Read::read_to_end(&mut limited, &mut buf);
+        }
+        buf
+    });
     let deadline = Instant::now() + SSH_LOOKUP_DEADLINE;
     let status = loop {
         match child.try_wait() {
@@ -182,18 +251,21 @@ fn read_ssh_hostname(alias: &str) -> Option<String> {
             Ok(None) if Instant::now() >= deadline => {
                 let _ = child.kill();
                 let _ = child.wait();
+                let _ = reader.join();
                 return None;
             }
             Ok(None) => std::thread::sleep(Duration::from_millis(15)),
-            Err(_) => return None,
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = reader.join();
+                return None;
+            }
         }
     };
+    let buf = reader.join().unwrap_or_default();
     if !status.success() {
         return None;
-    }
-    let mut buf = Vec::new();
-    if let Some(mut stdout) = child.stdout.take() {
-        let _ = std::io::Read::read_to_end(&mut stdout, &mut buf);
     }
     let text = String::from_utf8_lossy(&buf);
     for line in text.lines() {
@@ -260,10 +332,13 @@ impl GitHubHosts {
     }
 
     fn list_signed_in(&self) -> HashSet<String> {
-        let home = std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
-            .map(PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir);
+        let env_dir = |key: &str| std::env::var_os(key).filter(|v| !v.is_empty()).map(PathBuf::from);
+        let home = if cfg!(windows) {
+            env_dir("USERPROFILE").or_else(|| env_dir("HOME"))
+        } else {
+            env_dir("HOME").or_else(|| env_dir("USERPROFILE"))
+        }
+        .unwrap_or_else(std::env::temp_dir);
         let home_str = home.to_string_lossy();
         if let Ok(listed) = self.gh.run_gh(&home_str, &["auth", "status", "--json", "hosts", "--jq", ".hosts | keys[]"], AUTH_STATUS_DEADLINE, None) {
             return listed
@@ -272,10 +347,7 @@ impl GitHubHosts {
                 .filter(|line| !line.is_empty())
                 .collect();
         }
-        let text = match self.gh.run_gh(&home_str, &["auth", "status"], AUTH_STATUS_DEADLINE, None) {
-            Ok(out) => out,
-            Err(err) => err,
-        };
+        let text = self.gh.run_gh_combined(&home_str, &["auth", "status"], AUTH_STATUS_DEADLINE);
         let mut hosts = HashSet::new();
         for line in text.lines() {
             let mut rest = line;
@@ -298,21 +370,16 @@ pub(crate) struct GitHubRemote {
 
 /// Reads each remote's URL and `gh-resolved` mark from git config, matching `readGitHubRemotes` in `github.ts`.
 pub(crate) fn read_github_remotes(cwd: &str, hosts: &GitHubHosts) -> Result<Vec<(String, GitHubRemote)>, String> {
-    let listing = match git(cwd, &["config", "--get-regexp", r"^remote\..*\.(url|gh-resolved)$"], COMMAND_DEADLINE) {
-        Ok(out) => out,
-        Err(err) if err == "git exited with 1." => String::new(),
-        Err(err) => return Err(err),
-    };
+    let listing = run_action_git_config_regexp(cwd, r"^remote\..*\.(url|gh-resolved)$", COMMAND_DEADLINE)?;
     let mut order: Vec<String> = Vec::new();
     let mut map: HashMap<String, (Option<String>, Option<String>)> = HashMap::new();
     for line in listing.split('\n') {
         let trimmed = js_trim(line);
-        let Some((key, value)) = trimmed.split_once(' ') else { continue };
-        let Some(rest) = key.strip_prefix("remote.") else { continue };
-        let (name, field) = if let Some(name) = rest.strip_suffix(".url") {
-            (name, "url")
-        } else if let Some(name) = rest.strip_suffix(".gh-resolved") {
-            (name, "gh-resolved")
+        let Some(rest) = trimmed.strip_prefix("remote.") else { continue };
+        let (name, field, value) = if let Some(at) = rest.find(".url ") {
+            (&rest[..at], "url", &rest[at + ".url ".len()..])
+        } else if let Some(at) = rest.find(".gh-resolved ") {
+            (&rest[..at], "gh-resolved", &rest[at + ".gh-resolved ".len()..])
         } else {
             continue;
         };
@@ -409,6 +476,8 @@ fn open_pull_request_with(gh: &dyn GhRunner, hosts: &GitHubHosts, cwd: &str, bra
     let list: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
     let items = list.as_array().ok_or_else(|| "Expected an array of pull requests from gh.".to_string())?;
     let head = head_repository(cwd, branch, hosts);
+    // Validate every entry in the array up front, matching Node's `openPullRequestSchema.parse(JSON.parse(raw))`.
+    let mut parsed = Vec::with_capacity(items.len());
     for item in items {
         let Some(number) = item.get("number").and_then(Value::as_u64).filter(|&n| n > 0) else {
             return Err("Invalid pull request entry from gh.".into());
@@ -428,11 +497,14 @@ fn open_pull_request_with(gh: &dyn GhRunner, hosts: &GitHubHosts, cwd: &str, bra
         if item.get("state").and_then(Value::as_str).is_none() {
             return Err("Invalid pull request entry from gh.".into());
         }
+        let head_owner = item.pointer("/headRepositoryOwner/login").and_then(Value::as_str);
+        let is_cross = item.get("isCrossRepository").and_then(Value::as_bool) == Some(true);
+        parsed.push((number, title, url, base_ref, head_ref, head_owner, is_cross));
+    }
+    for (number, title, url, base_ref, head_ref, head_owner, is_cross) in parsed {
         if head_ref != branch {
             continue;
         }
-        let head_owner = item.pointer("/headRepositoryOwner/login").and_then(Value::as_str);
-        let is_cross = item.get("isCrossRepository").and_then(Value::as_bool) == Some(true);
         if let Some(ref pushed) = head {
             if !is_own_head(head_owner, is_cross, &pushed.owner, pushed.cross_repository) {
                 continue;
@@ -537,7 +609,7 @@ pub struct HostGitActionServices {
     commit_drafts: CommitDrafts,
     pr_drafts: PullRequestDrafts,
     gh: Arc<dyn GhRunner>,
-    hosts: GitHubHosts,
+    hosts: Arc<GitHubHosts>,
     /// Optional override for tests that supply a custom PR writer without spawning a provider.
     pr_writer_override: Option<PrWriterFn>,
 }
@@ -547,11 +619,21 @@ impl HostGitActionServices {
         Self::with_gh(data_directory, runtime, threads, Arc::new(SystemGh))
     }
 
-    pub fn with_gh(data_directory: PathBuf, runtime: tokio::runtime::Handle, threads: SideWritingThreads, gh: Arc<dyn GhRunner>) -> Self {
-        let hosts = GitHubHosts::new(Arc::clone(&gh));
+    pub fn with_shared_hosts(
+        data_directory: PathBuf,
+        runtime: tokio::runtime::Handle,
+        threads: SideWritingThreads,
+        gh: Arc<dyn GhRunner>,
+        hosts: Arc<GitHubHosts>,
+    ) -> Self {
         let commit_drafts = CommitDrafts::new(data_directory.clone(), runtime.clone(), Arc::clone(&threads));
         let pr_drafts = PullRequestDrafts::new(data_directory.clone(), runtime, threads);
         Self { data_directory, commit_drafts, pr_drafts, gh, hosts, pr_writer_override: None }
+    }
+
+    pub fn with_gh(data_directory: PathBuf, runtime: tokio::runtime::Handle, threads: SideWritingThreads, gh: Arc<dyn GhRunner>) -> Self {
+        let hosts = Arc::new(GitHubHosts::new(Arc::clone(&gh)));
+        Self::with_shared_hosts(data_directory, runtime, threads, gh, hosts)
     }
 
     #[cfg(test)]
@@ -896,5 +978,109 @@ mod tests {
             ("upstream".into(), GitHubRemote { repository: Some(mk("github.com", "org", "app")), gh_resolved: None }),
         ];
         assert_eq!(base_repository(&marked), Some(mk("github.com", "other", "repo")));
+    }
+
+    #[test]
+    fn parse_remote_url_and_github_hosts_match_node_rules() {
+        // Mixed-case scheme & .Git suffix, single trailing slash, port, SCP syntax.
+        let r1 = parse_remote_url("Https://user@GitHub.com:443/Org/Repo.Git/").unwrap();
+        assert_eq!((r1.host.as_str(), r1.ssh, r1.owner.as_str(), r1.name.as_str()), ("github.com", false, "Org", "Repo"));
+        let r2 = parse_remote_url("git@github-work:Org/Repo.git").unwrap();
+        assert_eq!((r2.host.as_str(), r2.ssh), ("github-work", true));
+        // Rejected: multiple trailing slashes, empty userinfo, non-numeric port, local path.
+        assert!(parse_remote_url("https://github.com/o/r///").is_none());
+        assert!(parse_remote_url("https://@github.com/o/r").is_none());
+        assert!(parse_remote_url("https://github.com:abc/o/r").is_none());
+        assert!(parse_remote_url("/tmp/local.git").is_none());
+
+        // Legacy `gh auth status` fallback with signed-in Enterprise host on combined output + SSH alias lookup.
+        struct AliasGh;
+        impl GhRunner for AliasGh {
+            fn run_gh(&self, _: &str, args: &[&str], _: Duration, _: Option<&[u8]>) -> Result<String, String> {
+                if args.contains(&"--json") {
+                    Err("unknown flag: --json".into())
+                } else {
+                    Ok(String::new())
+                }
+            }
+            fn run_gh_combined(&self, _: &str, _: &[&str], _: Duration) -> String {
+                "ghe.corp.example\n  ✓ Logged in to ghe.corp.example account alice\n".into()
+            }
+            fn ssh_hostname(&self, alias: &str) -> Option<String> {
+                (alias == "work").then(|| "github.com".into())
+            }
+        }
+        let hosts = GitHubHosts::new(Arc::new(AliasGh));
+        assert_eq!(
+            hosts.repository("git@work:me/app.git"),
+            Some(GitHubRepository { host: "github.com".into(), owner: "me".into(), name: "app".into() })
+        );
+        assert_eq!(
+            hosts.repository("https://ghe.corp.example/team/svc.git"),
+            Some(GitHubRepository { host: "ghe.corp.example".into(), owner: "team".into(), name: "svc".into() })
+        );
+        assert_eq!(hosts.repository("https://gitlab.example/team/svc.git"), None);
+    }
+
+    #[test]
+    fn template_nested_fallback_base_branch_order_and_writer_fallback() {
+        let f = RepoFixture::new();
+        let rt = runtime();
+        // Single nested template in PULL_REQUEST_TEMPLATE/ is picked; two nested templates return None.
+        let tpl_dir = f.repo.join(".github").join("PULL_REQUEST_TEMPLATE");
+        fs::create_dir_all(&tpl_dir).unwrap();
+        fs::write(tpl_dir.join("default.md"), "## Default template\n").unwrap();
+        f.git(&["add", "-A"]);
+        f.git(&["commit", "-m", "One nested template"]);
+        assert_eq!(pull_request_template(&f.cwd(), "HEAD").as_deref(), Some("## Default template\n"));
+
+        fs::write(tpl_dir.join("bug.md"), "## Bug template\n").unwrap();
+        f.git(&["add", "-A"]);
+        f.git(&["commit", "-m", "Two nested templates"]);
+        assert_eq!(pull_request_template(&f.cwd(), "HEAD"), None);
+        f.git(&["push", "-q"]);
+
+        // Recorded gh-merge-base wins over gh repo view defaultBranchRef.
+        f.git(&["branch", "release"]);
+        f.git(&["push", "-q", "origin", "release"]);
+        f.git(&["switch", "-q", "-c", "feature"]);
+        fs::write(f.repo.join("work.txt"), "feature\n").unwrap();
+        f.git(&["add", "-A"]);
+        f.git(&["commit", "-m", "Subject fallback"]);
+        f.git(&["push", "-q", "-u", "origin", "feature"]);
+        f.git(&["config", "branch.feature.gh-merge-base", "release"]);
+
+        let gh = FakeGh::new(move |args, _| {
+            if args.get(1) == Some(&"list") {
+                return Ok("[]".into());
+            }
+            if args.get(1) == Some(&"create") {
+                return Ok("https://github.com/o/r/pull/88\n".into());
+            }
+            if args.first() == Some(&"repo") {
+                return Ok(json!({ "defaultBranchRef": { "name": "main" } }).to_string());
+            }
+            Ok(String::new())
+        });
+        assert_eq!(base_branch_with(gh.as_ref(), &f.cwd(), "feature"), "release");
+
+        // When writer returns None and no template exists, title falls back to last subject and body to bullet list.
+        let services = HostGitActionServices::with_gh(f.data.clone(), rt.handle().clone(), no_threads(), gh.clone())
+            .with_pr_writer(Arc::new(|_, _| None));
+        let (progress, _) = record_progress();
+        let input = GitActionInput { thread_id: "t".into(), cwd: f.cwd(), action: GitStackedAction::CreatePr, commit_message: None, feature_branch: None, file_paths: None, allow_default_branch: None };
+        let res = run_stacked_action(&input, false, &services, &progress).unwrap();
+        assert_eq!(res.pr.status, "created");
+        assert_eq!(res.pr.base.as_deref(), Some("release"));
+        assert_eq!(res.pr.title.as_deref(), Some("Subject fallback"));
+        let create_call = gh.recorded().into_iter().find(|(a, _)| a.get(1).map(String::as_str) == Some("create")).unwrap();
+        assert_eq!(create_call.1.as_deref(), Some("- Subject fallback"));
+
+        // Reachability failure scrubs credentials via safe_remote.
+        let bad_gh = FakeGh::new(|_, _| Err("fatal: https://user:secret@github.com/o/r.git unreachable".into()));
+        let bad_services = HostGitActionServices::with_gh(f.data.clone(), rt.handle().clone(), no_threads(), bad_gh);
+        let err = run_stacked_action(&input, false, &bad_services, &progress).unwrap_err();
+        assert!(err.starts_with("Could not reach GitHub."), "{err}");
+        assert!(!err.contains("secret"), "credential must be scrubbed: {err}");
     }
 }

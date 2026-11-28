@@ -113,7 +113,7 @@ pub fn side_writing_effort(models: &[AgentModel], model_id: &str) -> Option<Stri
 }
 
 /// JavaScript's `\s`, as the `u` flag reads it: the same set `trim` takes away.
-fn js_whitespace_runs_to_space(text: &str) -> String {
+pub(crate) fn js_whitespace_runs_to_space(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let mut in_run = false;
     for c in text.chars() {
