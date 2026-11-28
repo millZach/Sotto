@@ -115,12 +115,14 @@ test('an agent asks for a secret on a private card, gets a file or a reference, 
     const declined = await answered(page); replies.push(declined)
     expect(json(declined).status).toBe('declined')
 
-    // A one-use reference, typed by Sotto's browser into a password field.
-    await ask(page, { label: 'Staging password', reason: 'To sign in to staging.' })
+    // A one-use reference, typed by Sotto's browser into a password field, on the site of the card's sign-in page alone.
+    await ask(page, { label: 'Staging password', reason: 'To sign in to staging.', url })
     const staging = card(page, 'Staging password')
+    await expect(staging).toContainText(`types it only on ${new URL(url).origin}`)
     await staging.getByLabel('Value').fill(CANARY)
     await staging.getByRole('button', { name: 'Save securely' }).click()
     const refReply = await answered(page); replies.push(refReply)
+    expect(json(refReply).note).toContain(`only on ${new URL(url).origin}`)
     const secretRef = json(refReply).secretRef as string
     expect(secretRef).toMatch(/^secret-ref:[0-9a-f]{32}$/u)
     const agent = async (name: string, args: unknown): Promise<ToolReply> => {
