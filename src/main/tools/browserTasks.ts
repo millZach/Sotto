@@ -450,8 +450,10 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   }
   private revoke(record: R): void {
     record.page.sharedOrigin = null
-    // The page is the user's again: a download that starts on it now is not the agent's, however lately it acted.
+    // The page is the user's again: a download that starts on it now is not the agent's, however lately it acted, and
+    // even while an action it started is still finishing.
     this.agentActedAt.delete(record.page.id)
+    this.acting.delete(record.page.id)
     this.invalidate(record)
     this.pageLeft(record, 'hidden')
     record.automation.dispose()
@@ -506,7 +508,9 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     record.madePrivate = !request.enabled
     if (request.enabled) record.automation.observe()
     if (!request.enabled) {
+      // As `revoke`: what the page downloads from now on is the user's, an action of the agent's still finishing or not.
       this.agentActedAt.delete(record.page.id)
+      this.acting.delete(record.page.id)
       // Detaching from the page turns its overlay off with it.
       this.pageLeft(record, 'hidden')
       record.automation.dispose()

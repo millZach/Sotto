@@ -1599,6 +1599,23 @@ describe('downloads in the service (ADR-0222)', () => {
     } finally { mask.mockRestore() }
   })
 
+  it('marks a download that starts after the user stopped sharing the page during the agent\'s click as the user\'s (the fourth review, P-N4.2)', async () => {
+    const { service, target, view, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Download the statement' }))
+    const send = vi.mocked(view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => {
+      if (method === 'Input.dispatchMouseEvent' && (params as { type?: string }).type === 'mousePressed') {
+        // The user stops sharing while the click is still going, and only then does the page start its download.
+        unwrap(await service.share({ ...target, enabled: false }))
+        started('statement.pdf')
+      }
+      return plain(method, params)
+    })
+    await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } })
+    expect(unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId })).find(download => download.file === 'statement.pdf')).toMatchObject({ byAgent: false })
+  })
+
   it('tells the window of a task whose output, with the note of a download, is longer than the window takes (the fourth review, P-L1)', async () => {
     const { service, target, emit, started } = await withDownloads(() => true)
     unwrap(await service.share({ ...target, enabled: true }))
