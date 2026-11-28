@@ -182,7 +182,10 @@ export class BrowserDownloads {
   startedSince(threadId: string, pageId: string, since: number, shared: (pageId: string) => boolean, masked: Masked = (_pageId, text) => text): string[] {
     return this.list(threadId).filter(download => download.pageId === pageId && download.startedAt >= since && this.known(download, shared)).map(download => this.agentName(this.records.get(download.id)!, masked))
   }
-  /** A download's name as the agent is told it: the page's suggestion with a secret typed there masked, then made safe. */
+  /**
+   * A download's name as the agent is told it: the name Chromium gives, with a secret typed there masked, then made safe.
+   * Chromium has already made each character a file name cannot hold `_`, so the mask looks for that copy too (`secretMatchers`).
+   */
   private agentName(record: DownloadRecord, masked: Masked): string {
     return record.view.pageId === null ? record.view.file : safeDownloadName(masked(record.view.pageId, record.suggested))
   }

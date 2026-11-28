@@ -1,7 +1,7 @@
 import { presetSize, type BrowserAction, type BrowserAppearance, type BrowserBounds, type BrowserCapture, type BrowserDialog, type BrowserTargetFields } from '../../shared/browser'
 import { ToolFailure, fail } from './common'
 import { SNAPSHOT_TEXT, fieldContents, formatSnapshot, keyEvents, modifierMask, type AXNode } from './pageSnapshot'
-import { MASK, maskSecrets, secretMatcher, type SecretMatcher } from './secretMask'
+import { MASK, maskSecrets, secretMatchers, type SecretMatcher } from './secretMask'
 
 /**
  * The page's debugger, as a page automation drives it: Electron's own on the desktop, a DevTools session over a pipe
@@ -280,12 +280,13 @@ export abstract class PageAutomation {
   /** What the page's console and network reported, each read `overread` past what is said of it (`told`). */
   private readonly errors: { kind: string; message: string }[] = []
   /**
-   * Secrets typed into this page from a secret request (ADR-0219), each with the matcher that finds it once `masked`
-   * has made it, held only in memory while the page is open, so whatever the page says back (its words, errors, an
+   * Secrets typed into this page from a secret request (ADR-0219), and what a field kept of one (`typeSecret`), each with
+   * the matchers that find it and its copies (`secretMatchers`) once `masked` has made them, held only in memory while
+   * the page is open, so whatever the page says back (its words, errors, an
    * evaluated value) reaches the agent with each one masked. Once one is here, `evaluate` stays off for the page's life
    * (`evaluate`), and `wait_for` and selectors cannot test it (`waitFor`, `checkedSelector`, `comparesValue`).
    */
-  private readonly typedSecrets = new Map<string, SecretMatcher | null | undefined>()
+  private readonly typedSecrets = new Map<string, readonly SecretMatcher[] | undefined>()
   /**
    * A secret was typed into the document loaded now, so a picture of the page could show it (ADR-0222, decision 12).
    * Only a cross-document navigation that commits clears it: a hash change, a load that never commits, Stop sharing or
@@ -625,13 +626,13 @@ export abstract class PageAutomation {
     for (const secret of this.typedSecrets.keys()) longest = Math.max(longest, secret.length)
     return longest * 15
   }
-  /** The matcher for each secret typed here, each made once. */
-  private matchers(): (SecretMatcher | null)[] {
-    const matchers: (SecretMatcher | null)[] = []
+  /** The matchers for each secret typed here and its copies, each made once. */
+  private matchers(): SecretMatcher[] {
+    const matchers: SecretMatcher[] = []
     for (const [secret, known] of this.typedSecrets) {
-      const matcher = known === undefined ? secretMatcher(secret) : known
-      if (known === undefined) this.typedSecrets.set(secret, matcher)
-      matchers.push(matcher)
+      const made = known ?? secretMatchers(secret)
+      if (known === undefined) this.typedSecrets.set(secret, made)
+      matchers.push(...made)
     }
     return matchers
   }
@@ -919,6 +920,10 @@ export abstract class PageAutomation {
       // host sends back is a ToolFailure too, and its words are masked in case they quote the command.
       return fail(error instanceof ToolFailure ? error.code : 'unavailable', this.masked(`${sentenceOf(error)} The secret may not have been typed, and ${SECRET_SPENT}`))
     }
+    // A field can keep less than was typed, cut at its maxlength or with no line break, and a form sends what it keeps,
+    // which no mask of the whole secret finds, so what it holds now is masked too. One that cannot be read is left.
+    const kept = await this.fieldText(field).catch(() => '')
+    if (typeof kept === 'string' && kept !== '' && !kept.includes(value) && !this.typedSecrets.has(kept)) this.typedSecrets.set(kept, undefined)
   }
   /** Refuses a secret where something of the agent's could catch it: a document it ran script in, or a recording. */
   private secretMayGo(): void {
@@ -1006,19 +1011,21 @@ export abstract class PageAutomation {
    */
   private async fieldHoldsSecret(backendNodeId?: number): Promise<boolean> {
     if (!this.typedSecrets.size) return false
-    let text: unknown
+    const text = await this.fieldText(backendNodeId)
+    return typeof text === 'string' && text !== '' && this.masked(text, '') !== text
+  }
+  /** The text of the field `backendNodeId` names, or of the focused one (`FIELD_TEXT`), as the page answers it. Read only in Sotto. */
+  private async fieldText(backendNodeId?: number): Promise<unknown> {
     if (backendNodeId === undefined) {
       const read = await this.send('Runtime.evaluate', { expression: `(${FIELD_TEXT}).call(document.activeElement || document.body)`, returnByValue: true }) as { result?: { value?: unknown } }
-      text = read.result?.value
-    } else {
-      const resolved = await this.send('DOM.resolveNode', { backendNodeId, objectGroup: 'sotto-browser-field' }) as { object?: { objectId?: string } }
-      const objectId = resolved.object?.objectId
-      text = objectId ? await this.cleaningUp(async () => {
-        const read = await this.send('Runtime.callFunctionOn', { objectId, functionDeclaration: FIELD_TEXT, returnByValue: true }) as { result?: { value?: unknown } }
-        return read.result?.value
-      }, () => this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-field' })) : ''
+      return read.result?.value
     }
-    return typeof text === 'string' && text !== '' && this.masked(text, '') !== text
+    const resolved = await this.send('DOM.resolveNode', { backendNodeId, objectGroup: 'sotto-browser-field' }) as { object?: { objectId?: string } }
+    const objectId = resolved.object?.objectId
+    return objectId ? await this.cleaningUp(async () => {
+      const read = await this.send('Runtime.callFunctionOn', { objectId, functionDeclaration: FIELD_TEXT, returnByValue: true }) as { result?: { value?: unknown } }
+      return read.result?.value
+    }, () => this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-field' })) : ''
   }
   /**
    * One picture of the page as Chromium drew it, within the snapshot deadline. `rect` is in the visual viewport's CSS

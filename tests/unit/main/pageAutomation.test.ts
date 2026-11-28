@@ -1145,6 +1145,51 @@ describe('a secret a site writes back into a later document (after the third rev
   })
 })
 
+describe('the copies of a typed secret a page or Chromium makes (after the third review)', () => {
+  /** A page whose password field keeps at most `keeps` of what is typed into it, and answers Sotto's read of it. */
+  const keeping = (keeps: (typed: string) => string): FakePage => {
+    const fake = page(), base = fake.handle
+    let held = ''
+    fake.handle = (method, params) => {
+      if (method === 'Input.insertText') held = keeps(held + String(params.text))
+      if (method === 'DOM.resolveNode') return { object: { objectId: `node-${String(params.backendNodeId)}` } }
+      if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('isContentEditable')) return { result: { value: held } }
+      return base(method, params)
+    }
+    return fake
+  }
+
+  it('masks the secret with its spaces closed up, as a page shows its text', async () => {
+    const automation_ = automation(keeping(typed => typed))
+    await automation_.typeSecret(given('correct  horse\tstaple'), go, { selector: '#password' })
+    for (const shown of ['Saved: correct horse staple.', 'Saved: correct horse staple .']) expect(automation_.masked(shown)).not.toContain('horse')
+  })
+
+  it('masks a download\'s name as Chromium gives it, each character a file name cannot hold made safe', async () => {
+    const automation_ = automation(keeping(typed => typed))
+    await automation_.typeSecret(given('pin:4821*ok?'), go, { selector: '#password' })
+    // Chromium makes the page's name safe before Sotto is told it, so the name as the page wrote it is never seen.
+    for (const name of ['pin_4821_ok_.txt', 'pin-4821-ok-.txt']) expect(automation_.masked(name), name).toBe('••••••••.txt')
+  })
+
+  it('masks what a field kept of the secret, cut at its length or with no line break, which a form sent by GET carries', async () => {
+    for (const [value, keeps, kept] of [
+      ['Cobalt-7731-staple', (typed: string) => typed.slice(0, 8), 'Cobalt-7'],
+      ['line-one\nline-two', (typed: string) => typed.replace(/[\r\n]/gu, ''), 'line-oneline-two'],
+    ] as const) {
+      const automation_ = automation(keeping(keeps))
+      await automation_.typeSecret(given(value), go, { selector: '#password' })
+      expect(automation_.masked(`https://shop.example/login?pw=${kept}&next=1`), value).toBe('https://shop.example/login?pw=••••••••&next=1')
+    }
+    // A field Sotto cannot read leaves the secret masked as it was typed, and the typing done.
+    const unread = page(), base = unread.handle, automation_ = automation(unread)
+    unread.handle = (method, params) => method === 'Runtime.callFunctionOn' ? Promise.reject(new Error('Cannot find context')) : base(method, params)
+    await automation_.typeSecret(given('Cobalt-7731-staple'), go, { selector: '#password' })
+    expect(unread.calls('Input.insertText')).toEqual([{ text: 'Cobalt-7731-staple' }])
+    expect(automation_.masked('pw=Cobalt-7731-staple')).toBe('pw=••••••••')
+  })
+})
+
 describe('the masker cuts a text without splitting a secret (after the third review)', () => {
   const hunter = secretMatcher('hunter2-secret')
   it('counts the cut in the text, and runs it on to the end of a mask it would fall inside', () => {

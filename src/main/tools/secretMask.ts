@@ -135,6 +135,19 @@ export function secretMatcher(secret: string): SecretMatcher | null {
   if (characters < MASK_MINIMUM) return null
   return { plain: needleOf(Uint8Array.from(bytes)), spaced: needleOf(Uint8Array.from(bytes, byte => byte === PLUS ? SPACE : byte)) }
 }
+/** The characters a file name cannot hold, which Chromium makes `_` in a download's name before Sotto is told it. */
+// eslint-disable-next-line no-control-regex -- A typed secret, which may hold any character.
+const NOT_IN_FILE_NAMES = /[\x00-\x1f\x7f"*/:<>?\\|‪-‮⁦-⁩]/gu
+/**
+ * The matchers for a typed secret and the copies of it a page or Chromium makes with no script of the page's: with each
+ * run of spaces closed up to one, and with none at either end, as a page shows its text; and with each character a file
+ * name cannot hold made `_` or `-`, as a download is named. Each is made once, and one too short to mask is left out.
+ */
+export function secretMatchers(secret: string): SecretMatcher[] {
+  const closed = secret.replace(/\s+/gu, ' ')
+  const forms = new Set([secret, closed, closed.trim(), secret.replace(NOT_IN_FILE_NAMES, '_'), secret.replace(NOT_IN_FILE_NAMES, '-')])
+  return [...forms].map(secretMatcher).filter(matcher => matcher !== null)
+}
 
 /**
  * Which characters of `text` lie inside a copy of `keep`, as a running count, so whether a stretch lies wholly inside
