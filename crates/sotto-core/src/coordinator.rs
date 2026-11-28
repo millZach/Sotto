@@ -752,6 +752,16 @@ enum AsyncCommandOutcome {
         record: Option<AgentThreadWorktree>,
         result: Result<String, ChangeRefused>,
     },
+    /// Stacked `git-action` finished (commit, push, create PR, or any prefix), or refused before starting.
+    GitAction {
+        folder: Option<String>,
+        checkout_held: bool,
+        thread_id: String,
+        record: Option<AgentThreadWorktree>,
+        started: bool,
+        progress: Option<Box<crate::git_action::GitActionProgress>>,
+        result: Result<Box<crate::git_action::GitActionResult>, ChangeRefused>,
+    },
     /// A thread's working copy as the user chose it before its first send, or why not, with whether a checkout read was
     /// held while it was chosen.
     WorkingCopyChosen {
@@ -880,6 +890,11 @@ enum ActorMessage {
         client: ClientContext,
         outcome: Box<AsyncCommandOutcome>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
+    },
+    /// Live progress update for a running stacked `git-action` on `thread_id`.
+    GitActionProgress {
+        thread_id: String,
+        progress: Box<crate::git_action::GitActionProgress>,
     },
     /// A change to a thread's checkout holds it, as Node's `acquireCheckoutMutationInFolder` reserves one: refused, in
     /// Node's words, while another change holds it, a send in it is on its way, or a thread in it works, waits on an answer
@@ -2339,6 +2354,15 @@ impl CoordinatorActor {
                 let _ = reply.send(waiting);
             }
             ActorMessage::FollowupSent { item_id, draft_id, outcome } => self.followup_sent(&item_id, &draft_id, outcome),
+            ActorMessage::GitActionProgress { thread_id, progress } => {
+                if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                    if let Ok(value) = serde_json::to_value(&progress) {
+                        thread.extra.insert("gitAction".into(), value);
+                    }
+                    self.shell_dirty = true;
+                    self.flush_dirty();
+                }
+            }
             ActorMessage::AsyncCommandDone {
                 lane,
                 client,
@@ -2573,6 +2597,8 @@ impl CoordinatorActor {
             "restore-thread-branch" => self.cmd_restore_thread_branch(lane, client, &command, reply),
             // Pull, Switch branch and Initialize Git wait on Git in the thread's lane, with its checkout held.
             "git-pull" | "git-switch-branch" | "git-init" => self.cmd_local_git(lane, client, &command, reply),
+            // Stacked commit / push / pull request runs in the thread's lane with its checkout held.
+            "git-action" => self.cmd_git_action(lane, client, &command, reply),
             // Choosing a thread's working copy before its first send reads its folder with Git in the thread's lane.
             "configure-thread-working-copy" => self.cmd_configure_thread_working_copy(lane, client, &command, reply),
 
@@ -3752,6 +3778,55 @@ impl CoordinatorActor {
                     }
                 }
             }
+            // Stacked `git-action` outcome, matching `runGitAction` (`workspace.ts`) and `gitCommand` (`control.ts`):
+            // admission refusals before start keep the previous `gitAction` record and name any checkout holder; once
+            // started, the final progress (done or failed) is saved on the thread, created/opened PRs are linked, and
+            // `error` mirrors a failed action's error.
+            AsyncCommandOutcome::GitAction { folder, checkout_held, thread_id, record, started, progress, result } => {
+                if let Some(folder) = folder {
+                    self.held_worktree_folders.release(&folder);
+                }
+                if checkout_held {
+                    self.checkout_holds.remove(&thread_id);
+                }
+                if let Some(record) = record {
+                    self.keep_worktree_record(&thread_id, record);
+                }
+                if started {
+                    let mut failed_error: Option<String> = None;
+                    if let Some(progress) = progress {
+                        if progress.status == "failed" {
+                            failed_error = Some(progress.error.clone().unwrap_or_else(|| "The Git action failed.".into()));
+                        }
+                        if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                            if let Ok(value) = serde_json::to_value(&progress) {
+                                thread.extra.insert("gitAction".into(), value);
+                            }
+                            if let Ok(ref action_result) = result {
+                                if matches!(action_result.pr.status, "created" | "opened_existing") {
+                                    if let (Some(url), Some(number)) = (action_result.pr.url.as_deref(), action_result.pr.number) {
+                                        let title = action_result
+                                            .pr
+                                            .title
+                                            .clone()
+                                            .unwrap_or_else(|| format!("Pull request #{number}"));
+                                        link_pull_request_record(thread, number, url, &title, "created");
+                                    }
+                                }
+                            }
+                        }
+                        self.save_workspace();
+                        self.shell_dirty = true;
+                    }
+                    self.error = failed_error;
+                } else if let Err(refused) = result {
+                    let hold = refused.checkout_hold();
+                    self.error = Some(refused.words);
+                    if let Some(hold) = hold {
+                        return Ok(self.shell_with_checkout_hold(client, hold));
+                    }
+                }
+            }
             // The chosen working copy is the thread's record, the shared folder its working folder, and its status is read
             // now, so the toolbar knows it is a repository without waiting, as Node's `configureThreadWorkingCopy`.
             AsyncCommandOutcome::WorkingCopyChosen { thread_id, read_held, result } => {
@@ -4706,6 +4781,119 @@ impl CoordinatorActor {
                 }
             };
             let outcome = AsyncCommandOutcome::LocalGit { folder, checkout_held, thread_id, record, result };
+            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+        });
+    }
+
+    /// Runs T3's stacked `git-action` (commit, push, pull request, or any prefix) in the thread's lane with its
+    /// checkout held, wiring commit-message and pull-request drafting to the thread's own provider (ADR-0026, ADR-0027).
+    fn cmd_git_action(&mut self, lane: Option<String>, client: ClientContext, command: &Map<String, Value>, reply: oneshot::Sender<Result<Value, CoordinatorError>>) {
+        let Some(git_cmd) = crate::git_action::GitActionCommand::from_command(command) else {
+            return self.finish_sync_command(lane, &client, Err(CoordinatorError::invalid(HostErrorCode::InvalidRequest.default_message())), reply);
+        };
+        self.error = None;
+        let thread_id = git_cmd.thread_id.clone();
+        let Some(thread) = self.threads.iter().find(|t| t.id == thread_id) else {
+            return self.refuse_git_command(lane, &client, SELECT_AVAILABLE_THREAD.to_string().into(), reply);
+        };
+        let checkout = match thread.worktree.as_ref() {
+            Some(wt) if wt.mode == "independent" && wt.path.is_some() => wt.path.clone().unwrap_or_default(),
+            _ => self.checkout_folder(thread),
+        };
+        if checkout.is_empty() {
+            return self.refuse_git_command(lane, &client, NO_GIT_FOLDER.to_string().into(), reply);
+        }
+        if let Some(holder) = own_checkout_holder(thread) {
+            return self.refuse_git_command(lane, &client, holder.refused(Some(&thread_id)), reply);
+        }
+        let candidates = self.checkout_candidates(&thread_id);
+        let project_path = self.projects.iter().find(|p| p.id == thread.project_id).map(|p| p.path.clone()).unwrap_or_default();
+        let working = crate::git_local::ThreadFolder {
+            worktree: thread.worktree.clone(),
+            working_directory: thread.working_directory.clone(),
+            project_path,
+            started: session_started(thread),
+        };
+        // Side-writing eligibility matches Node's `workspace.writeShortText`: visible, not a council judge, session
+        // started, and provider adapter present; Watcher's thread carries `watcher: true`.
+        let visible = thread.extra.get("hidden") != Some(&Value::Bool(true));
+        let council_judge = thread.extra.get("councilJudge") == Some(&Value::Bool(true));
+        let provider_id = if !thread.provider_id.is_empty() {
+            thread.provider_id.clone()
+        } else {
+            parse_public_provider_entity_id(&thread.model_id)
+                .map(|(p, _, _)| p.to_string())
+                .unwrap_or_default()
+        };
+        let side_thread = if visible && !council_judge && session_started(thread) {
+            self.providers.get(&provider_id).cloned().map(|provider| crate::side_writing::SideWritingThread {
+                provider,
+                watcher: matches!(thread.kind.as_deref(), Some("watcher" | "watcher-history")),
+            })
+        } else {
+            None
+        };
+        let expected_id = thread_id.clone();
+        let side_threads: crate::side_writing::SideWritingThreads = Arc::new(move |id: String| {
+            let entry = (id == expected_id).then(|| side_thread.clone()).flatten();
+            Box::pin(async move { entry })
+        });
+        let (self_tx, data_directory, runtime) = (self.self_tx.clone(), self.data_directory.clone(), tokio::runtime::Handle::current());
+        tokio::task::spawn_blocking(move || {
+            let kept = |current: Option<AgentThreadWorktree>| current.filter(|record| Some(record) != working.worktree.as_ref());
+            let held = crate::worktree_reclaim::threads_in_checkout(&checkout, &candidates)
+                .map_err(ChangeRefused::from)
+                .and_then(|(key, sharing)| hold_checkout(&self_tx, &thread_id, &checkout, key, sharing));
+            let checkout_held = held.is_ok();
+            let (folder, record, started, progress, result) = match held {
+                Err(refused) => (None, None, false, None, Err(refused)),
+                Ok(()) => {
+                    let folder = working
+                        .worktree
+                        .as_ref()
+                        .and_then(|wt| wt.path.clone())
+                        .filter(|folder| hold_folder(&self_tx, &thread_id, folder, false).is_some());
+                    let (mut current, cwd_res) = crate::git_local::prepare_folder(&data_directory, &working);
+                    match cwd_res {
+                        Err(words) => (folder, kept(current), false, None, Err(ChangeRefused::from(words))),
+                        Ok(cwd) => {
+                            let initial = crate::git_action::GitActionProgress::running(&git_cmd.action_id, git_cmd.action, now_iso());
+                            let _ = self_tx.send(ActorMessage::GitActionProgress { thread_id: thread_id.clone(), progress: Box::new(initial.clone()) });
+                            let state = Arc::new(std::sync::Mutex::new(initial));
+                            let progress_state = Arc::clone(&state);
+                            let progress_tx = self_tx.clone();
+                            let progress_tid = thread_id.clone();
+                            let progress_cb: crate::git_action::Progress = Arc::new(move |event| {
+                                let snapshot = {
+                                    let mut guard = progress_state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                                    guard.apply(&event);
+                                    guard.clone()
+                                };
+                                let _ = progress_tx.send(ActorMessage::GitActionProgress { thread_id: progress_tid.clone(), progress: Box::new(snapshot) });
+                            });
+                            let services = crate::github_pr::HostGitActionServices::new(data_directory.clone(), runtime, side_threads);
+                            let input = crate::git_action::GitActionInput::new(&git_cmd, cwd);
+                            let action_res = crate::git_action::run_stacked_action(&input, true, &services, &progress_cb);
+                            let final_progress = {
+                                let mut guard = state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                                guard.finish(action_res.clone(), now_iso());
+                                guard.clone()
+                            };
+                            current = crate::git_local::inspect_after_change(current, false);
+                            let mut record = kept(current.clone());
+                            let read = record.clone().or_else(|| current.clone()).or_else(|| working.worktree.clone()).filter(|wt| wt.status == "ready" && !wt.reclaimed());
+                            if let Some(mut wt) = read {
+                                if let Some(path) = wt.path.clone() {
+                                    wt.git = Some(probe_git_worktree(&path));
+                                    record = Some(wt);
+                                }
+                            }
+                            (folder, record, true, Some(Box::new(final_progress)), action_res.map(Box::new).map_err(ChangeRefused::from))
+                        }
+                    }
+                }
+            };
+            let outcome = AsyncCommandOutcome::GitAction { folder, checkout_held, thread_id, record, started, progress, result };
             let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
         });
     }
@@ -6609,6 +6797,87 @@ fn load_persisted_workspace(dir: &Path) -> Result<LoadedWorkspace, String> {
 /// Takes threads' entries out of the pull requests Node's workspace keeps unlinked (`unlinkedPullRequests` in
 /// `workspace.json`), which this host carries as they were, as Node's workspace lets a deleted or cleared thread's go:
 /// a list left empty goes too, as Node's `syncUnlinkedPullRequestsState` deletes one.
+const GIT_PULL_REQUEST_LINKS_MAX: usize = 50;
+
+/// Mirrors `pullRequestKey` (`src/shared/gitPullRequests.ts`): accepts only `https://github.com/<owner>/<name>/pull/<num>`
+/// (up to 2,048 UTF-16 code units, optional trailing path/query/hash) and keys it as `owner/name#number` lowercased.
+fn github_pull_request_key(url: &str) -> Option<String> {
+    let trimmed = url.trim();
+    if trimmed.encode_utf16().count() > 2_048 {
+        return None;
+    }
+    let rest = trimmed.get(.."https://github.com/".len()).filter(|p| p.eq_ignore_ascii_case("https://github.com/"))?;
+    let rest = &trimmed[rest.len()..];
+    let (owner, rest) = rest.split_once('/')?;
+    let (name, rest) = rest.split_once('/')?;
+    let (segment, rest) = rest.split_once('/')?;
+    if owner.is_empty()
+        || name.is_empty()
+        || !segment.eq_ignore_ascii_case("pull")
+        || owner.chars().any(|c| c.is_whitespace() || c == '?' || c == '#')
+        || name.chars().any(|c| c.is_whitespace() || c == '?' || c == '#')
+    {
+        return None;
+    }
+    let num_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let number = &rest[..num_end];
+    if number.is_empty() || !number.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    if rest[num_end..].chars().any(char::is_whitespace) {
+        return None;
+    }
+    Some(format!("{owner}/{name}#{number}").to_ascii_lowercase())
+}
+
+/// Mirrors `linkPullRequestRecord` (`src/main/agents/workspace.ts`): deduplicates by `github_pull_request_key`,
+/// preserves `source` and `linkedAt` on update, and evicts settled links before open ones when at the 50-link limit.
+fn link_pull_request_record(thread: &mut AgentThread, number: u64, url: &str, title: &str, source: &str) {
+    let Some(key) = github_pull_request_key(url) else {
+        return;
+    };
+    let mut links = thread
+        .extra
+        .get("pullRequests")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let clipped_title = crate::workspace::clip_utf16(title, 500).to_string();
+    let existing_idx = links.iter().position(|item| {
+        item.get("url")
+            .and_then(Value::as_str)
+            .and_then(github_pull_request_key)
+            .as_deref()
+            == Some(key.as_str())
+    });
+    if let Some(idx) = existing_idx {
+        if let Some(obj) = links[idx].as_object_mut() {
+            obj.insert("number".into(), json!(number));
+            obj.insert("url".into(), Value::String(url.to_string()));
+            obj.insert("title".into(), Value::String(clipped_title));
+            obj.insert("state".into(), Value::String("open".into()));
+            obj.insert("draft".into(), Value::Bool(false));
+        }
+    } else {
+        while links.len() >= GIT_PULL_REQUEST_LINKS_MAX {
+            let settled_idx = links
+                .iter()
+                .position(|item| item.get("state").and_then(Value::as_str) != Some("open"));
+            links.remove(settled_idx.unwrap_or(0));
+        }
+        links.push(json!({
+            "number": number,
+            "url": url,
+            "title": clipped_title,
+            "state": "open",
+            "draft": false,
+            "source": source,
+            "linkedAt": now_iso(),
+        }));
+    }
+    thread.extra.insert("pullRequests".into(), Value::Array(links));
+}
+
 fn forget_unlinked_pull_requests(workspace: &mut Map<String, Value>, gone: impl Fn(&str) -> bool) {
     let Some(Value::Array(entries)) = workspace.get_mut("unlinkedPullRequests") else { return };
     let before = entries.len();
@@ -7552,6 +7821,108 @@ mod tests {
         assert_eq!((&shell["error"], &shell["notice"]), (&Value::Null, &json!("Switched to main.")));
         assert_eq!(branch(), "main");
         coord.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn git_action_commits_records_progress_and_refuses_while_checkout_is_held() {
+        let dir = tempdir().unwrap();
+        let base = std::fs::canonicalize(dir.path()).map(|p| PathBuf::from(p.to_string_lossy().trim_start_matches(r"\\?\"))).unwrap();
+        let project = base.join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        fixture_git(&project, &["init", "-q", "-b", "main"]);
+        std::fs::write(project.join("README.md"), "hello\n").unwrap();
+        fixture_git(&project, &["add", "."]);
+        fixture_git(&project, &["commit", "-q", "-m", "First"]);
+
+        let mock = Arc::new(MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock.clone());
+        let coord = CoordinatorHandle::spawn(base.join("data"), "h1".into(), true, providers).unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| {
+            let (coord, client) = (coord.clone(), client.clone());
+            async move { coord.run_command(client, command.as_object().unwrap().clone()).await }
+        };
+        run(json!({ "type": "connect", "provider": "codex" })).await.unwrap();
+        let shell = run(json!({ "type": "create-project", "provider": "codex", "title": "Demo", "path": project.to_string_lossy(), "useExisting": true })).await.unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let (tid, busy) = ("00000000-0000-4000-8000-0000000000d1", "00000000-0000-4000-8000-0000000000d2");
+        for (id, title) in [(tid, "Action"), (busy, "Busy")] {
+            run(json!({ "type": "create-thread", "threadId": id, "projectId": project_id, "title": title, "titleSource": "user",
+                "modelId": "native:codex:model:fixture-model", "workingCopy": "shared" })).await.unwrap();
+        }
+
+        // Invalid shape -> invalid_request; missing thread -> refused in host state (not invalid_request).
+        let bad = run(json!({ "type": "git-action", "threadId": tid, "actionId": "not-a-uuid", "action": "commit" })).await;
+        assert!(bad.is_err());
+        let missing = run(json!({ "type": "git-action", "threadId": "00000000-0000-4000-8000-0000000000d9", "actionId": "123e4567-e89b-42d3-a456-426614174000", "action": "commit", "commitMessage": "Hi" })).await.unwrap();
+        assert_eq!(missing["error"], SELECT_AVAILABLE_THREAD);
+
+        // Commit via git-action succeeds, writes gitAction progress + result onto the thread, and persists it.
+        std::fs::write(project.join("README.md"), "updated\n").unwrap();
+        let action_id = "123e4567-e89b-42d3-a456-426614174001";
+        let shell = run(json!({ "type": "git-action", "threadId": tid, "actionId": action_id, "action": "commit", "commitMessage": "Update README" })).await.unwrap();
+        assert_eq!(shell["error"], Value::Null);
+        let thread = shell["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == tid).unwrap();
+        assert_eq!(thread["gitAction"]["actionId"], action_id);
+        assert_eq!(thread["gitAction"]["status"], "done");
+        assert_eq!(thread["gitAction"]["result"]["commit"]["status"], "created");
+        assert_eq!(thread["gitAction"]["result"]["commit"]["subject"], "Update README");
+        let last_subject = String::from_utf8_lossy(&Command::new("git").args(["log", "-1", "--format=%s"]).current_dir(&project).output().unwrap().stdout).trim().to_string();
+        assert_eq!(last_subject, "Update README");
+
+        // Admission refusal while another thread works in the same checkout preserves the previous gitAction and sets checkoutHold.
+        run(json!({ "type": "manual-send", "threadId": busy, "text": "Working" })).await.unwrap();
+        let refused = run(json!({ "type": "git-action", "threadId": tid, "actionId": "123e4567-e89b-42d3-a456-426614174002", "action": "commit", "commitMessage": "Blocked" })).await.unwrap();
+        assert_eq!(refused["checkoutHold"], json!({ "threadId": busy }));
+        let thread_after_refusal = refused["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == tid).unwrap();
+        assert_eq!(thread_after_refusal["gitAction"]["actionId"], action_id, "admission refusal must preserve previous gitAction");
+        mock.complete_turn(busy, "Done");
+        wait_until_idle(&coord, busy).await;
+
+        // Post-start refusal (create_pr on a dirty tree) records failed gitAction and sets shell.error.
+        std::fs::write(project.join("README.md"), "dirty\n").unwrap();
+        let failed = run(json!({ "type": "git-action", "threadId": tid, "actionId": "123e4567-e89b-42d3-a456-426614174003", "action": "create_pr" })).await.unwrap();
+        assert_eq!(failed["error"], "Commit local changes before creating a PR.");
+        let thread_failed = failed["host"]["threads"].as_array().unwrap().iter().find(|t| t["id"] == tid).unwrap();
+        assert_eq!(thread_failed["gitAction"]["actionId"], "123e4567-e89b-42d3-a456-426614174003");
+        assert_eq!(thread_failed["gitAction"]["status"], "failed");
+        assert_eq!(thread_failed["gitAction"]["error"], "Commit local changes before creating a PR.");
+        coord.shutdown().await;
+    }
+
+    #[test]
+    fn link_pull_request_record_deduplicates_and_evicts_settled_first() {
+        let mut thread = AgentThread {
+            id: "t".into(), project_id: "p".into(), provider_id: "codex".into(), title: "T".into(),
+            title_source: None, kind: None, status: "idle".into(), model_id: "native:codex:model:x".into(),
+            reasoning_effort: None, runtime_mode: None, provider_mode: None, native_session_started: true,
+            created_at: String::new(), updated_at: String::new(), settled_at: None, workspace_settled_at: None,
+            delegated_by: None, speed: None, working_directory: None, last_user_message_id: None, last_turn: None,
+            messages: Vec::new(), requests: Vec::new(), activities: Vec::new(), summary: crate::AgentThreadSummary::default(),
+            worktree: None, extra: Map::new(),
+        };
+        link_pull_request_record(&mut thread, 12, "https://github.com/Org/Repo/pull/12", "First title", "linked");
+        let original_at = thread.extra["pullRequests"][0]["linkedAt"].as_str().unwrap().to_string();
+        // Same PR with different casing updates title while preserving source and linkedAt.
+        link_pull_request_record(&mut thread, 12, "https://github.com/org/repo/pull/12/files", "Updated title", "created");
+        assert_eq!(thread.extra["pullRequests"].as_array().unwrap().len(), 1);
+        assert_eq!(thread.extra["pullRequests"][0]["title"], "Updated title");
+        assert_eq!(thread.extra["pullRequests"][0]["source"], "linked");
+        assert_eq!(thread.extra["pullRequests"][0]["linkedAt"], original_at);
+
+        // Non-GitHub URLs are ignored.
+        link_pull_request_record(&mut thread, 99, "https://gitlab.com/org/repo/pull/99", "Ignored", "created");
+        assert_eq!(thread.extra["pullRequests"].as_array().unwrap().len(), 1);
+
+        // At max 50 links, settled links are evicted before open ones.
+        thread.extra["pullRequests"][0]["state"] = json!("merged");
+        for n in 13..=(12 + GIT_PULL_REQUEST_LINKS_MAX as u64) {
+            link_pull_request_record(&mut thread, n, &format!("https://github.com/org/repo/pull/{n}"), "Open", "created");
+        }
+        let links = thread.extra["pullRequests"].as_array().unwrap();
+        assert_eq!(links.len(), GIT_PULL_REQUEST_LINKS_MAX);
+        assert!(!links.iter().any(|l| l["number"] == 12), "merged PR #12 should have been evicted first");
     }
 
     /// Restore branch in a project checkout two threads share, as Node's `acquireCheckoutMutationInFolder` admits it:
