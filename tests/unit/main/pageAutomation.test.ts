@@ -1382,3 +1382,28 @@ describe('what is masked fits where it goes, and is tidied before it is cut (aft
   })
 })
 
+describe('a page no secret was typed into reads nothing more for the rules on secrets (after the fourth review, P-N2)', () => {
+  it('sends a type, a click and a key with only the commands each needs, once approved', async () => {
+    // The text field at 9 takes up room, and is what is at its middle.
+    const fake = page(), base = fake.handle, automation_ = automation(fake)
+    fake.handle = (method, params) => {
+      if (method === 'DOM.getContentQuads') return { quads: [[10, 10, 30, 10, 30, 30, 10, 30]] }
+      if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('elementFromPoint')) return { result: { value: true } }
+      return base(method, params)
+    }
+    const found = (): number => fake.calls('Runtime.evaluate').filter(call => String(call.expression).startsWith('document.querySelector')).length
+    const actions: PageInput[] = [{ type: 'type', text: 'Rez', selector: '#name' }, { type: 'type', text: 'Rez' }, { type: 'click', selector: '#name' }, { type: 'key', key: 'a' }, { type: 'key', key: 'Backspace' }]
+    for (const action of actions) {
+      await automation_.target(action as Parameters<TestAutomation['target']>[0])
+      const before = fake.sent.length, looked = found()
+      await automation_.input(action, go)
+      // A selector is looked up once, where the action is sent, and nothing else is read for it.
+      expect(found() - looked, JSON.stringify(action)).toBe('selector' in action ? 1 : 0)
+      if (action.type === 'key') expect(fake.sent.slice(before).map(entry => entry.method), action.key).toEqual(['Input.dispatchKeyEvent', 'Input.dispatchKeyEvent'])
+    }
+    // Nothing read a field or the document: the only function run on an element is the click's look at what it presses.
+    expect(fake.calls('Runtime.callFunctionOn').filter(call => !String(call.functionDeclaration).includes('elementFromPoint'))).toEqual([])
+    expect(fake.calls('Runtime.evaluate').filter(call => /activeElement \|\||documentElement\.textContent/u.test(String(call.expression)))).toEqual([])
+  })
+})
+

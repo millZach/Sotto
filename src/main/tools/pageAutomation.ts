@@ -1222,8 +1222,12 @@ export abstract class PageAutomation {
     this.noDialog()
     await this.textStays(action)
     await this.ready()
-    // The focus may have moved since the action was asked for, so the field it reaches is looked at again.
-    if (action.type === 'key' || action.type === 'type') await this.noSecretEdit(action, action.type === 'type' && (action.ref !== undefined || action.selector !== undefined) ? await this.nodeOf(action) : undefined)
+    // The focus may have moved since the action was asked for, so the field it reaches is looked at again, on a page a
+    // secret was typed into, once the action may still go.
+    if ((action.type === 'key' || action.type === 'type') && this.typedSecrets.size) {
+      guard()
+      await this.noSecretEdit(action, action.type === 'type' && (action.ref !== undefined || action.selector !== undefined) ? await this.nodeOf(action) : undefined)
+    }
     if (action.type === 'tap' && await this.showsSecret()) {
       const wait = this.tappedAt + DOUBLE_TAP_GAP_MS - Date.now()
       if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait))
