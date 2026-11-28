@@ -7988,6 +7988,8 @@ mod tests {
         let project = base.join("project");
         std::fs::create_dir_all(&project).unwrap();
         fixture_git(&project, &["init", "-q", "-b", "main"]);
+        fixture_git(&project, &["config", "user.name", "Test"]);
+        fixture_git(&project, &["config", "user.email", "test@example.com"]);
         std::fs::write(project.join("README.md"), "hello\n").unwrap();
         fixture_git(&project, &["add", "."]);
         fixture_git(&project, &["commit", "-q", "-m", "First"]);
@@ -8159,6 +8161,8 @@ mod tests {
         let project = base.join("project");
         std::fs::create_dir_all(&project).unwrap();
         fixture_git(&project, &["init", "-q", "-b", "main"]);
+        fixture_git(&project, &["config", "user.name", "Test"]);
+        fixture_git(&project, &["config", "user.email", "test@example.com"]);
         std::fs::write(project.join("README.md"), "hello\n").unwrap();
         fixture_git(&project, &["add", "."]);
         fixture_git(&project, &["commit", "-q", "-m", "First"]);
