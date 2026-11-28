@@ -36,6 +36,8 @@ pub struct OpenCodeAdapterConfig {
     pub args: Vec<String>,
     pub request_timeout_ms: u64,
     pub use_cli_lookup: bool,
+    /// How long a side call has (Node's `SIDE_WRITING_TIMEOUT_MS`); a test shortens it.
+    pub side_writing_deadline: Duration,
 }
 
 impl OpenCodeAdapterConfig {
@@ -50,6 +52,7 @@ impl OpenCodeAdapterConfig {
             ],
             request_timeout_ms: 30_000,
             use_cli_lookup: true,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
     }
 
@@ -64,6 +67,7 @@ impl OpenCodeAdapterConfig {
             ],
             request_timeout_ms: 3_000,
             use_cli_lookup: false,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
     }
 }
@@ -720,9 +724,11 @@ impl ProviderAdapter for OpenCodeAdapter {
                             .get("variants")
                             .and_then(Value::as_array)
                             .map(|v| {
-                                v.iter()
+                                let raw: Vec<String> = v
+                                    .iter()
                                     .filter_map(|x| x.get("id").and_then(Value::as_str).map(ToString::to_string))
-                                    .collect()
+                                    .collect();
+                                super::order_reasoning_efforts(&raw)
                             })
                             .unwrap_or_default();
                         models.push(AgentModel {
@@ -1035,6 +1041,67 @@ impl ProviderAdapter for OpenCodeAdapter {
         Box::pin(async { Ok(()) })
     }
 
+    /// Node's OpenCode `writeShortText` (`src/main/agents/opencode.ts`): calls `POST /api/experimental/generate` with
+    /// the thread's model at its least effort (no tools, no turn). Reads unmarked sessions before and after so a call
+    /// that unexpectedly created a provider session writes nothing; an HTTP refusal (such as OpenCode Zen's 503) writes
+    /// nothing and leaves the stand-in subject in place.
+    fn write_short_text(&self, thread_id: String, prompt: crate::side_writing::ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
+        Box::pin(async move {
+            if self.shared.status.lock().unwrap().connection != "connected" {
+                return Ok(None);
+            }
+            let Some(record) = self.shared.records.lock().unwrap().get(&thread_id).cloned() else {
+                return Ok(None);
+            };
+            // Matches Node's `!alias?.sessionConfirmed`.
+            if record.extra.get("sessionConfirmed") != Some(&Value::Bool(true)) {
+                return Ok(None);
+            }
+            let Some(model) = record.model_id.filter(|m| !m.trim().is_empty()) else {
+                return Ok(None);
+            };
+            let Some((pid, mid)) = model.split_once('/').filter(|(p, m)| !p.is_empty() && !m.is_empty()) else {
+                return Err("That model is not an OpenCode model.".into());
+            };
+            let Some(srv) = self.server.lock().await.clone() else {
+                return Ok(None);
+            };
+
+            let models = self.models();
+            let least_effort = crate::side_writing::side_writing_effort(&models, &public_provider_entity_id("opencode", "model", &model))
+                .filter(|effort| effort != "default");
+            let mut model_ref = json!({ "providerID": pid, "id": mid });
+            if let Some(effort) = least_effort {
+                model_ref["variant"] = json!(if effort == "off" { "none" } else { effort.as_str() });
+            }
+
+            let before = opencode_unmarked_sessions(&srv, self.config.request_timeout_ms).await?;
+            let timeout_ms = u64::try_from(self.config.side_writing_deadline.as_millis()).unwrap_or(u64::MAX);
+            let (status, answer) = srv
+                .http_json(
+                    "POST",
+                    "/api/experimental/generate",
+                    Some(&json!({
+                        "prompt": format!("{}\n\n{}", prompt.instruction, prompt.material),
+                        "model": model_ref,
+                    })),
+                    timeout_ms,
+                )
+                .await?;
+            if !(200..300).contains(&status) {
+                return Ok(None);
+            }
+            let Some(text) = answer.pointer("/data/text").and_then(Value::as_str) else {
+                return Err("OpenCode sent side text Sotto cannot read.".into());
+            };
+            let after = opencode_unmarked_sessions(&srv, self.config.request_timeout_ms).await?;
+            if after.iter().any(|sid| !before.contains(sid)) {
+                return Ok(None);
+            }
+            Ok(Some(text.to_string()))
+        })
+    }
+
     fn configure_thread(
         &self,
         thread_id: String,
@@ -1091,6 +1158,60 @@ impl ProviderAdapter for OpenCodeAdapter {
             Ok(())
         })
     }
+}
+
+/// Reads every provider session in OpenCode that carries no `metadata.sotto.thread` creation mark (matching Node's
+/// `unmarkedSessions` in `src/main/agents/opencode.ts`).
+async fn opencode_unmarked_sessions(srv: &OpenCodeServerHandle, timeout_ms: u64) -> Result<std::collections::HashSet<String>, String> {
+    let mut found = std::collections::HashSet::new();
+    let mut cursor: Option<String> = None;
+    for _ in 0..50 {
+        let path = match &cursor {
+            Some(c) => format!("/api/session?cursor={}", encode_query_component(c)),
+            None => "/api/session".to_string(),
+        };
+        let (status, body) = srv.http_json("GET", &path, None, timeout_ms).await?;
+        if !(200..300).contains(&status) {
+            return Err(format!("OpenCode refused session list (HTTP {status})."));
+        }
+        let Some(data) = body.get("data").and_then(Value::as_array) else {
+            return Err("OpenCode returned an unreadable session list.".into());
+        };
+        for session in data {
+            let marked = session
+                .pointer("/metadata/sotto/thread")
+                .and_then(Value::as_str)
+                .is_some();
+            if !marked {
+                if let Some(id) = session.get("id").and_then(Value::as_str) {
+                    found.insert(id.to_string());
+                }
+            }
+        }
+        let next = body
+            .pointer("/cursor/next")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .map(ToString::to_string);
+        if data.is_empty() || next.is_none() || next == cursor {
+            break;
+        }
+        cursor = next;
+    }
+    Ok(found)
+}
+
+fn encode_query_component(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            out.push(byte as char);
+        } else {
+            use std::fmt::Write;
+            let _ = write!(out, "%{byte:02X}");
+        }
+    }
+    out
 }
 
 async fn http_request_loopback(
