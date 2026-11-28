@@ -236,11 +236,31 @@ impl OpenCodeServerHandle {
         body: Option<&Value>,
         timeout_ms: u64,
     ) -> Result<(u16, Value), String> {
-        let req_fut = http_request_loopback(self.port, method, path, &self.auth_header, body);
-        match tokio::time::timeout(Duration::from_millis(timeout_ms), req_fut).await {
-            Ok(Ok(res)) => Ok(res),
-            Ok(Err(e)) => Err(e),
-            Err(_) => Err(format!("timeout:{method}:{path}")),
+        let started = Instant::now();
+        let total = Duration::from_millis(timeout_ms);
+        let wait_limit = total.min(Duration::from_secs(30));
+        let mut attempt: u64 = 0;
+        loop {
+            let remaining = total.saturating_sub(started.elapsed());
+            if remaining.is_zero() {
+                return Err(format!("timeout:{method}:{path}"));
+            }
+            let req_fut = http_request_loopback(self.port, method, path, &self.auth_header, body);
+            let (status, parsed) = match tokio::time::timeout(remaining, req_fut).await {
+                Ok(Ok(res)) => res,
+                Ok(Err(e)) => return Err(e),
+                Err(_) => return Err(format!("timeout:{method}:{path}")),
+            };
+            if is_wait_503(status, &parsed) && started.elapsed() < wait_limit {
+                let delay = Duration::from_millis((250 * (attempt + 1)).min(1_000));
+                let sleep_for = delay.min(wait_limit.saturating_sub(started.elapsed()));
+                if !sleep_for.is_zero() {
+                    tokio::time::sleep(sleep_for).await;
+                    attempt += 1;
+                    continue;
+                }
+            }
+            return Ok((status, parsed));
         }
     }
 
@@ -825,8 +845,8 @@ impl ProviderAdapter for OpenCodeAdapter {
                 .and_then(|m| parse_public_provider_entity_id(m).map(|(_, _, r)| r.to_string()))
                 .or(req.model_id.clone())
                 .unwrap_or_else(|| "opencode/fixture-model".to_string());
-            let (pid, mid) = raw_model.split_once('/').unwrap_or(("opencode", raw_model.as_str()));
 
+            let models = self.models();
             let existing = self
                 .shared
                 .records
@@ -839,12 +859,7 @@ impl ProviderAdapter for OpenCodeAdapter {
                     if rec.model_id.as_deref() != Some(raw_model.as_str())
                         || rec.reasoning_effort != req.reasoning_effort
                     {
-                        let mut model_obj = json!({ "providerID": pid, "id": mid });
-                        if let Some(ref eff) = req.reasoning_effort {
-                            if !eff.is_empty() {
-                                model_obj["variant"] = json!(if eff == "off" { "none" } else { eff.as_str() });
-                            }
-                        }
+                        let model_obj = opencode_model_ref(&models, &raw_model, req.reasoning_effort.as_deref())?;
                         let path = format!("/api/session/{}/model", rec.session_id);
                         let (status, _) = srv
                             .http_json("POST", &path, Some(&json!({ "model": model_obj })), self.config.request_timeout_ms)
@@ -861,6 +876,21 @@ impl ProviderAdapter for OpenCodeAdapter {
                     rec.session_id
                 }
                 None => {
+                    // Build Node-compatible record fields first so `createToken` marks the provider session (`CREATE_MARK`)
+                    // as Sotto-created, preventing `opencode_unmarked_sessions` from mistaking concurrent threads for
+                    // unexpected side-call sessions.
+                    let fields = crate::providers::node_record_fields(
+                        &self.shared.data_directory.join(OPENCODE_THREADS_FILE),
+                        &req.thread_id,
+                        &req.record_seed,
+                        &opencode_node_record_defaults(req.runtime_mode.as_deref()),
+                    );
+                    let create_token = fields
+                        .get("createToken")
+                        .and_then(Value::as_str)
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| Uuid::new_v4().to_string());
+                    let model_obj = opencode_model_ref(&models, &raw_model, req.reasoning_effort.as_deref())?;
                     // OpenCode Zen refuses client-chosen session IDs; omit `id` on session.create.
                     let (_, created) = srv
                         .http_json(
@@ -869,7 +899,8 @@ impl ProviderAdapter for OpenCodeAdapter {
                             Some(&json!({
                                 "title": "Sotto thread",
                                 "location": { "directory": req.cwd },
-                                "model": { "providerID": pid, "modelID": mid },
+                                "model": model_obj,
+                                "metadata": { "sotto": { "thread": create_token } },
                             })),
                             self.config.request_timeout_ms,
                         )
@@ -880,14 +911,6 @@ impl ProviderAdapter for OpenCodeAdapter {
                         .and_then(Value::as_str)
                         .ok_or_else(|| "OpenCode session.create returned no id.".to_string())?
                         .to_string();
-                    // The record carries what Node's schema requires, so Node reads it after a rollback (ADR-0214).
-                    // OpenCode chose this session's ID itself, so Node finds it confirmed and never looks for it by token.
-                    let fields = crate::providers::node_record_fields(
-                        &self.shared.data_directory.join(OPENCODE_THREADS_FILE),
-                        &req.thread_id,
-                        &req.record_seed,
-                        &opencode_node_record_defaults(req.runtime_mode.as_deref()),
-                    );
                     let mut record = crate::providers::with_node_fields(
                         OpenCodeThreadRecord {
                             session_id: sid.clone(),
@@ -1060,20 +1083,12 @@ impl ProviderAdapter for OpenCodeAdapter {
             let Some(model) = record.model_id.filter(|m| !m.trim().is_empty()) else {
                 return Ok(None);
             };
-            let Some((pid, mid)) = model.split_once('/').filter(|(p, m)| !p.is_empty() && !m.is_empty()) else {
-                return Err("That model is not an OpenCode model.".into());
-            };
+            let models = self.models();
+            let least_effort = crate::side_writing::side_writing_effort(&models, &public_provider_entity_id("opencode", "model", &model));
+            let model_ref = opencode_model_ref(&models, &model, least_effort.as_deref())?;
             let Some(srv) = self.server.lock().await.clone() else {
                 return Ok(None);
             };
-
-            let models = self.models();
-            let least_effort = crate::side_writing::side_writing_effort(&models, &public_provider_entity_id("opencode", "model", &model))
-                .filter(|effort| effort != "default");
-            let mut model_ref = json!({ "providerID": pid, "id": mid });
-            if let Some(effort) = least_effort {
-                model_ref["variant"] = json!(if effort == "off" { "none" } else { effort.as_str() });
-            }
 
             let before = opencode_unmarked_sessions(&srv, self.config.request_timeout_ms).await?;
             let timeout_ms = u64::try_from(self.config.side_writing_deadline.as_millis()).unwrap_or(u64::MAX);
@@ -1136,13 +1151,8 @@ impl ProviderAdapter for OpenCodeAdapter {
                 return Ok(());
             }
             let srv = self.get_server().await?;
-            let (pid, mid) = raw.split_once('/').unwrap_or(("opencode", raw.as_str()));
-            let mut model_obj = json!({ "providerID": pid, "id": mid });
-            if let Some(ref e) = eff {
-                if !e.is_empty() {
-                    model_obj["variant"] = json!(if e == "off" { "none" } else { e.as_str() });
-                }
-            }
+            let models = self.models();
+            let model_obj = opencode_model_ref(&models, &raw, eff.as_deref())?;
             let path = format!("/api/session/{}/model", rec.session_id);
             let (status, _) = srv
                 .http_json("POST", &path, Some(&json!({ "model": model_obj })), self.config.request_timeout_ms)
@@ -1160,6 +1170,44 @@ impl ProviderAdapter for OpenCodeAdapter {
     }
 }
 
+/// Node's `modelRef` (`src/main/agents/opencode.ts`): splits `providerID/id` and attaches `variant` only when the
+/// model offers that effort (excluding `"default"`), mapping `"off"` to `"none"`.
+fn opencode_model_ref(models: &[AgentModel], model_id: &str, effort: Option<&str>) -> Result<Value, String> {
+    let Some((pid, mid)) = model_id.split_once('/').filter(|(p, m)| !p.is_empty() && !m.is_empty()) else {
+        return Err("That model is not an OpenCode model.".into());
+    };
+    let mut model_obj = json!({ "providerID": pid, "id": mid });
+    if let Some(effort) = effort.filter(|e| !e.is_empty() && *e != "default") {
+        let public_id = public_provider_entity_id("opencode", "model", model_id);
+        let offered = models
+            .iter()
+            .find(|m| m.id == public_id || m.id == model_id)
+            .and_then(|m| m.reasoning_efforts.as_ref());
+        let allowed = match offered {
+            Some(list) => list.iter().any(|level| level != "default" && level == effort),
+            None => false,
+        };
+        if allowed {
+            model_obj["variant"] = json!(if effort == "off" { "none" } else { effort });
+        }
+    }
+    Ok(model_obj)
+}
+
+/// Node's `isWait503` (`src/main/agents/opencodeClient.ts`): a 503 with no `service`, `service: null`, or
+/// `service: "plugin"` means OpenCode's location plugins are still activating; a 503 naming a model source
+/// (such as `"opencode"` for OpenCode Zen) is an immediate refusal.
+fn is_wait_503(status: u16, body: &Value) -> bool {
+    if status != 503 {
+        return false;
+    }
+    match body.get("service") {
+        None | Some(Value::Null) => true,
+        Some(Value::String(service)) => service == "plugin",
+        Some(_) => false,
+    }
+}
+
 /// Reads every provider session in OpenCode that carries no `metadata.sotto.thread` creation mark (matching Node's
 /// `unmarkedSessions` in `src/main/agents/opencode.ts`).
 async fn opencode_unmarked_sessions(srv: &OpenCodeServerHandle, timeout_ms: u64) -> Result<std::collections::HashSet<String>, String> {
@@ -1172,7 +1220,7 @@ async fn opencode_unmarked_sessions(srv: &OpenCodeServerHandle, timeout_ms: u64)
         };
         let (status, body) = srv.http_json("GET", &path, None, timeout_ms).await?;
         if !(200..300).contains(&status) {
-            return Err(format!("OpenCode refused session list (HTTP {status})."));
+            return Err("OpenCode refused to list sessions.".into());
         }
         let Some(data) = body.get("data").and_then(Value::as_array) else {
             return Err("OpenCode returned an unreadable session list.".into());
@@ -1267,7 +1315,7 @@ async fn http_request_loopback(
     let body_slice = &raw[sep + 4..];
     let parsed = if body_slice.is_empty() {
         Value::Null
-    } else if head.to_ascii_lowercase().contains("transfer-encoding: chunked") {
+    } else if is_chunked_encoding(&head) {
         let decoded = decode_chunked(body_slice);
         serde_json::from_slice(&decoded).unwrap_or(Value::Null)
     } else {
@@ -1276,11 +1324,22 @@ async fn http_request_loopback(
     Ok((status, parsed))
 }
 
+fn is_chunked_encoding(head: &str) -> bool {
+    head.lines().skip(1).any(|line| {
+        let Some((name, value)) = line.split_once(':') else {
+            return false;
+        };
+        name.trim().eq_ignore_ascii_case("transfer-encoding")
+            && value.split(',').any(|token| token.trim().eq_ignore_ascii_case("chunked"))
+    })
+}
+
 fn decode_chunked(mut input: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     while let Some(pos) = input.windows(2).position(|w| w == b"\r\n") {
-        let size_str = String::from_utf8_lossy(&input[..pos]);
-        let Ok(size) = usize::from_str_radix(size_str.trim(), 16) else {
+        let size_line = String::from_utf8_lossy(&input[..pos]);
+        let size_hex = size_line.split(';').next().unwrap_or("").trim();
+        let Ok(size) = usize::from_str_radix(size_hex, 16) else {
             break;
         };
         input = &input[pos + 2..];
@@ -1376,4 +1435,26 @@ fn opencode_id(kind: &str, key: &str) -> String {
 
 fn load_opencode_records(data_directory: &Path) -> HashMap<String, OpenCodeThreadRecord> {
     crate::providers::load_thread_records(&data_directory.join(OPENCODE_THREADS_FILE), crate::providers::parse_serde_record)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wait_503_retries_plugin_activation_but_not_model_source_refusals() {
+        assert!(is_wait_503(503, &json!({})));
+        assert!(is_wait_503(503, &json!({ "service": null })));
+        assert!(is_wait_503(503, &json!({ "service": "plugin" })));
+        assert!(!is_wait_503(503, &json!({ "service": "opencode" })));
+        assert!(!is_wait_503(400, &json!({ "service": "plugin" })));
+    }
+
+    #[test]
+    fn chunked_header_decoding_and_query_encoding_handle_edge_cases() {
+        assert!(is_chunked_encoding("HTTP/1.1 200 OK\r\nTransfer-Encoding:  gzip, Chunked\r\n"));
+        assert!(!is_chunked_encoding("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"));
+        assert_eq!(decode_chunked(b"5;ext=1\r\nhello\r\n0\r\n\r\n"), b"hello");
+        assert_eq!(encode_query_component("a/b+c=1~_-."), "a%2Fb%2Bc%3D1~_-.");
+    }
 }

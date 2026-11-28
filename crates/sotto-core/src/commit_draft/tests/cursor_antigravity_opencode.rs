@@ -164,6 +164,27 @@ fn cursor_session_and_side_call_start_on_nodes_allow_listed_environment() {
     assert!(recorded.iter().any(|entry| Path::new(entry["configDir"].as_str().unwrap()) == side_dir));
 }
 
+#[test]
+fn cursor_drafts_on_the_model_configured_while_idle() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    let adapter = cursor(&fixture, &runtime, json!({ "text": "Fix the parser" }), Duration::from_secs(60));
+    // Thread `t` starts on `gpt-fixture` with no live thread process; switching via `configure_thread` must persist
+    // so the next commit draft runs on `claude-fixture` and its least effort (`low`).
+    runtime
+        .block_on(adapter.configure_thread("t".into(), Some("claude-fixture".into()), None, Some("max".into())))
+        .unwrap();
+    commit(&fixture, &drafting(&fixture, &runtime, adapter, false), None);
+    assert_eq!(fixture.last_commit(), "Fix the parser");
+    let calls = oneshots(&fixture);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["model"], json!("claude-fixture"));
+    assert_eq!(calls[0]["effort"], json!("low"));
+    let saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(fixture.data().join("cursor-threads.json")).unwrap()).unwrap();
+    assert_eq!(saved["t"]["modelId"], json!("claude-fixture"));
+    assert_eq!(saved["t"]["reasoningEffort"], json!("max"));
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Antigravity.
 
@@ -329,6 +350,75 @@ fn antigravity_writes_nothing_for_a_personal_thread_missing_record_or_while_disc
     assert!(oneshots(&fixture).is_empty());
 }
 
+#[test]
+fn antigravity_session_and_side_call_start_on_nodes_allow_listed_environment() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    let recorder = fixture.dir.path().join("record-agy-env.mjs");
+    let script = format!(
+        "import {{ appendFileSync }} from 'node:fs'\nimport {{ join }} from 'node:path'\nimport {{ pathToFileURL }} from 'node:url'\nconst root = process.argv[2]\nconst keys = Object.keys(process.env).filter(k => !k.startsWith('=')).map(k => k.toLowerCase()).sort()\nappendFileSync(join(root, 'agy-envs.jsonl'), JSON.stringify({{ geminiHome: process.env.GEMINI_HOME, keys }}) + '\\n')\nawait import(pathToFileURL({}).href)\n",
+        serde_json::to_string(FAKE_ANTIGRAVITY).unwrap()
+    );
+    fs::write(&recorder, script).unwrap();
+
+    let mut config = AcpAdapterConfig::fake(AcpFlavor::Antigravity, fixture.data(), FAKE_ANTIGRAVITY.into());
+    config.prefix_args[0] = recorder.to_string_lossy().into_owned();
+    let adapter = antigravity_on(&fixture, &runtime, "gemini-3.8-flash", json!({ "text": "Fix the parser" }), config);
+    commit(&fixture, &drafting(&fixture, &runtime, adapter, false), None);
+    assert_eq!(fixture.last_commit(), "Fix the parser");
+
+    let recorded = jsonl(&fixture.data().join("agy-envs.jsonl"));
+    assert!(recorded.len() >= 2, "{recorded:?}");
+    let extra = [
+        "gemini_home",
+        "agy_acp_force_file_storage",
+        "agy_cli_disable_auto_update",
+        "pythonunbuffered",
+        "ssh_connection",
+        "temp",
+        "tmp",
+        "tmpdir",
+    ];
+    for entry in &recorded {
+        let keys: Vec<&str> = entry["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|k| k.as_str().unwrap())
+            .filter(|k| *k != "__cf_user_text_encoding")
+            .collect();
+        for required in ["gemini_home", "agy_acp_force_file_storage", "agy_cli_disable_auto_update", "pythonunbuffered", "ssh_connection"] {
+            assert!(keys.contains(&required), "{required} missing from {keys:?}");
+        }
+        for forbidden in ["gemini_api_key", "google_api_key", "google_application_credentials", "browser"] {
+            assert!(!keys.contains(&forbidden), "{forbidden} leaked into Antigravity env: {keys:?}");
+        }
+        for key in &keys {
+            assert!(
+                crate::providers::acp_side::ANTIGRAVITY_ENVIRONMENT_KEYS.contains(key) || extra.contains(key),
+                "{key} is not in Node's antigravityEnvironment"
+            );
+        }
+    }
+}
+
+#[test]
+fn antigravity_drafts_on_the_model_configured_while_idle() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    // Start on a non-Gemini model, then switch to `gemini-4-carbon` while idle before drafting.
+    let adapter = antigravity(&fixture, &runtime, "claude-sonnet-5-5", json!({ "text": "Fix the parser" }), Duration::from_secs(60));
+    runtime
+        .block_on(adapter.configure_thread("t".into(), Some("gemini-4-carbon".into()), None, Some("high".into())))
+        .unwrap();
+    commit(&fixture, &drafting(&fixture, &runtime, adapter, false), None);
+    assert_eq!(fixture.last_commit(), "Fix the parser");
+    let calls = oneshots(&fixture);
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["model"], json!("gemini-4-carbon"));
+    assert_eq!(calls[0]["thinking"], json!("low"));
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // OpenCode.
 
@@ -466,4 +556,73 @@ fn opencode_writes_nothing_for_unconfirmed_session_missing_record_or_while_disco
     runtime.block_on(adapter.disconnect()).unwrap();
     assert_eq!(runtime.block_on(adapter.write_short_text("t".into(), prompt)), Ok(None));
     assert!(jsonl(&fixture.data().join("side-calls.jsonl")).is_empty());
+}
+
+#[test]
+fn opencode_drafts_on_a_configured_model_omits_default_variant_and_ignores_marked_sotto_sessions() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    let script = json!({
+        "migrationMs": 1,
+        "models": [
+            {
+                "id": "fixture-model",
+                "modelID": "fixture-model",
+                "providerID": "opencode",
+                "name": "Fixture Model",
+                "capabilities": { "tools": true, "input": ["text"], "output": ["text"] },
+                "variants": [{ "id": "low" }, { "id": "high" }],
+                "enabled": true,
+                "status": "active"
+            },
+            {
+                "id": "default-only",
+                "modelID": "default-only",
+                "providerID": "opencode",
+                "name": "Default Only",
+                "capabilities": { "tools": true, "input": ["text"], "output": ["text"] },
+                "variants": [{ "id": "default" }],
+                "enabled": true,
+                "status": "active"
+            }
+        ],
+        "generate": { "text": "Marked sessions stay ignored" }
+    });
+    let adapter = opencode(&fixture, &runtime, "opencode/fixture-model", true, script, Duration::from_secs(60));
+    // Create a real Rust-created session (carrying `metadata.sotto.thread` and `model.id`), switch its model via
+    // `configure_thread` to `opencode/default-only`, and verify drafting uses the new model without `variant`.
+    let send = crate::provider::SendMessageRequest {
+        thread_id: "t-created".into(),
+        record_seed: crate::provider::ThreadRecordSeed { project_id: "project-1".into(), title: "Fix the build".into(), created_at: "2026-11-27T10:00:00.000Z".into() },
+        message_id: "m-1".into(),
+        cwd: fixture.repo.to_string_lossy().into_owned(),
+        model_id: Some("opencode/fixture-model".into()),
+        reasoning_effort: Some("high".into()),
+        runtime_mode: Some("approval-required".into()),
+        text: "Hello".into(),
+        command_id: "c-1".into(),
+        draft_id: "d-1".into(),
+        attachments: Vec::new(),
+    };
+    runtime.block_on(adapter.send_message(send)).unwrap();
+    runtime
+        .block_on(adapter.configure_thread("t-created".into(), Some("opencode/default-only".into()), None, None))
+        .unwrap();
+
+    // Verify `session.create` sent `metadata.sotto.thread` and `model.id`.
+    let reqs = jsonl(&fixture.data().join("requests.jsonl"));
+    let created = reqs.iter().find(|r| r["method"] == "session.create").unwrap();
+    assert!(created["params"]["metadata"]["sotto"]["thread"].as_str().is_some(), "missing CREATE_MARK in {created}");
+    assert_eq!(created["params"]["model"]["id"], json!("fixture-model"));
+
+    let prompt = commit_message_request(&material(), &WritingSettings::default()).prompt;
+    let drafted = runtime.block_on(adapter.write_short_text("t-created".into(), prompt)).unwrap();
+    assert_eq!(drafted.as_deref(), Some("Marked sessions stay ignored"));
+
+    let calls = jsonl(&fixture.data().join("side-calls.jsonl"));
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["model"], json!({ "providerID": "opencode", "id": "default-only" }));
+    assert!(!fixture.data().join("violations.jsonl").exists());
+
+    runtime.block_on(adapter.disconnect()).unwrap();
 }

@@ -101,8 +101,10 @@ createInterface({ input: process.stdin }).on('line', line => {
   // A side call's prompt is kept in oneshot.jsonl, apart from the threads' traffic, as a side call never touches a thread.
   const sideSession = frame.method === 'session/prompt' ? loadSession(frame.params?.sessionId) : undefined
   const sideOneshot = read('oneshot.json', null)
+  const sidePromptText = JSON.stringify(frame.params?.prompt ?? [])
   const side = sideSession !== undefined && sideSession.mcpServers.length === 0 && sideSession.prompts.length === 0
-    && (Boolean(sideOneshot) || Boolean(read('script.json', {}).sideAnswer) && /Name this/u.test(JSON.stringify(frame.params?.prompt ?? [])))
+    && (Boolean(sideOneshot) && /You write the commit message|Side-writing|Name this/u.test(sidePromptText)
+      || Boolean(read('script.json', {}).sideAnswer) && /Name this/u.test(sidePromptText))
   record(side ? { ...frame, params: { sessionId: frame.params.sessionId, prompt: '[side call]' } } : frame)
   if (!frame.method) {
     const request = pending.get(frame.id)
@@ -179,8 +181,9 @@ createInterface({ input: process.stdin }).on('line', line => {
     session.prompts.push(text); save(p.sessionId)
     // A side call: a session with no tool servers, answered at once with the scripted words, logged apart.
     const oneshot = read('oneshot.json', null)
-    const sideAnswer = oneshot ? (oneshot.text ?? 'Fixture title') : (script.sideAnswer && /Side-writing|Name this/u.test(text) ? script.sideAnswer : undefined)
-    if (session.mcpServers.length === 0 && session.prompts.length === 1 && (oneshot || sideAnswer)) {
+    const isSidePrompt = /You write the commit message|Side-writing|Name this/u.test(text)
+    const sideAnswer = oneshot && isSidePrompt ? (oneshot.text ?? 'Fixture title') : (script.sideAnswer && /Side-writing|Name this/u.test(text) ? script.sideAnswer : undefined)
+    if (session.mcpServers.length === 0 && session.prompts.length === 1 && sideAnswer !== undefined) {
       appendFileSync(path('oneshot.jsonl'), JSON.stringify({ cwd: session.cwd, model: session.model, thinking: session.thinking, mode: session.mode, material: text, sessionId: p.sessionId }) + '\n')
       if (oneshot?.writeFiles && gemini && appData) {
         mkdirSync(join(gemini, appData, 'brain', p.sessionId), { recursive: true })

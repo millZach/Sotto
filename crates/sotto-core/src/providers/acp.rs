@@ -137,14 +137,11 @@ pub struct AcpAdapterConfig {
 
 impl AcpAdapterConfig {
     pub fn native(flavor: AcpFlavor, data_directory: PathBuf) -> Self {
-        let mut args = flavor.default_args();
-        if flavor == AcpFlavor::Antigravity {
-            let gemini_dir = data_directory.join("antigravity").join("gemini");
-            args.push("--gemini-dir".into());
-            args.push(gemini_dir.to_string_lossy().into_owned());
-            args.push("--app-data-dir".into());
-            args.push("antigravity-acp".into());
-        }
+        let args = if flavor == AcpFlavor::Antigravity {
+            super::acp_side::antigravity_arguments(&data_directory)
+        } else {
+            flavor.default_args()
+        };
         Self {
             flavor,
             data_directory,
@@ -196,12 +193,16 @@ struct InboundAcpRequest {
 }
 
 type PendingAcpMap = Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value, String>>>>>;
+type AppliedSessionSettings = (Option<String>, Option<String>);
 
 struct AcpProcess {
     stdin_tx: mpsc::UnboundedSender<String>,
     pending_outbound: PendingAcpMap,
     next_id: AtomicI64,
     child: Mutex<Option<Child>>,
+    /// The `(model, reasoning_effort)` last applied to each native session on this process instance, so a model switch
+    /// saved while idle is still applied when a fresh process loads the session.
+    applied_settings: Mutex<HashMap<String, AppliedSessionSettings>>,
 }
 
 impl AcpProcess {
@@ -226,7 +227,7 @@ impl AcpProcess {
                 super::acp_side::cursor_environment(&mut cmd, &cfg_dir);
             }
             AcpFlavor::Antigravity => {
-                let _ = super::acp_side::antigravity_environment(&mut cmd, &config.data_directory);
+                super::acp_side::antigravity_environment(&mut cmd, &config.data_directory);
             }
             AcpFlavor::Devin | AcpFlavor::Hermes => {}
         }
@@ -334,6 +335,7 @@ impl AcpProcess {
             pending_outbound,
             next_id: AtomicI64::new(1),
             child: Mutex::new(Some(child)),
+            applied_settings: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -421,13 +423,10 @@ impl AcpProcess {
                 )
                 .await;
         } else if flavor == AcpFlavor::Antigravity {
-            let method = if std::env::var("GEMINI_API_KEY").is_ok() {
-                "gemini-api-key"
-            } else {
-                "oauth-personal"
-            };
+            // Headless hosts always sign in to Antigravity via the Google account (ADR-0212); ambient GEMINI_API_KEY
+            // is stripped by `antigravity_environment`.
             let _ = self
-                .call("authenticate", json!({ "methodId": method }), timeout_ms)
+                .call("authenticate", json!({ "methodId": "oauth-personal" }), timeout_ms)
                 .await;
         }
         Ok(res)
@@ -842,13 +841,12 @@ impl AcpAdapter {
             .filter(|s| !s.is_empty())
             .map(ToString::to_string);
 
-        let (prev_model, prev_effort) = self
-            .shared
-            .records
+        let (prev_model, prev_effort) = proc
+            .applied_settings
             .lock()
             .unwrap()
-            .get(thread_id)
-            .map(|r| (r.model_id.clone(), r.reasoning_effort.clone()))
+            .get(session_id)
+            .cloned()
             .unwrap_or((None, None));
 
         let model_changed = raw_model.is_some() && raw_model != prev_model;
@@ -907,6 +905,16 @@ impl AcpAdapter {
             }
         }
 
+        {
+            let mut applied = proc.applied_settings.lock().unwrap();
+            let entry = applied.entry(session_id.to_string()).or_insert((None, None));
+            if let Some(ref model) = raw_model {
+                entry.0 = Some(model.clone());
+            }
+            if let Some(ref effort) = raw_effort {
+                entry.1 = Some(effort.clone());
+            }
+        }
         if let Some(rec) = self.shared.records.lock().unwrap().get_mut(thread_id) {
             if let Some(model) = raw_model.as_ref().filter(|_| flavor == AcpFlavor::Grok) {
                 // Node's `alias.nativeModelId = modelId` once Grok takes the change: the model the session is on, which
@@ -1363,6 +1371,7 @@ impl ProviderAdapter for AcpAdapter {
             if record.extra.get("kind").and_then(Value::as_str) == Some("personal") {
                 return Ok(None);
             }
+            let extra_model = record.extra.get("modelId").and_then(Value::as_str).map(String::from);
             let model = if flavor == AcpFlavor::Grok {
                 // Node's `nativeModelId ?? modelId`.
                 record
@@ -1371,8 +1380,9 @@ impl ProviderAdapter for AcpAdapter {
                     .and_then(Value::as_str)
                     .map(String::from)
                     .or(record.model_id)
+                    .or(extra_model)
             } else {
-                record.model_id
+                record.model_id.or(extra_model)
             };
             let Some(model) = model.filter(|m| !m.trim().is_empty()) else {
                 return Ok(None);
@@ -1444,15 +1454,54 @@ impl ProviderAdapter for AcpAdapter {
                 let map = self.thread_procs.lock().await;
                 map.get(&thread_id).cloned()
             };
-            if let (Some(proc), Some(sid)) = (proc, sid) {
-                self.apply_session_settings(
-                    &proc,
-                    &thread_id,
-                    &sid,
-                    model_id.as_deref(),
-                    reasoning_effort.as_deref(),
-                )
-                .await?;
+            if let Some(sid) = sid {
+                if let Some(proc) = proc {
+                    self.apply_session_settings(
+                        &proc,
+                        &thread_id,
+                        &sid,
+                        model_id.as_deref(),
+                        reasoning_effort.as_deref(),
+                    )
+                    .await?;
+                } else {
+                    // Persist model and effort switches even while no live thread process is running, matching Node;
+                    // the next `send_message` starts a fresh process whose `applied_settings` is empty and applies them.
+                    let raw_model = model_id.as_deref().map(|m| {
+                        crate::workspace::parse_public_provider_entity_id(m)
+                            .map(|(_, _, raw)| raw.to_string())
+                            .unwrap_or_else(|| m.to_string())
+                    });
+                    let raw_effort = reasoning_effort
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(ToString::to_string);
+                    let mut changed = false;
+                    if let Some(rec) = self.shared.records.lock().unwrap().get_mut(&thread_id) {
+                        if let Some(ref model) = raw_model {
+                            if self.config.flavor == AcpFlavor::Grok
+                                && rec.extra.get("nativeModelId").and_then(Value::as_str) != Some(model.as_str())
+                            {
+                                rec.extra.insert("nativeModelId".into(), Value::String(model.clone()));
+                                changed = true;
+                            }
+                            if rec.model_id.as_deref() != Some(model.as_str()) {
+                                rec.model_id = Some(model.clone());
+                                changed = true;
+                            }
+                        }
+                        if let Some(ref effort) = raw_effort {
+                            if rec.reasoning_effort.as_deref() != Some(effort.as_str()) {
+                                rec.reasoning_effort = Some(effort.clone());
+                                changed = true;
+                            }
+                        }
+                    }
+                    if changed {
+                        self.shared.save_records();
+                    }
+                }
             }
             Ok(())
         })

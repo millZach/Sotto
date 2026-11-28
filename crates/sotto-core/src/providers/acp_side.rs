@@ -23,13 +23,14 @@ use crate::side_writing::ShortTextPrompt;
 
 /// Output limit for Cursor and Antigravity side calls (stdout and stderr combined).
 const OUTPUT_LIMIT: usize = 2_000_000;
-/// Grace period waiting for the stopped child to exit before returning or cleaning up its files.
+/// Grace period waiting for a stopped child to exit before killing or cleaning up its files.
 const STOP_GRACE: Duration = Duration::from_secs(1);
 
 const CURSOR_FAILED: &str = "Cursor could not write this text. Nothing else changed.";
 const ANTIGRAVITY_FAILED: &str = "Antigravity could not write this text. Nothing else changed.";
 const ANTIGRAVITY_GEMINI_ONLY: &str = "Antigravity runs only Google\u{2019}s Gemini models in Sotto. Choose a Gemini model for this thread.";
 const ANTIGRAVITY_APP_DATA: &str = "antigravity-acp";
+const ANTIGRAVITY_DB_SUFFIXES: &[&str] = &["", "-wal", "-shm", "-journal"];
 
 /// Node's `CURSOR_SIDE_DENY` (`src/main/agents/cursorRpc.ts`).
 pub(crate) const CURSOR_SIDE_DENY: &[&str] = &["Read(**)", "Write(**)", "Shell(*)", "WebFetch(*)", "Mcp(*:*)"];
@@ -60,37 +61,31 @@ pub(crate) fn cursor_environment(command: &mut Command, config_directory: &Path)
         .env("NO_OPEN_BROWSER", "1");
 }
 
-/// Node's `antigravityEnvironment`: allow-listed host environment, Sotto's own Gemini and temp folders, file storage,
-/// no self-update, unbuffered Python, and either `GEMINI_API_KEY` (when set in the host environment) or `SSH_CONNECTION`
-/// for Google account sign-in. Returns the ACP `authenticate` method ID to use.
-pub(crate) fn antigravity_environment(command: &mut Command, data_directory: &Path) -> &'static str {
+/// Node's headless `antigravityEnvironment` (`src/main/agents/antigravityRpc.ts` + `src/host/providerSignIn.ts`,
+/// ADR-0212): allow-listed host environment with ambient Google credentials (`GEMINI_API_KEY`, `GOOGLE_API_KEY`,
+/// `GOOGLE_APPLICATION_CREDENTIALS`) stripped, Sotto's own Gemini and temp folders, file storage, no self-update,
+/// unbuffered Python, and `SSH_CONNECTION` so `agy` keeps Google account sign-in in Sotto's folder.
+pub(crate) fn antigravity_environment(command: &mut Command, data_directory: &Path) {
     let agy_root = data_directory.join("antigravity");
     let gemini_dir = agy_root.join("gemini");
     let tmp_dir = agy_root.join("tmp");
     let _ = std::fs::create_dir_all(&gemini_dir);
     let _ = std::fs::create_dir_all(&tmp_dir);
 
-    let api_key = std::env::var_os("GEMINI_API_KEY").filter(|value| !value.is_empty());
     let ssh_connection = std::env::vars_os()
         .find(|(key, _)| key.to_str().is_some_and(|k| k.eq_ignore_ascii_case("SSH_CONNECTION")))
         .map(|(_, value)| value)
         .filter(|value| !value.is_empty());
 
     keep_only_environment(command, ANTIGRAVITY_ENVIRONMENT_KEYS);
-    let method = if let Some(key) = api_key {
-        command.env("GEMINI_API_KEY", key);
-        "gemini-api-key"
-    } else {
-        match ssh_connection {
-            Some(ssh) => {
-                command.env("SSH_CONNECTION", ssh);
-            }
-            None => {
-                command.env("SSH_CONNECTION", "127.0.0.1 0 127.0.0.1 0");
-            }
+    match ssh_connection {
+        Some(ssh) => {
+            command.env("SSH_CONNECTION", ssh);
         }
-        "oauth-personal"
-    };
+        None => {
+            command.env("SSH_CONNECTION", "127.0.0.1 0 127.0.0.1 0");
+        }
+    }
     command
         .env("GEMINI_HOME", &gemini_dir)
         .env("AGY_ACP_FORCE_FILE_STORAGE", "1")
@@ -104,7 +99,6 @@ pub(crate) fn antigravity_environment(command: &mut Command, data_directory: &Pa
     {
         command.env("TMPDIR", &tmp_dir);
     }
-    method
 }
 
 /// Node's `antigravityArguments`: `acp --gemini-dir <gemini> --app-data-dir antigravity-acp`.
@@ -121,8 +115,11 @@ pub(crate) fn antigravity_arguments(data_directory: &Path) -> Vec<String> {
 
 /// Node's `antigravityGeminiModel` (`src/main/agents/antigravityModels.ts`, ADR-0212).
 pub(crate) fn is_antigravity_gemini_model(model_id: &str) -> bool {
-    let trimmed = model_id.trim();
-    trimmed.len() >= 7 && trimmed[..7].eq_ignore_ascii_case("gemini-")
+    model_id
+        .trim()
+        .as_bytes()
+        .get(..7)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case(b"gemini-"))
 }
 
 /// Node's `writeCursorSideConfig` (`src/main/agents/cursorRpc.ts`): writes `cli-config.json` in `config_directory`
@@ -156,10 +153,8 @@ pub(crate) fn write_cursor_side_config(config_directory: &Path) -> std::io::Resu
     if current_text == next_text && path.exists() {
         return Ok(());
     }
-    let staged = config_directory.join(format!("cli-config.json.{}.{}.tmp", std::process::id(), uuid::Uuid::new_v4().simple()));
-    std::fs::write(&staged, next_text.as_bytes())?;
-    if std::fs::rename(&staged, &path).is_err() {
-        let _ = std::fs::remove_file(&staged);
+    if crate::workspace::write_atomic(&path, next_text.as_bytes()).is_err() {
+        // Windows can refuse rename over a file held by a starting Cursor process; write in place as Node does.
         std::fs::write(&path, next_text.as_bytes())?;
     }
     Ok(())
@@ -207,7 +202,7 @@ fn flatten_option_values(items: Option<&Vec<Value>>) -> Vec<String> {
     out
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 struct SessionSettings {
     model: Option<String>,
     effort_option: Option<String>,
@@ -226,32 +221,47 @@ fn read_session_settings(value: &Value, prev: &SessionSettings) -> SessionSettin
         mode: prev.mode.clone(),
         mode_is_option: prev.mode_is_option,
     };
+    let mut mode_from_option = false;
     if let Some(options) = value.get("configOptions").and_then(Value::as_array) {
-        if let Some(model) = options
-            .iter()
-            .find(|entry| entry.get("id").and_then(Value::as_str) == Some("model"))
+        let model_opt = options.iter().find(|entry| entry.get("id").and_then(Value::as_str) == Some("model"));
+        let model_changed = model_opt
             .and_then(|entry| entry.get("currentValue"))
             .and_then(Value::as_str)
-        {
-            next.model = Some(model.to_string());
-        }
+            .is_some_and(|model| {
+                let changed = next.model.as_deref() != Some(model);
+                next.model = Some(model.to_string());
+                changed
+            });
         if let Some((id, levels, current)) = parse_thought_level_option(options) {
             next.effort_option = Some(id);
             next.effort_levels = levels;
             next.effort = current;
-        } else {
-            next.effort_option = None;
-            next.effort_levels.clear();
-            next.effort = None;
+        } else if let Some(prev_id) = prev.effort_option.as_deref() {
+            // A partial `configOptions` answer may carry only `{ id, currentValue }` without repeating `category` or `options`.
+            if let Some(current) = options
+                .iter()
+                .find(|entry| entry.get("id").and_then(Value::as_str) == Some(prev_id))
+                .and_then(|entry| entry.get("currentValue"))
+                .and_then(Value::as_str)
+            {
+                next.effort = Some(current.to_string());
+            } else if model_changed || model_opt.is_some() {
+                next.effort_option = None;
+                next.effort_levels.clear();
+                next.effort = None;
+            }
         }
         if let Some(mode_opt) = options.iter().find(|entry| entry.get("id").and_then(Value::as_str) == Some("mode")) {
             next.mode_is_option = true;
             if let Some(mode) = mode_opt.get("currentValue").and_then(Value::as_str) {
                 next.mode = Some(mode.to_string());
+                mode_from_option = true;
             }
+        } else {
+            next.mode_is_option = false;
         }
     }
-    if next.mode.is_none() {
+    if !mode_from_option {
         if let Some(mode) = value.pointer("/modes/currentModeId").and_then(Value::as_str) {
             next.mode = Some(mode.to_string());
         }
@@ -266,6 +276,17 @@ fn safe_antigravity_session_id(session_id: &str) -> bool {
     (8..=128).contains(&session_id.len()) && session_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
 }
 
+fn antigravity_session_files_exist(app_data: &Path, session_id: &str) -> bool {
+    if !safe_antigravity_session_id(session_id) {
+        return false;
+    }
+    let conversations = app_data.join("conversations");
+    app_data.join("brain").join(session_id).exists()
+        || ANTIGRAVITY_DB_SUFFIXES
+            .iter()
+            .any(|suffix| conversations.join(format!("{session_id}.db{suffix}")).exists())
+}
+
 /// Node's `removeScratchSession` (`src/main/agents/antigravity.ts`): removes a side session's `brain/<id>` folder and
 /// `conversations/<id>.db*` files under `<data_directory>/antigravity/gemini/antigravity-acp`.
 fn remove_antigravity_session_files(app_data: &Path, session_id: &str) {
@@ -274,7 +295,7 @@ fn remove_antigravity_session_files(app_data: &Path, session_id: &str) {
     }
     let _ = std::fs::remove_dir_all(app_data.join("brain").join(session_id));
     let conversations = app_data.join("conversations");
-    for suffix in ["", "-wal", "-shm", "-journal"] {
+    for suffix in ANTIGRAVITY_DB_SUFFIXES {
         let _ = std::fs::remove_file(conversations.join(format!("{session_id}.db{suffix}")));
     }
 }
@@ -283,15 +304,9 @@ async fn remove_antigravity_session_with_retry(app_data: &Path, session_id: &str
     if !safe_antigravity_session_id(session_id) {
         return;
     }
-    let brain = app_data.join("brain").join(session_id);
-    let conversations = app_data.join("conversations");
     for attempt in 0..=5u64 {
         remove_antigravity_session_files(app_data, session_id);
-        let any_left = brain.exists()
-            || ["", "-wal", "-shm", "-journal"]
-                .iter()
-                .any(|suffix| conversations.join(format!("{session_id}.db{suffix}")).exists());
-        if !any_left {
+        if !antigravity_session_files_exist(app_data, session_id) {
             return;
         }
         if attempt < 5 {
@@ -311,17 +326,18 @@ impl AntigravitySessionGuard {
     }
 
     fn disarm(&self) {
-        *self.session_id.lock().unwrap() = None;
+        *self.session_id.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 }
 
 impl Drop for AntigravitySessionGuard {
     fn drop(&mut self) {
-        let Some(session_id) = self.session_id.lock().unwrap().take() else { return };
+        let Some(session_id) = self.session_id.lock().unwrap_or_else(|e| e.into_inner()).take() else { return };
+        if !safe_antigravity_session_id(&session_id) {
+            return;
+        }
         remove_antigravity_session_files(&self.app_data, &session_id);
-        let brain = self.app_data.join("brain").join(&session_id);
-        let db = self.app_data.join("conversations").join(format!("{session_id}.db"));
-        if (brain.exists() || db.exists()) && tokio::runtime::Handle::try_current().is_ok() {
+        if antigravity_session_files_exist(&self.app_data, &session_id) && tokio::runtime::Handle::try_current().is_ok() {
             let app_data = self.app_data.clone();
             tokio::spawn(async move { remove_antigravity_session_with_retry(&app_data, &session_id).await });
         }
@@ -402,16 +418,21 @@ impl AcpSideRpc {
     }
 
     async fn handle_frame(&mut self, frame: &Map<String, Value>, waiting_id: i64) -> Result<Option<Value>, String> {
-        let has_method = frame.get("method").and_then(Value::as_str).is_some();
-        if has_method && frame.contains_key("id") {
-            let wire_id = frame.get("id").cloned().unwrap_or(Value::Null);
+        let method = frame.get("method").and_then(Value::as_str);
+        let wire_id = frame.get("id").filter(|value| !value.is_null());
+        if let (Some(method), Some(wire_id)) = (method, wire_id) {
+            let reply = if method == "elicitation/create" {
+                json!({ "action": "cancel" })
+            } else {
+                json!({ "outcome": { "outcome": "cancelled" } })
+            };
             let _ = self
-                .write_frame(&json!({ "jsonrpc": "2.0", "id": wire_id, "result": { "outcome": { "outcome": "cancelled" } } }))
+                .write_frame(&json!({ "jsonrpc": "2.0", "id": wire_id, "result": reply }))
                 .await;
             self.cancel_once().await;
             return Ok(None);
         }
-        if !has_method && frame.contains_key("id") {
+        if method.is_none() && wire_id.is_some() {
             if frame.get("id").and_then(Value::as_i64) != Some(waiting_id) {
                 return Err(self.failure.into());
             }
@@ -420,7 +441,7 @@ impl AcpSideRpc {
             }
             return Ok(Some(frame.get("result").cloned().unwrap_or(Value::Null)));
         }
-        if frame.get("method").and_then(Value::as_str) == Some("session/update") {
+        if method == Some("session/update") {
             let params = frame.get("params").and_then(Value::as_object);
             let sid = params.and_then(|p| p.get("sessionId")).and_then(Value::as_str);
             if self.session_id.as_deref() == sid && sid.is_some() {
@@ -444,6 +465,54 @@ impl AcpSideRpc {
         }
         Ok(None)
     }
+
+    async fn select_model_and_least_effort(&mut self, session_id: &str, model: &str, mut settings: SessionSettings) -> Result<SessionSettings, String> {
+        if settings.model.as_deref() != Some(model) {
+            let res = self
+                .request(
+                    "session/set_config_option",
+                    json!({ "sessionId": session_id, "configId": "model", "value": model }),
+                )
+                .await?;
+            settings = read_session_settings(&res, &settings);
+            if settings.model.as_deref() != Some(model) {
+                return Err(self.failure.into());
+            }
+        }
+        if let (Some(opt_id), Some(least)) = (settings.effort_option.clone(), settings.effort_levels.first().cloned()) {
+            if settings.effort.as_deref() != Some(least.as_str()) {
+                let res = self
+                    .request(
+                        "session/set_config_option",
+                        json!({ "sessionId": session_id, "configId": opt_id, "value": least }),
+                    )
+                    .await?;
+                settings = read_session_settings(&res, &settings);
+                if settings.effort.as_deref() != Some(least.as_str()) {
+                    return Err(self.failure.into());
+                }
+            }
+        }
+        Ok(settings)
+    }
+
+    async fn prompt_text(&mut self, session_id: &str, prompt: &ShortTextPrompt) -> Result<Option<String>, String> {
+        let text = format!("{}\n\n{}", prompt.instruction, prompt.material);
+        let answered = self
+            .request(
+                "session/prompt",
+                json!({ "sessionId": session_id, "prompt": [{ "type": "text", "text": text }] }),
+            )
+            .await?;
+        let Some(stop_reason) = answered.get("stopReason").and_then(Value::as_str) else {
+            return Err(self.failure.into());
+        };
+        if self.tooled || stop_reason != "end_turn" {
+            return Ok(None);
+        }
+        let trimmed = js_trim(&self.text);
+        Ok((!trimmed.is_empty()).then(|| trimmed.to_string()))
+    }
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -455,6 +524,26 @@ pub(crate) struct SideRun<'a> {
     pub(crate) cwd: &'a str,
     pub(crate) deadline: Duration,
     pub(crate) data_directory: &'a Path,
+}
+
+fn spawn_side_child(mut command: Command, cwd: &str, failure: &'static str) -> Result<(tokio::process::Child, ChildStdin, ChildStdout, tokio::process::ChildStderr), String> {
+    command
+        .current_dir(cwd)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true);
+    #[cfg(windows)]
+    {
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let mut child = command.spawn().map_err(|_| failure.to_string())?;
+    let (Some(stdin), Some(stdout), Some(stderr)) = (child.stdin.take(), child.stdout.take(), child.stderr.take()) else {
+        let _ = child.start_kill();
+        return Err(failure.into());
+    };
+    Ok((child, stdin, stdout, stderr))
 }
 
 async fn stop_child(child: &mut tokio::process::Child, timed_out: bool) {
@@ -473,25 +562,8 @@ pub(crate) async fn write_cursor(launch: &ResolvedCli, prefix_args: &[String], r
     let mut command = Command::new(&launch.executable);
     cursor_environment(&mut command, &side_config_dir);
     launch.apply_tokio(&mut command);
-    command
-        .args(&launch.prefix_args)
-        .args(prefix_args)
-        .arg("acp")
-        .current_dir(run.cwd)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    #[cfg(windows)]
-    {
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-    let mut child = command.spawn().map_err(|_| CURSOR_FAILED.to_string())?;
-    let (Some(stdin), Some(stdout), Some(stderr)) = (child.stdin.take(), child.stdout.take(), child.stderr.take()) else {
-        let _ = child.start_kill();
-        return Err(CURSOR_FAILED.into());
-    };
+    command.args(&launch.prefix_args).args(prefix_args).arg("acp");
+    let (mut child, stdin, stdout, stderr) = spawn_side_child(command, run.cwd, CURSOR_FAILED)?;
     let mut rpc = AcpSideRpc::new(stdin, SideOutput::new(stdout, stderr, OUTPUT_LIMIT, false), false, CURSOR_FAILED);
     let (timed_out, outcome) = match tokio::time::timeout(run.deadline, run_cursor_session(&mut rpc, &run)).await {
         Ok(outcome) => (false, outcome),
@@ -529,52 +601,14 @@ async fn run_cursor_session(rpc: &mut AcpSideRpc, run: &SideRun<'_>) -> Result<O
         .to_string();
     rpc.session_id = Some(session_id.clone());
 
-    let mut settings = read_session_settings(&created, &SessionSettings::default());
-    if settings.model.as_deref() != Some(run.model) {
-        let res = rpc
-            .request(
-                "session/set_config_option",
-                json!({ "sessionId": session_id, "configId": "model", "value": run.model }),
-            )
-            .await?;
-        settings = read_session_settings(&res, &settings);
-        if settings.model.as_deref() != Some(run.model) {
-            return Err(CURSOR_FAILED.into());
-        }
-    }
-    if let (Some(opt_id), Some(least)) = (settings.effort_option.clone(), settings.effort_levels.first().cloned()) {
-        if settings.effort.as_deref() != Some(least.as_str()) {
-            let res = rpc
-                .request(
-                    "session/set_config_option",
-                    json!({ "sessionId": session_id, "configId": opt_id, "value": least }),
-                )
-                .await?;
-            settings = read_session_settings(&res, &settings);
-            if settings.effort.as_deref() != Some(least.as_str()) {
-                return Err(CURSOR_FAILED.into());
-            }
-        }
-    }
+    let settings = read_session_settings(&created, &SessionSettings::default());
+    let _ = rpc.select_model_and_least_effort(&session_id, run.model, settings).await?;
     rpc.request(
         "session/set_config_option",
         json!({ "sessionId": session_id, "configId": "mode", "value": "ask" }),
     )
     .await?;
-
-    let text = format!("{}\n\n{}", run.prompt.instruction, run.prompt.material);
-    let answered = rpc
-        .request(
-            "session/prompt",
-            json!({ "sessionId": session_id, "prompt": [{ "type": "text", "text": text }] }),
-        )
-        .await?;
-    let stop_reason = answered.get("stopReason").and_then(Value::as_str).unwrap_or("");
-    if rpc.tooled || stop_reason != "end_turn" {
-        return Ok(None);
-    }
-    let trimmed = js_trim(&rpc.text);
-    Ok((!trimmed.is_empty()).then(|| trimmed.to_string()))
+    rpc.prompt_text(&session_id, run.prompt).await
 }
 
 /// Antigravity's side call (`antigravity.ts:writeShortText`): one `agy acp` in the thread's folder on a Gemini model
@@ -588,36 +622,22 @@ pub(crate) async fn write_antigravity(launch: &ResolvedCli, prefix_args: &[Strin
     let guard = AntigravitySessionGuard::new(app_data.clone(), Arc::clone(&session_slot));
 
     let mut command = Command::new(&launch.executable);
-    let auth_method = antigravity_environment(&mut command, run.data_directory);
+    antigravity_environment(&mut command, run.data_directory);
     launch.apply_tokio(&mut command);
     command
         .args(&launch.prefix_args)
         .args(prefix_args)
-        .args(antigravity_arguments(run.data_directory))
-        .current_dir(run.cwd)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    #[cfg(windows)]
-    {
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-    let mut child = command.spawn().map_err(|_| ANTIGRAVITY_FAILED.to_string())?;
-    let (Some(stdin), Some(stdout), Some(stderr)) = (child.stdin.take(), child.stdout.take(), child.stderr.take()) else {
-        let _ = child.start_kill();
-        return Err(ANTIGRAVITY_FAILED.into());
-    };
+        .args(antigravity_arguments(run.data_directory));
+    let (mut child, stdin, stdout, stderr) = spawn_side_child(command, run.cwd, ANTIGRAVITY_FAILED)?;
     let mut rpc = AcpSideRpc::new(stdin, SideOutput::new(stdout, stderr, OUTPUT_LIMIT, false), true, ANTIGRAVITY_FAILED);
-    let (timed_out, outcome) = match tokio::time::timeout(run.deadline, run_antigravity_session(&mut rpc, &run, auth_method, &session_slot)).await {
+    let (timed_out, outcome) = match tokio::time::timeout(run.deadline, run_antigravity_session(&mut rpc, &run, &session_slot)).await {
         Ok(outcome) => (false, outcome),
         Err(_) => (true, Err(ANTIGRAVITY_FAILED.into())),
     };
     drop(rpc);
     stop_child(&mut child, timed_out).await;
 
-    let sid = session_slot.lock().unwrap().clone();
+    let sid = session_slot.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if let Some(sid) = sid {
         remove_antigravity_session_with_retry(&app_data, &sid).await;
     }
@@ -628,7 +648,6 @@ pub(crate) async fn write_antigravity(launch: &ResolvedCli, prefix_args: &[Strin
 async fn run_antigravity_session(
     rpc: &mut AcpSideRpc,
     run: &SideRun<'_>,
-    auth_method: &str,
     session_slot: &Arc<Mutex<Option<String>>>,
 ) -> Result<Option<String>, String> {
     let init = rpc
@@ -647,7 +666,7 @@ async fn run_antigravity_session(
     if init.get("protocolVersion").and_then(Value::as_i64) != Some(1) {
         return Err(ANTIGRAVITY_FAILED.into());
     }
-    rpc.request("authenticate", json!({ "methodId": auth_method })).await?;
+    rpc.request("authenticate", json!({ "methodId": "oauth-personal" })).await?;
     let created = rpc.request("session/new", json!({ "cwd": run.cwd, "mcpServers": [] })).await?;
     let session_id = created
         .get("sessionId")
@@ -655,36 +674,11 @@ async fn run_antigravity_session(
         .filter(|s| !s.is_empty())
         .ok_or_else(|| ANTIGRAVITY_FAILED.to_string())?
         .to_string();
-    *session_slot.lock().unwrap() = Some(session_id.clone());
+    *session_slot.lock().unwrap_or_else(|e| e.into_inner()) = Some(session_id.clone());
     rpc.session_id = Some(session_id.clone());
 
-    let mut settings = read_session_settings(&created, &SessionSettings::default());
-    if settings.model.as_deref() != Some(run.model) {
-        let res = rpc
-            .request(
-                "session/set_config_option",
-                json!({ "sessionId": session_id, "configId": "model", "value": run.model }),
-            )
-            .await?;
-        settings = read_session_settings(&res, &settings);
-        if settings.model.as_deref() != Some(run.model) {
-            return Err(ANTIGRAVITY_FAILED.into());
-        }
-    }
-    if let (Some(opt_id), Some(least)) = (settings.effort_option.clone(), settings.effort_levels.first().cloned()) {
-        if settings.effort.as_deref() != Some(least.as_str()) {
-            let res = rpc
-                .request(
-                    "session/set_config_option",
-                    json!({ "sessionId": session_id, "configId": opt_id, "value": least }),
-                )
-                .await?;
-            settings = read_session_settings(&res, &settings);
-            if settings.effort.as_deref() != Some(least.as_str()) {
-                return Err(ANTIGRAVITY_FAILED.into());
-            }
-        }
-    }
+    let settings = read_session_settings(&created, &SessionSettings::default());
+    let mut settings = rpc.select_model_and_least_effort(&session_id, run.model, settings).await?;
     if settings.mode.as_deref().is_some_and(|mode| mode != "default") {
         if settings.mode_is_option {
             let res = rpc
@@ -701,20 +695,7 @@ async fn run_antigravity_session(
             rpc.request("session/set_mode", json!({ "sessionId": session_id, "modeId": "default" })).await?;
         }
     }
-
-    let text = format!("{}\n\n{}", run.prompt.instruction, run.prompt.material);
-    let answered = rpc
-        .request(
-            "session/prompt",
-            json!({ "sessionId": session_id, "prompt": [{ "type": "text", "text": text }] }),
-        )
-        .await?;
-    let stop_reason = answered.get("stopReason").and_then(Value::as_str).unwrap_or("");
-    if rpc.tooled || stop_reason != "end_turn" {
-        return Ok(None);
-    }
-    let trimmed = js_trim(&rpc.text);
-    Ok((!trimmed.is_empty()).then(|| trimmed.to_string()))
+    rpc.prompt_text(&session_id, run.prompt).await
 }
 
 #[cfg(test)]
@@ -742,7 +723,7 @@ mod tests {
     fn parses_thought_level_efforts_in_sottos_order_and_skips_boolean_thinking() {
         let options = vec![
             json!({ "id": "thinking", "category": "thought_level", "currentValue": "true", "options": [{ "value": "false" }, { "value": "true" }] }),
-            json!({ "id": "effort", "category": "thought_level", "currentValue": "high", "options": [{ "value": "max" }, { "value": "high" }, { "value": "low" }] }),
+            json!({ "id": "effort", "category": "thought_level", "currentValue": "high", "options": [{ "group": "g", "options": [{ "value": "max" }, { "value": "high" }, { "value": "low" }] }] }),
         ];
         assert_eq!(
             parse_thought_level_option(&options),
@@ -752,11 +733,42 @@ mod tests {
     }
 
     #[test]
+    fn read_session_settings_preserves_effort_on_partial_options_and_updates_modes() {
+        let initial = json!({
+            "configOptions": [
+                { "id": "model", "currentValue": "gpt-fixture" },
+                { "id": "reasoning", "category": "thought_level", "currentValue": "high", "options": [{ "value": "low" }, { "value": "high" }] }
+            ],
+            "modes": { "currentModeId": "auto" }
+        });
+        let s1 = read_session_settings(&initial, &SessionSettings::default());
+        assert_eq!(s1.effort_option.as_deref(), Some("reasoning"));
+        assert_eq!(s1.effort.as_deref(), Some("high"));
+        assert_eq!(s1.mode.as_deref(), Some("auto"));
+        assert!(!s1.mode_is_option);
+
+        // Partial response after setting effort omits `category` and `options`, and updates `modes.currentModeId`.
+        let partial = json!({
+            "configOptions": [
+                { "id": "reasoning", "currentValue": "low" }
+            ],
+            "modes": { "currentModeId": "default" }
+        });
+        let s2 = read_session_settings(&partial, &s1);
+        assert_eq!(s2.effort_option.as_deref(), Some("reasoning"));
+        assert_eq!(s2.effort.as_deref(), Some("low"));
+        assert_eq!(s2.mode.as_deref(), Some("default"));
+    }
+
+    #[test]
     fn antigravity_gemini_filter_and_session_id_safety_match_node() {
         assert!(is_antigravity_gemini_model("gemini-3.8-flash"));
         assert!(is_antigravity_gemini_model("  GEMINI-4-carbon "));
         assert!(!is_antigravity_gemini_model("claude-sonnet-5-5"));
         assert!(!is_antigravity_gemini_model("gpt-5.6"));
+        // Multi-byte UTF-8 where byte 7 is not a char boundary must never panic.
+        assert!(!is_antigravity_gemini_model("日本語モデル"));
+        assert!(!is_antigravity_gemini_model("éééé"));
 
         assert!(safe_antigravity_session_id("3d6f4ac1-4b9e-43f3-aa5e-2238e5f6c649"));
         assert!(!safe_antigravity_session_id("../escape"));
@@ -773,7 +785,7 @@ mod tests {
         std::fs::create_dir_all(&brain).unwrap();
         std::fs::create_dir_all(&conv).unwrap();
         std::fs::write(brain.join("note.txt"), "scratch").unwrap();
-        for suffix in ["", "-wal", "-shm", "-journal"] {
+        for suffix in ANTIGRAVITY_DB_SUFFIXES {
             std::fs::write(conv.join(format!("{sid}.db{suffix}")), "db").unwrap();
         }
         std::fs::write(conv.join("other.db"), "keep").unwrap();
@@ -782,10 +794,7 @@ mod tests {
         let guard = AntigravitySessionGuard::new(app_data.clone(), slot);
         drop(guard);
 
-        assert!(!brain.exists());
-        for suffix in ["", "-wal", "-shm", "-journal"] {
-            assert!(!conv.join(format!("{sid}.db{suffix}")).exists());
-        }
+        assert!(!antigravity_session_files_exist(&app_data, sid));
         assert!(conv.join("other.db").exists());
     }
 }
