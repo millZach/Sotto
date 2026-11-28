@@ -3,8 +3,9 @@
  * Where Sotto's browser types a secret reference, and when it will not (ADR-0219 and ADR-0222, as the review of the
  * browser-parity branch asked): only on the site its card named, asking every time when the card named none; never into
  * a document the agent ran its own script in; and a type that fails before the value goes leaves the reference for
- * another try. While the document holds the value no picture of the page goes to the agent, and once the page's address
- * has held it, evaluate stays off for as long as the page is open.
+ * another try, while one that fails after says, as an error, that the reference is used. While the document holds the
+ * value no picture of the page goes to the agent, and once a secret was typed into a page, evaluate stays off for as
+ * long as the page is open.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -221,6 +222,27 @@ describe('a secret reference is not typed where the agent\'s script could be lis
       expect(refused.isError).toBe(true)
       expect(refused.text).not.toContain('ran')
     }
+  })
+})
+
+describe('a type the user allowed that fails once the value is taken (the second review, R-N3)', () => {
+  it('tells the agent, as an error, that its reference is used', async () => {
+    fresh()
+    // A card that named no site asks every time, so the agent waits for the user's answer.
+    const ref = await secretRef()
+    const staging = await opened('https://staging.example/login')
+    const typing = staging.act({ type: 'type', selector: '#password', secretRef: ref })
+    await vi.waitFor(() => expect(latestTask(staging.taskId)?.pendingAction?.action.type).toBe('type'))
+    const pending = latestTask(staging.taskId)!.pendingAction!
+    // The page moves the focus while the value comes from the engine.
+    const take = secrets.take.bind(secrets)
+    vi.spyOn(secrets, 'take').mockImplementationOnce((threadId, used) => { const value = take(threadId, used); page.focus = 9; return value })
+    await browser.answerAction({ threadId: THREAD, workspaceId: workspaceId(), pageId: staging.pageId, taskId: staging.taskId, actionId: pending.id, allow: true })
+    const result = await typing
+    expect(result.isError).toBe(true)
+    expect(result.text).toContain('this secretRef is used')
+    expect(result.text).not.toContain(CANARY)
+    expect(page.typed).toBe('')
   })
 })
 

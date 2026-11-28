@@ -5,8 +5,8 @@ import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
 import { BrowserGrants, alwaysAsks, grantCovers } from './browserGrants'
 import { uploadPaths, type BrowserFiles, type StagedUpload } from './browserFiles'
-import { ToolOperations, fail, parse, workspace } from './common'
-import { isTargeted, type PageAutomation, type TargetedAction } from './pageAutomation'
+import { ToolFailure, ToolOperations, fail, parse, workspace } from './common'
+import { SECRET_SPENT, isTargeted, type PageAutomation, type TargetedAction } from './pageAutomation'
 import type { SecretSite } from '../../shared/secretRequests'
 import { ThreadFilePages } from './threadFilePages'
 
@@ -24,6 +24,14 @@ export const AGENT_DOWNLOAD_MS = 3_000
  * nothing, so a short one would be a tap the browser grant never covered.
  */
 const SWIPE_MINIMUM = 24
+/**
+ * Why a type stopped once its secretRef was spent, saying the reference is used (ADR-0219). The typing's own refusals
+ * say so already; anything after it means the secret was typed and the action failed later.
+ */
+function spentWords(error: unknown): string {
+  const words = error instanceof ToolFailure ? error.message : 'The browser action did not finish.'
+  return words.includes(SECRET_SPENT) ? words : `${words} The secret was typed, and ${SECRET_SPENT}`
+}
 
 const sizeOf = (preset: Parameters<typeof presetSize>[0], orientation?: Parameters<typeof presetSize>[1]): { width: number; height: number } => {
   const { width, height } = presetSize(preset, orientation)
@@ -682,6 +690,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     // An action that only reads the page, or sets how it looks or is recorded, cannot set off a download.
     const reading = READS.has(action.type) || action.type === 'appearance' || action.type === 'record_start'
     const observedUrl = action.type === 'navigate' ? action.url : record.page.url
+    // Set once a secret request's value is taken: from then on a failure says the reference is used (ADR-0219).
+    let spent = false
     const guard = (checkGeneration = true): void => {
       this.working(task)
       if (checkGeneration && record.generation !== generation) fail('blocked', 'The page changed. Inspect it before trying again.')
@@ -753,7 +763,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
         const ref = action.secretRef, threadId = record.page.workspace.threadId
         const site = await this.secretSite(record, ref) ?? new URL(record.page.url).origin
         guard()
-        await record.automation.typeSecret(() => this.base.secret!(threadId, ref), guard, action, action.clear === true, site)
+        const take = async (): Promise<string | null> => { const value = await this.base.secret!(threadId, ref); spent = value !== null; return value }
+        await record.automation.typeSecret(take, guard, action, action.clear === true, site)
         output = 'type completed.'
       } else {
         const said = await record.automation.input(action, guard)
@@ -785,9 +796,12 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       task.steps = task.steps.slice(-40)
       return { task: this.publishTask(task), output, ...(image ? { image } : {}), approvalRequired: false }
     } catch (error) {
-      task.output = 'The browser action did not finish. Inspect the page before trying again.'
+      // A spent reference is said in the task too: an action the user allowed answers the agent with the task, not the error.
+      const said = spent ? record.automation.masked(spentWords(error)) : null
+      task.output = said ?? 'The browser action did not finish. Inspect the page before trying again.'
       task.steps.push({ id: randomUUID(), action: action.type, status: 'failed', at: Date.now(), detail: task.output, url: record.automation.masked(observedUrl), viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40); this.publishTask(task)
+      if (said !== null) throw new ToolFailure(error instanceof ToolFailure ? error.code : 'unavailable', said)
       throw error
     } finally {
       this.executing.delete(record.page.id)

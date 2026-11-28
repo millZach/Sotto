@@ -88,10 +88,11 @@ function taskSummary(task: BrowserTask, observable: boolean): unknown {
   if (!observable) return { id: task.id, pageId: task.pageId, status: task.status, pendingAction: task.pendingAction, observationShared: false }
   return { ...task, thumbnail: undefined, evidence: task.evidence?.map(entry => ({ ...entry, image: undefined })) }
 }
-function operationResult(result: ToolsResult<BrowserAgentResult>, observable = true): BrowserToolResult {
+/** A task's result as the tool gives it; `failed` marks it an error, as an action the user allowed that did not finish. */
+function operationResult(result: ToolsResult<BrowserAgentResult>, observable = true, failed = false): BrowserToolResult {
   if (!result.ok) return text(result.error, true)
   const { task, image, output, approvalRequired } = result.value
-  const reply = text({ task: taskSummary({ ...task, output: null }, observable), ...(observable ? output ? { output } : {} : { output: 'The browser page is not shared. Wait for the user before continuing; no page observations are available.' }), approvalRequired })
+  const reply = text({ task: taskSummary({ ...task, output: null }, observable), ...(observable ? output ? { output } : {} : { output: 'The browser page is not shared. Wait for the user before continuing; no page observations are available.' }), approvalRequired }, failed)
   const match = image?.match(/^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/=]+)$/u)
   if (observable && match) reply.content.push({ type: 'image', mimeType: match[1]!, data: match[2]! })
   return reply
@@ -196,8 +197,10 @@ function browserAgentServer(definitions: readonly BrowserToolDefinition[], instr
     }
     const completed = async (result: ToolsResult<BrowserAgentResult>): Promise<BrowserToolResult> => {
       if (!result.ok) return operationResult(result)
-      let value = result.value
+      let value = result.value, failed = false
       if (value.approvalRequired && value.task.pendingAction) {
+        // The step the action adds once the user answers, set apart from those before it.
+        const before = value.task.steps.at(-1)?.id
         const task = await waitWithin(browser.waitForAction(value.task.id, value.task.pendingAction.id), context)
         if (task === STILL_WAITING) {
           const current = await browser.list({ threadId })
@@ -207,12 +210,14 @@ function browserAgentServer(definitions: readonly BrowserToolDefinition[], instr
         }
         if (!task) return text({ message: 'This browser task closed while waiting for your answer.' }, true)
         value = { task, ...(task.output ? { output: task.output } : {}), approvalRequired: task.pendingAction !== null }
+        const last = task.steps.at(-1)
+        failed = last !== undefined && last.id !== before && last.status === 'failed'
       }
       const current = await browser.list({ threadId })
       if (!current.ok) return text(current.error, true)
       const page = current.value.pages.find(page => page.id === value.task.pageId)
       const shared = !!page?.sharedOrigin && page.sharedOrigin === new URL(page.url).origin
-      return operationResult({ ok: true, value }, shared)
+      return operationResult({ ok: true, value }, shared, failed)
     }
     const taskResult = async (result: ToolsResult<BrowserTask>): Promise<BrowserToolResult> => {
       if (!result.ok) return text(result.error, true)
