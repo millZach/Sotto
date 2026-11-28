@@ -334,6 +334,18 @@ describe('browser agent boundaries', () => {
     expect(vi.mocked(view.webContents.debugger.sendCommand).mock.calls.filter(call => call[0] === 'Page.captureScreenshot')).toHaveLength(1)
   })
 
+  it('names the read each catalog has when it pictures no page that holds a secret', async () => {
+    // The stable catalog reads a page with inspect, the full one with snapshot (ADR-0220).
+    for (const [parity, read] of [[false, 'inspect'], [true, 'snapshot']] as const) {
+      const { service, target } = await browserFixture(false, new Set(), () => false, parity)
+      unwrap(await service.share({ ...target, enabled: true }))
+      const task = unwrap(await service.startTask({ ...target, description: 'Check screenshot' }))
+      const holds = vi.spyOn(PageAutomation.prototype, 'holdsSecret').mockReturnValue(true)
+      const refused = await service.action({ ...target, taskId: task.id, action: { type: 'screenshot' } }).finally(() => holds.mockRestore())
+      expect(refused).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining(`no picture of it goes to you until it loads another document. Use ${read}, whose words are masked.`) } })
+    }
+  })
+
   it.each([
     { nodeName: 'IFRAME', attributes: [] },
     { nodeName: 'CUSTOM-EDITOR', attributes: ['contenteditable', 'true'], shadowRoots: [{ shadowRootType: 'closed' }] },
