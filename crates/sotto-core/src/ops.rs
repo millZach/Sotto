@@ -3064,6 +3064,49 @@ fn stop_at_deadline(child: &mut std::process::Child, stop: TimeoutStop, grace: I
     child.wait()
 }
 
+/// Stops `child` and its whole process tree (for example `git clone` and its `git-remote-https` / `ssh` helpers)
+/// when Sotto is closing, matching Node's `AbortSignal` tree kill (`src/main/agents/projectSetup.ts:237-249`).
+fn stop_process_tree(child: &mut std::process::Child) -> std::io::Result<std::process::ExitStatus> {
+    let pid = child.id();
+    #[cfg(unix)]
+    {
+        extern "C" {
+            fn kill(pid: i32, signal: i32) -> i32;
+        }
+        const SIGTERM: i32 = 15;
+        const SIGKILL: i32 = 9;
+        let pgid = -(pid as i32);
+        // SAFETY: `child` was spawned in its own process group (`setpgid(0, 0)`) and has not been reaped yet.
+        unsafe {
+            let _ = kill(pgid, SIGTERM);
+        }
+        let grace = Instant::now() + Duration::from_millis(250);
+        while Instant::now() < grace {
+            if let Some(status) = child.try_wait()? {
+                return Ok(status);
+            }
+            std::thread::sleep(Duration::from_millis(15));
+        }
+        unsafe {
+            let _ = kill(pgid, SIGKILL);
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
+    let _ = child.kill();
+    child.wait()
+}
+
 /// What Sotto's own reads put before Git's arguments: nothing locked, every path taken as written, no file monitor and no
 /// external diff.
 const STATUS_GIT_PREFIX: [&str; 8] = ["--no-optional-locks", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "core.quotePath=false", "-c", "diff.external="];
@@ -3136,6 +3179,25 @@ fn run_tool_raw(
     readers: Readers,
     prefix: &[&str],
 ) -> Result<ToolRunResult, GitRunError> {
+    run_tool_raw_cancellable(tool, folder, args, extra_env, stdin_bytes, max_buffer, strip_all_git_env, deadline, stop, readers, prefix, None)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_tool_raw_cancellable(
+    tool: &str,
+    folder: &str,
+    args: &[&str],
+    extra_env: &[(String, String)],
+    stdin_bytes: Option<&[u8]>,
+    max_buffer: Option<usize>,
+    strip_all_git_env: bool,
+    deadline: Instant,
+    stop: TimeoutStop,
+    readers: Readers,
+    prefix: &[&str],
+    cancel: Option<&std::sync::atomic::AtomicBool>,
+) -> Result<ToolRunResult, GitRunError> {
+    use std::sync::atomic::Ordering;
     let Readers { lines, keep_reading } = readers;
     // Shut once the command settles, so a grandchild still holding the output past then reaches no one, as Node's
     // runner destroys the streams when it settles. Hold the guard across `sink(line)` so no callback races past settle.
@@ -3149,6 +3211,9 @@ fn run_tool_raw(
             }
         })
     });
+    if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+        return Err(GitRunError::Failed(GIT_ABORTED.to_string()));
+    }
     if Instant::now() >= deadline {
         return Err(GitRunError::Failed(format!("{tool} timed out")));
     }
@@ -3210,6 +3275,21 @@ fn run_tool_raw(
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    #[cfg(unix)]
+    if cancel.is_some() {
+        use std::os::unix::process::CommandExt;
+        extern "C" {
+            fn setpgid(pid: i32, pgid: i32) -> i32;
+        }
+        // SAFETY: `setpgid(0, 0)` is async-signal-safe and puts the child in its own process group
+        // so `stop_process_tree` kills git and all its helpers cleanly on shutdown.
+        unsafe {
+            cmd.pre_exec(|| {
+                let _ = setpgid(0, 0);
+                Ok(())
+            });
+        }
+    }
 
     let mut child = cmd.spawn().map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -3256,6 +3336,7 @@ fn run_tool_raw(
     }
 
     let mut timed_out = false;
+    let mut aborted = false;
     // When the command settles at the latest: Node's runner gives it two seconds from its deadline, or from the stop when
     // it is stopped there (`spawnCommand`).
     let mut settle_by = deadline + TIMEOUT_GRACE;
@@ -3263,6 +3344,11 @@ fn run_tool_raw(
         match child.try_wait() {
             Ok(Some(st)) => break Ok(st),
             Ok(None) => {
+                if cancel.is_some_and(|c| c.load(Ordering::Relaxed)) {
+                    aborted = true;
+                    settle_by = Instant::now() + TIMEOUT_GRACE;
+                    break stop_process_tree(&mut child);
+                }
                 if Instant::now() >= deadline {
                     timed_out = true;
                     settle_by = Instant::now() + TIMEOUT_GRACE;
@@ -3287,6 +3373,9 @@ fn run_tool_raw(
         Err(std::sync::mpsc::RecvTimeoutError::Timeout)
     );
     *open.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = false;
+    if aborted {
+        return Err(GitRunError::Failed(GIT_ABORTED.to_string()));
+    }
     if timed_out || held {
         return Err(GitRunError::Failed(format!("{tool} timed out")));
     }
@@ -3368,6 +3457,8 @@ pub(crate) fn run_worktree_git(folder: &str, args: &[&str], deadline: Option<Dur
 
 /// What Node's runner says when Git itself is missing (`GitUnavailableError`).
 pub(crate) const GIT_MISSING: &str = "git is not installed or is not on PATH.";
+/// Returned by `run_action_git_with` when its `cancel` flag stops an in-flight command.
+pub(crate) const GIT_ABORTED: &str = "git was stopped.";
 
 /// Git as Node's `runGitStatusCommand` (`src/main/agents/git/gitStatus.ts`) runs it for a Git action: Node's options
 /// alone before the arguments, `LC_ALL=C` with nothing that redirects Git, at most 8,000,000 bytes back, stopped at
@@ -3389,21 +3480,48 @@ struct Readers {
 }
 
 /// What a Git action may hand Git beyond its arguments, as Node's `GitCommandOptions` carries them: variables of its own,
-/// text on standard input, so a message or a path list is never an argument, and a reader of each line printed.
+/// text on standard input, so a message or a path list is never an argument, a reader of each line printed, and an
+/// optional cancellation flag that terminates the child process tree cleanly on shutdown.
 #[derive(Default)]
 pub(crate) struct ActionGitExtras<'a> {
     pub env: &'a [(String, String)],
     pub stdin: Option<&'a [u8]>,
     pub lines: Option<LineSink>,
+    pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
 /// `run_action_git` with what `extras` adds.
 pub(crate) fn run_action_git_with(folder: &str, args: &[&str], deadline: Duration, extras: ActionGitExtras<'_>) -> Result<String, String> {
     // Node's runner keeps the first 8,000,000 bytes and reads on: a Git action is never stopped or failed for printing more.
     let readers = Readers { lines: extras.lines, keep_reading: true };
-    run_git_impl(folder, args, extras.env, extras.stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, readers, &ACTION_GIT_PREFIX)
-        .map(|o| o.stdout)
-        .map_err(|e| action_tool_words("git", e))
+    let raw = run_tool_raw_cancellable(
+        "git",
+        folder,
+        args,
+        extras.env,
+        extras.stdin,
+        Some(8_000_000),
+        false,
+        Instant::now() + deadline,
+        TimeoutStop::Terminate,
+        readers,
+        &ACTION_GIT_PREFIX,
+        extras.cancel,
+    );
+    let out = raw.and_then(|res| {
+        if !res.success {
+            let stderr_str = res.stderr.trim().to_string();
+            let msg = if stderr_str.is_empty() {
+                format!("git exited with status {}", res.status_display)
+            } else {
+                stderr_str
+            };
+            Err(GitRunError::Failed(msg))
+        } else {
+            Ok(res.stdout)
+        }
+    });
+    out.map_err(|e| action_tool_words("git", e))
 }
 
 /// Detailed failure from a `gh` invocation, preserving `stdout` on non-zero exit so GraphQL partial answers and

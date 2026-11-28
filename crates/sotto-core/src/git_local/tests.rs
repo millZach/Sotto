@@ -301,8 +301,69 @@ fn a_folder_a_git_action_holds_refuses_pull_switch_and_init() {
     assert_eq!(pull(&remote.ours()).unwrap_err(), "Git action in progress.");
     assert_eq!(switch_branch(&remote.ours(), "topic", false).unwrap_err(), "Git action in progress.");
     assert_eq!(init(&text(empty.path())).unwrap_err(), "Git action in progress.");
+    assert_eq!(publish(&remote.ours(), "org/repo", "private").unwrap_err(), "Git action in progress.");
     drop(held);
     assert!(pull(&remote.ours()).is_ok());
     assert_eq!(switch_branch(&remote.ours(), "topic", false).unwrap(), Some("topic".into()));
     assert!(init(&text(empty.path())).is_ok());
+}
+
+#[test]
+fn git_publish_validates_schema_repo_name_existing_origin_and_lost_reply() {
+    assert_eq!(
+        LocalGitCommand::from_command(json!({ "type": "git-publish", "threadId": "t1", "repository": "org/app", "visibility": "private" }).as_object().unwrap()),
+        Some(LocalGitCommand::Publish { repository: "org/app".into(), visibility: "private".into() })
+    );
+    for bad in [
+        json!({ "type": "git-publish", "threadId": "t1", "repository": "ab", "visibility": "private" }),
+        json!({ "type": "git-publish", "threadId": "t1", "repository": "org/app", "visibility": "internal" }),
+        json!({ "type": "git-publish", "threadId": "t1", "repository": "org/app", "visibility": "public", "extra": 1 }),
+    ] {
+        assert_eq!(LocalGitCommand::from_command(bad.as_object().unwrap()), None);
+    }
+
+    let empty = tempfile::tempdir().unwrap();
+    let empty_str = text(empty.path());
+    assert_eq!(
+        publish_with_gh(&empty_str, "-bad/repo", "private", |_, _| Ok(String::new())),
+        Err("Name the repository as owner/name.".into())
+    );
+    assert_eq!(
+        publish_with_gh(&empty_str, "org/repo", "private", |_, _| Ok(String::new())),
+        Err("Initialize Git before publishing.".into())
+    );
+
+    let remote = Remote::new();
+    assert_eq!(
+        publish_with_gh(&remote.ours(), "org/repo", "private", |_, _| Ok(String::new())),
+        Err("This repository already has an origin remote.".into())
+    );
+
+    let repo = tempfile::tempdir().unwrap();
+    let repo_str = text(repo.path());
+    sh_git(repo.path(), &["init", "-q", "-b", "main"]);
+    commit(repo.path(), "README.md", "hi\n");
+    let url = publish_with_gh(&repo_str, "org/app", "public", |_, args| {
+        assert!(args.contains(&"--public"));
+        assert!(args.contains(&"--push"));
+        Ok("note: https:// then https://github.com/org/app\n".into())
+    })
+    .unwrap();
+    assert_eq!(url, "https://github.com/org/app");
+    assert_eq!(
+        publish_with_gh(&repo_str, "org/app", "internal", |_, _| Ok(String::new())),
+        Err("Choose private or public visibility.".into())
+    );
+
+    let bare = tempfile::tempdir().unwrap();
+    sh_git(bare.path(), &["init", "--bare", "-q", "-b", "main"]);
+    let bare_str = text(bare.path());
+    let repo_str_clone = repo_str.clone();
+    let recovered = publish_with_gh(&repo_str, "org/app", "private", move |_, _| {
+        sh_git(Path::new(&repo_str_clone), &["remote", "add", "origin", &bare_str]);
+        sh_git(Path::new(&repo_str_clone), &["push", "-q", "-u", "origin", "main"]);
+        Err("connection reset".into())
+    })
+    .unwrap();
+    assert_eq!(recovered, "https://github.com/org/app");
 }

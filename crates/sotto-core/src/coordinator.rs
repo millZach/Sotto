@@ -1050,6 +1050,14 @@ enum ActorMessage {
     GetProjectsForOrigins {
         reply: oneshot::Sender<Vec<(String, String, Option<String>)>>,
     },
+    GetProjectSetupContext {
+        reply: oneshot::Sender<(String, Vec<String>, PathBuf)>,
+    },
+    AddProjectForSetup {
+        title: String,
+        path: String,
+        reply: oneshot::Sender<Result<String, String>>,
+    },
     SetThreadDelegatedBy {
         thread_id: String,
         delegating_thread_id: String,
@@ -1613,6 +1621,32 @@ impl CoordinatorHandle {
         reply_rx
             .await
             .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn project_setup_context(
+        &self,
+    ) -> Result<(String, Vec<String>, PathBuf), CoordinatorError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::GetProjectSetupContext { reply: reply_tx })
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))?;
+        reply_rx
+            .await
+            .map_err(|_| CoordinatorError::unavailable("Host coordinator stopped."))
+    }
+
+    pub async fn add_project_for_setup(
+        &self,
+        title: String,
+        path: String,
+    ) -> Result<String, String> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.tx
+            .send(ActorMessage::AddProjectForSetup { title, path, reply: reply_tx })
+            .map_err(|_| "Host coordinator stopped.".to_string())?;
+        reply_rx
+            .await
+            .map_err(|_| "Host coordinator stopped.".to_string())?
     }
 
     pub async fn set_thread_delegated_by(
@@ -2485,6 +2519,18 @@ impl CoordinatorActor {
                     .collect();
                 let _ = reply.send(out);
             }
+            ActorMessage::GetProjectSetupContext { reply } => {
+                let paths = self.projects.iter().map(|p| p.path.clone()).collect();
+                let _ = reply.send((
+                    self.configuration.projects_directory.clone(),
+                    paths,
+                    self.data_directory.clone(),
+                ));
+            }
+            ActorMessage::AddProjectForSetup { title, path, reply } => {
+                let res = self.add_project_for_setup(&title, &path);
+                let _ = reply.send(res);
+            }
             ActorMessage::SetThreadDelegatedBy {
                 thread_id,
                 delegating_thread_id,
@@ -2825,7 +2871,7 @@ impl CoordinatorActor {
             "retry-thread-worktree" | "refresh-thread-worktree" => self.cmd_update_thread_worktree(lane, client, &command, reply),
             "restore-thread-branch" => self.cmd_restore_thread_branch(lane, client, &command, reply),
             // Pull, Switch branch and Initialize Git wait on Git in the thread's lane, with its checkout held.
-            "git-pull" | "git-switch-branch" | "git-init" => self.cmd_local_git(lane, client, &command, reply),
+            "git-pull" | "git-switch-branch" | "git-init" | "git-publish" => self.cmd_local_git(lane, client, &command, reply),
             // Stacked commit / push / pull request runs in the thread's lane with its checkout held.
             "git-action" => self.cmd_git_action(lane, client, &command, reply),
             // GitHub pull request link, unlink, action, and checkout (ADR-0027, #1691).
@@ -4517,6 +4563,63 @@ impl CoordinatorActor {
         Ok(())
     }
 
+    /// Adds an existing folder as a project (reusing an existing project at the same path) for `project-setup` (#1690),
+    /// matching Node's `addProjectForPlacement` / `create-project` (`control.ts:724-750, 4777-4828`).
+    fn add_project_for_setup(&mut self, title: &str, path: &str) -> Result<String, String> {
+        let provider = self.configuration.provider.clone();
+        if !self.host_connected() {
+            return Err(NO_PROVIDER_ON_HOST.into());
+        }
+        let status = self.provider_statuses.get(&provider);
+        if status.is_some_and(|status| status.connection != "connected") {
+            return Err(format!("Connect {} before creating a project.", provider_label(&provider)));
+        }
+        let host_projects = || self.provider_statuses.values().any(|s| s.connection == "connected" && s.capabilities.projects);
+        if !status.map_or_else(host_projects, |status| status.capabilities.projects) {
+            return Err("This provider does not support creating projects.".into());
+        }
+        if title.trim().is_empty() || !usable_folder_name(title) {
+            return Err("Choose a project name that can be used as a folder name.".into());
+        }
+        let target = PathBuf::from(path);
+        if !target.is_absolute() {
+            return Err("Choose an absolute project folder or configure a default projects directory.".into());
+        }
+        let dir = resolved_path(&target);
+        let resolved = dir.to_string_lossy().into_owned();
+        match std::fs::metadata(&dir) {
+            Ok(meta) if meta.is_dir() => {}
+            Ok(_) => return Err("A file with that name is already there. Nothing was added. Choose another name.".into()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                return Err("That folder no longer exists. Nothing was added. Choose another folder.".into());
+            }
+            Err(err) => return Err(err.to_string()),
+        }
+        let key = folder_key(&resolved);
+        if let Some(existing) = self
+            .projects
+            .iter()
+            .find(|p| folder_key(&p.path) == key && p.provider_id.as_deref().is_none_or(|id| id == provider))
+        {
+            return Ok(existing.id.clone());
+        }
+        let id = Uuid::new_v4().to_string();
+        let project = AgentProject {
+            id: id.clone(),
+            title: title.to_string(),
+            path: resolved,
+            host_id: Some(self.host_id.clone()),
+            provider_id: Some(provider),
+            workspace_settled_at: None,
+            extra: Map::new(),
+        };
+        self.projects.push(project);
+        self.save_workspace();
+        self.shell_dirty = true;
+        self.flush_dirty();
+        Ok(id)
+    }
+
     /// Why a thread's settings may not change, in Node's words and order (`configure-thread` and `validateThreadOptions`).
     /// This host's catalog offers no speed but standard, so any other speed is refused as a model without it refuses it.
     fn configure_refusal(&self, client: &ClientContext, command: &Map<String, Value>) -> Result<(), String> {
@@ -5113,14 +5216,51 @@ impl CoordinatorActor {
         };
         let (self_tx, data_directory) = (self.self_tx.clone(), self.data_directory.clone());
         tokio::task::spawn_blocking(move || {
+            struct LocalGitGuard {
+                self_tx: mpsc::UnboundedSender<ActorMessage>,
+                lane: Option<String>,
+                client: Option<ClientContext>,
+                reply: Option<oneshot::Sender<Result<Value, CoordinatorError>>>,
+                thread_id: String,
+                folder: Option<String>,
+                checkout_held: bool,
+            }
+            impl Drop for LocalGitGuard {
+                fn drop(&mut self) {
+                    if let (Some(client), Some(reply)) = (self.client.take(), self.reply.take()) {
+                        let outcome = AsyncCommandOutcome::LocalGit {
+                            folder: self.folder.take(),
+                            checkout_held: self.checkout_held,
+                            thread_id: self.thread_id.clone(),
+                            record: None,
+                            result: Err(ChangeRefused::from("The Git command stopped unexpectedly.".to_string())),
+                        };
+                        let _ = self.self_tx.send(ActorMessage::AsyncCommandDone {
+                            lane: self.lane.take(),
+                            client,
+                            outcome: Box::new(outcome),
+                            reply,
+                        });
+                    }
+                }
+            }
+            let mut guard = LocalGitGuard {
+                self_tx: self_tx.clone(),
+                lane,
+                client: Some(client),
+                reply: Some(reply),
+                thread_id: thread_id.clone(),
+                folder: None,
+                checkout_held: false,
+            };
             let held = crate::worktree_reclaim::threads_in_checkout(&checkout, &candidates)
                 .map_err(ChangeRefused::from)
                 .and_then(|(key, sharing)| hold_checkout(&self_tx, &thread_id, &checkout, key, sharing));
-            let checkout_held = held.is_ok();
-            let (folder, record, result) = match held {
-                Err(refused) => (None, None, Err(refused)),
+            guard.checkout_held = held.is_ok();
+            let (record, result) = match held {
+                Err(refused) => (None, Err(refused)),
                 Ok(()) => {
-                    let folder = working.worktree.as_ref().and_then(|wt| wt.path.clone()).filter(|folder| hold_folder(&self_tx, &thread_id, folder, false).is_some());
+                    guard.folder = working.worktree.as_ref().and_then(|wt| wt.path.clone()).filter(|folder| hold_folder(&self_tx, &thread_id, folder, false).is_some());
                     let (mut record, result) = crate::git_local::run(&data_directory, &working, &git);
                     // The folder's status as Git left it, read before the reply, as Node's `followGitChange` awaits it.
                     if result.is_ok() {
@@ -5133,11 +5273,24 @@ impl CoordinatorActor {
                             }
                         }
                     }
-                    (folder, record, result.map_err(ChangeRefused::from))
+                    (record, result.map_err(ChangeRefused::from))
                 }
             };
-            let outcome = AsyncCommandOutcome::LocalGit { folder, checkout_held, thread_id, record, result };
-            let _ = self_tx.send(ActorMessage::AsyncCommandDone { lane, client, outcome: Box::new(outcome), reply });
+            if let (Some(client), Some(reply)) = (guard.client.take(), guard.reply.take()) {
+                let outcome = AsyncCommandOutcome::LocalGit {
+                    folder: guard.folder.take(),
+                    checkout_held: guard.checkout_held,
+                    thread_id,
+                    record,
+                    result,
+                };
+                let _ = guard.self_tx.send(ActorMessage::AsyncCommandDone {
+                    lane: guard.lane.take(),
+                    client,
+                    outcome: Box::new(outcome),
+                    reply,
+                });
+            }
         });
     }
 
@@ -11610,6 +11763,62 @@ mod tests {
         assert_eq!(t["pullRequests"][0]["state"], "merged");
         assert_eq!(t["pullRequests"][0]["title"], "Merged PR");
         assert_eq!(t["worktree"]["git"]["pullRequest"]["state"], "merged");
+
+        coord.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn git_publish_and_project_setup_coordinator_wiring_work() {
+        let dir = tempdir().unwrap();
+        let (coord, client, _project_id, thread_id) = organized_workspace(dir.path()).await;
+        let obj = |v: Value| v.as_object().unwrap().clone();
+
+        // git-publish refuses invalid owner/name before touching Git.
+        let bad = coord
+            .run_command(
+                client.clone(),
+                obj(json!({
+                    "type": "git-publish",
+                    "threadId": thread_id,
+                    "repository": "-bad/name",
+                    "visibility": "private"
+                })),
+            )
+            .await
+            .unwrap();
+        assert_eq!(bad["error"].as_str(), Some("Name the repository as owner/name."));
+
+        // git-publish refuses a non-Git project folder cleanly.
+        let no_git = coord
+            .run_command(
+                client.clone(),
+                obj(json!({
+                    "type": "git-publish",
+                    "threadId": thread_id,
+                    "repository": "org/app",
+                    "visibility": "private"
+                })),
+            )
+            .await
+            .unwrap();
+        assert_eq!(no_git["error"].as_str(), Some("Initialize Git before publishing."));
+
+        // add_project_for_setup adds a new folder once and reuses the same ID on repeat calls.
+        let new_folder = dir.path().join("cloned-app");
+        std::fs::create_dir_all(&new_folder).unwrap();
+        let id1 = coord
+            .add_project_for_setup("Cloned App".into(), new_folder.to_string_lossy().into_owned())
+            .await
+            .unwrap();
+        let id2 = coord
+            .add_project_for_setup("Cloned App".into(), new_folder.to_string_lossy().into_owned())
+            .await
+            .unwrap();
+        assert_eq!(id1, id2);
+
+        let (_projects_dir, paths, own_folder) = coord.project_setup_context().await.unwrap();
+        assert!(paths.iter().any(|p| p.ends_with("cloned-app")));
+        assert_eq!(own_folder, dir.path());
 
         coord.shutdown().await;
     }

@@ -1,10 +1,10 @@
-//! Pull, Switch branch and Initialize Git on a thread's working copy (T3's Git commands, ADR-0027), as Node's
-//! `GitActions` runs them (`pull`, `switchBranch` and `init` in `src/main/agents/git/gitActions.ts`) in the folder Node's
-//! `threadWorkingDirectory` gives them, and the notice Node's coordinator says for each (`gitCommand` in
-//! `src/main/agents/control.ts`). None of them reaches GitHub. A pull only fast-forwards; a switch never forces, so Git
-//! refuses one that would lose work; nothing answers a prompt. Every refusal is in T3's words, or Git's, and leaves the
-//! folder as it was. The checkout these run in is held by the coordinator while they run, and the folder by the hold a Git
-//! action takes, so one Git action or command runs in a folder at a time.
+//! Pull, Switch branch, Initialize Git, and Publish on a thread's working copy (T3's Git commands, ADR-0027), as Node's
+//! `GitActions` runs them (`pull`, `switchBranch`, `init`, and `publish` in `src/main/agents/git/gitActions.ts`) in the
+//! folder Node's `threadWorkingDirectory` gives them, and the notice Node's coordinator says for each (`gitCommand` in
+//! `src/main/agents/control.ts`). Only `git-publish` reaches GitHub. A pull only fast-forwards; a switch never forces, so
+//! Git refuses one that would lose work; nothing answers a prompt. Every refusal is in T3's words, or Git's, and leaves
+//! the folder as it was. The checkout these run in is held by the coordinator while they run, and the folder by the hold a
+//! Git action takes, so one Git action or command runs in a folder at a time.
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -23,6 +23,8 @@ const COMMAND_DEADLINE: Duration = Duration::from_secs(30);
 const QUICK_DEADLINE: Duration = Duration::from_secs(10);
 /// Node's `PULL_TIMEOUT_MS`.
 const PULL_DEADLINE: Duration = Duration::from_secs(30);
+/// Node's timeout for `gh repo create` in `publish`.
+const PUBLISH_DEADLINE: Duration = Duration::from_secs(120);
 
 /// The folders a Git action, a pull, a switch or Initialize Git is running in, as Node's `GitActions` holds one of them
 /// per folder at a time in one busy map.
@@ -55,18 +57,20 @@ impl Drop for Exclusive {
 pub const INITIALIZED_NOTICE: &str = "Git initialized.";
 const INVALID_BRANCH_NAME: &str = "Enter a valid branch name.";
 
-/// One of the three local Git commands, as a paired client sends it.
+/// One of the local/publish Git commands, as a paired client sends it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LocalGitCommand {
     Pull,
     SwitchBranch { reference: String, create: bool },
     Init,
+    Publish { repository: String, visibility: String },
 }
 
 impl LocalGitCommand {
     /// The command, when it is one Node's strict command schema reads (`agentCommandSchema` in `src/shared/agents.ts`): a
     /// thread ID of 1 to 512 UTF-16 code units, and for a switch a `ref` of the same length and `create` only as a boolean,
-    /// with nothing else. The socket server reads it before anything turns the command down or keeps its receipt.
+    /// or for publish a `repository` (3..=200 UTF-16) and `visibility` (`private` or `public`), with nothing else.
+    /// The socket server reads it before anything turns the command down or keeps its receipt.
     pub fn from_command(command: &Map<String, Value>) -> Option<Self> {
         let bounded = |text: &str| !text.is_empty() && text.encode_utf16().count() <= 512;
         command.get("threadId").and_then(Value::as_str).filter(|id| bounded(id))?;
@@ -82,6 +86,23 @@ impl LocalGitCommand {
                     Some(_) => return None,
                 };
                 only(&["ref", "create"]).then(|| Self::SwitchBranch { reference: reference.to_string(), create })
+            }
+            "git-publish" => {
+                let repository = command
+                    .get("repository")
+                    .and_then(Value::as_str)
+                    .filter(|repo| {
+                        let len = repo.encode_utf16().count();
+                        (3..=200).contains(&len)
+                    })?;
+                let visibility = command
+                    .get("visibility")
+                    .and_then(Value::as_str)
+                    .filter(|vis| matches!(*vis, "private" | "public"))?;
+                only(&["repository", "visibility"]).then(|| Self::Publish {
+                    repository: repository.to_string(),
+                    visibility: visibility.to_string(),
+                })
             }
             _ => None,
         }
@@ -165,6 +186,9 @@ pub fn run(data_directory: &Path, thread: &ThreadFolder, command: &LocalGitComma
         LocalGitCommand::Pull => pull(&cwd).map(|pulled| pulled.notice()),
         LocalGitCommand::SwitchBranch { reference, create } => switch_branch(&cwd, reference, *create).map(|_| switched_notice(reference, *create)),
         LocalGitCommand::Init => init(&cwd).map(|()| INITIALIZED_NOTICE.to_string()),
+        LocalGitCommand::Publish { repository, visibility } => {
+            publish(&cwd, repository, visibility).map(|url| format!("Repository published at {url}."))
+        }
     };
     if done.is_err() {
         return (kept(current), done);
@@ -320,6 +344,123 @@ pub fn pull(cwd: &str) -> Result<Pulled, String> {
     }
     let after = head()?;
     Ok(Pulled { moved: before != after, branch, upstream })
+}
+
+/// Validates `owner/name` matching Node's `GitActions.publish` regex
+/// (`^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9_.-]+$`).
+fn is_valid_publish_repository(repository: &str) -> bool {
+    let Some((owner, name)) = repository.split_once('/') else {
+        return false;
+    };
+    if owner.is_empty() || name.is_empty() || name.contains('/') {
+        return false;
+    }
+    let ob = owner.as_bytes();
+    if !ob[0].is_ascii_alphanumeric() || !ob[ob.len() - 1].is_ascii_alphanumeric() {
+        return false;
+    }
+    if !ob.iter().all(|b| b.is_ascii_alphanumeric() || *b == b'-') {
+        return false;
+    }
+    name.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'))
+}
+
+fn extract_https_url(output: &str) -> Option<String> {
+    for (idx, _) in output.match_indices("https://") {
+        let rest = &output[idx..];
+        let end = rest.find(js_space).unwrap_or(rest.len());
+        if end > "https://".len() {
+            return Some(rest[..end].to_string());
+        }
+    }
+    None
+}
+
+fn tail_utf16(text: &str, max_units: usize) -> &str {
+    let total: usize = text.encode_utf16().count();
+    if total <= max_units {
+        return text;
+    }
+    let skip = total - max_units;
+    let mut seen = 0usize;
+    for (idx, ch) in text.char_indices() {
+        if seen >= skip {
+            return &text[idx..];
+        }
+        seen += ch.len_utf16();
+    }
+    ""
+}
+
+/// Publish a repository to GitHub through `gh`, adding `origin` and pushing the current branch (ADR-0027),
+/// mirroring `GitActions.publish` (`src/main/agents/git/gitActions.ts:852-872`).
+pub fn publish(cwd: &str, repository: &str, visibility: &str) -> Result<String, String> {
+    publish_with_gh(cwd, repository, visibility, |folder, args| {
+        crate::ops::run_action_gh_with(folder, args, PUBLISH_DEADLINE, None)
+    })
+}
+
+pub(crate) fn publish_with_gh<F>(cwd: &str, repository: &str, visibility: &str, run_gh: F) -> Result<String, String>
+where
+    F: FnOnce(&str, &[&str]) -> Result<String, String>,
+{
+    let _held = Exclusive::hold(cwd)?;
+    if !matches!(visibility, "private" | "public") {
+        return Err("Choose private or public visibility.".into());
+    }
+    if !is_valid_publish_repository(repository) {
+        return Err("Name the repository as owner/name.".into());
+    }
+    if !is_repository(cwd)? {
+        return Err("Initialize Git before publishing.".into());
+    }
+    let remotes = git(cwd, &["remote"], COMMAND_DEADLINE).unwrap_or_default();
+    if remotes.lines().any(|line| line.trim() == "origin") {
+        return Err("This repository already has an origin remote.".into());
+    }
+    let has_commit = git(cwd, &["rev-parse", "--verify", "-q", "HEAD"], COMMAND_DEADLINE).is_ok();
+    let branch = git(cwd, &["status", "--porcelain=v2", "--branch", "--untracked-files=no"], COMMAND_DEADLINE)
+        .ok()
+        .and_then(|out| branch_and_upstream(&out).0);
+    let vis_flag = format!("--{visibility}");
+    let mut args = vec!["repo", "create", repository, &vis_flag, "--source", ".", "--remote", "origin"];
+    if has_commit {
+        args.push("--push");
+    }
+    let output = match run_gh(cwd, &args) {
+        Ok(out) => out,
+        Err(err) => {
+            // Creating origin settles repository creation alone; a requested push must have reached this commit too.
+            let origin = git(cwd, &["remote", "get-url", "origin"], COMMAND_DEADLINE)
+                .ok()
+                .map(|s| js_trim(&s).to_string())
+                .unwrap_or_default();
+            let pushed = if has_commit {
+                branch
+                    .as_deref()
+                    .and_then(|b| git(cwd, &["rev-parse", "--verify", "-q", &format!("refs/remotes/origin/{b}")], COMMAND_DEADLINE).ok())
+                    .map(|s| js_trim(&s).to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            let head = if has_commit {
+                git(cwd, &["rev-parse", "HEAD"], COMMAND_DEADLINE)
+                    .ok()
+                    .map(|s| js_trim(&s).to_string())
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if origin.is_empty() || (has_commit && (head.is_empty() || pushed != head)) {
+                let scrubbed = safe_remote(&err);
+                return Err(js_trim(&format!("Publish failed. {}", tail_utf16(&scrubbed, 400))).to_string());
+            }
+            String::new()
+        }
+    };
+    let url = extract_https_url(&output).unwrap_or_else(|| format!("https://github.com/{repository}"));
+    Ok(url)
 }
 
 /// The branch and the upstream `status --porcelain=v2 --branch` names, as Node's `parsePorcelain` reads them: no branch

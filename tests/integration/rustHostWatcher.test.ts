@@ -120,15 +120,15 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host remote Watcher control & reads'
       expect(health.features).not.toContain(unimplemented)
     }
 
-    // 2. Unrecorded paired client (phone / general client) sees NO watcher-* features or project-origins,
-    //    and is refused with `forbidden` if it attempts watcher-read, watcher-control, or project-origins.
+    // 2. Unrecorded paired client on the loopback listener still sees NO watcher-* features
+    //    and is refused with `forbidden` if it attempts watcher-read (watcher-* always requires desktop-clients.json).
+    //    Like Node's `socketServer.ts`, the loopback listener treats every client as a desktop for non-watcher desktop features such as `project-origins`.
     const generalCode = await issuePairingCode(descriptor.port, descriptor.adminToken)
     const generalPairing = await SocketHostService.pair(url, generalCode, 'Unrecorded Phone')
     const generalSocket = new SocketHostService({ url, token: generalPairing.token, watcherEnabled: true })
     cleanups.push(async () => { await generalSocket.close() })
     const generalHello = await generalSocket.connect()
     expect(generalHello.features.some(f => f.startsWith('watcher-'))).toBe(false)
-    expect(generalHello.features).not.toContain('project-origins')
     expect(generalSocket.supportsWatcherControl).toBe(false)
     expect(generalSocket.supportsWatcherReads).toBe(false)
 
@@ -141,7 +141,6 @@ describe.skipIf(!RUN_RUST_HOST)('Rust sotto-host remote Watcher control & reads'
       createdAt: new Date().toISOString(),
     }
     await expect(rawGeneral.call({ op: 'watcher-read', request: { master: forgedMaster } })).rejects.toMatchObject({ code: 'forbidden' })
-    await expect(rawGeneral.call({ op: 'project-origins' })).rejects.toMatchObject({ code: 'forbidden' })
 
     // 3. Recorded desktop client in desktop-clients.json gets all Watcher features.
     const desktopCode = await issuePairingCode(descriptor.port, descriptor.adminToken)
