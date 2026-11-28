@@ -196,7 +196,7 @@ import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
 import linuxTrayIconPath from '../../build/icon.png?asset'
 import { cloudTranscriptionOn, defaultSettings, dictationOn, type AppSettings } from '../shared/settings'
-import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
+import { blockSpellcheckDictionaryDownloads, disableChromiumFeatures, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
   createE2EClipboard,
   createE2EGlobalShortcuts,
@@ -2288,16 +2288,8 @@ protocol.registerSchemesAsPrivileged([VISUAL_SCHEME_PRIVILEGES, THREAD_MEDIA_SCH
 enableWasmThreadSupport(app.commandLine)
 disableDnsPrefetching(app.commandLine)
 configurePasswordStore(platform, app.commandLine, process.env.XDG_CURRENT_DESKTOP)
-// Preserve any caller-supplied feature switches; background throttling remains per-view.
-{
-  const disabled = new Set(app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean))
-  // Hidden browser captures need a native surface on Windows (ADR-0020).
-  if (process.platform === 'win32') disabled.add('CalculateNativeWinOcclusion')
-  // A page the back-forward cache gives back keeps its script and its fields, so going back would look like a new
-  // document to a typed secret's rules (ADR-0222, November 27 amendment). Sotto's browser keeps no such cache.
-  disabled.add('BackForwardCache')
-  app.commandLine.appendSwitch('disable-features', [...disabled].join(','))
-}
+// Background throttling remains per-view.
+disableChromiumFeatures(app.commandLine, process.platform)
 
 app.setAppUserModelId(APP_ID)
 // Sotto lives in the tray/menu bar, so losing every window must not quit it —

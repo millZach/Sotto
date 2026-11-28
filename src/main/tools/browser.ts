@@ -252,7 +252,8 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     // Ctrl with the wheel asks to zoom too, a step at a time as the keys do (ADR-0222).
     if (this.parity && !phone) contents.on('zoom-changed', (_event, direction) => this.zoomPage(record, direction === 'in' ? 'in' : 'out'))
     // Only a new document committing ends the one a secret was typed into, or the agent ran script in (ADR-0220,
-    // decision 6). Sotto's browser keeps no back-forward cache, so going back commits a new document too.
+    // decision 6). Sotto's browser keeps no back-forward cache (`disableChromiumFeatures`), so going back commits a new
+    // document too; this event does not say when a document was given back, so it holds only while that is so.
     contents.on('did-navigate', () => record.automation.documentCommitted())
     const moving = (url: string, mainFrame: boolean): boolean => mainFrame && this.moved(record, url)
     contents.on('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
