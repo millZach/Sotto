@@ -114,6 +114,22 @@ export function comparesPartOfAttribute(selector: string): boolean {
   const operator = /[~|^$*]\s*=/u
   return operator.test(selector) || operator.test(selector.replace(/\/\*[\s\S]*?(?:\*\/|$)/gu, ''))
 }
+/** The attributes a selector may still compare on a page a secret was typed into: each names an element, and none is where a site keeps what is typed. */
+const NAMING_ATTRIBUTES: ReadonlySet<string> = new Set(['id', 'class', 'name', 'type', 'role', 'for', 'placeholder', 'data-testid'])
+/**
+ * Whether a CSS selector compares an attribute's value, whole or in part, other than one that names an element. A site
+ * can keep a field's value in an attribute, as React does with `value`, and there a whole value answers a guess: ten
+ * thousand of them find a PIN. Each `=` must end a plain `[name=`, with a name in `NAMING_ATTRIBUTES` and no backslash
+ * before its bracket, looked for as written and with comments left out. An escape, a namespace, a comment or an `=` in
+ * a string fails that, so it errs toward yes.
+ */
+export function comparesValue(selector: string): boolean {
+  const unnamed = (written: string): boolean => {
+    const named = [...written.matchAll(/(?<!\\)\[\s*([a-z][-a-z]*)\s*=/giu)].filter(match => NAMING_ATTRIBUTES.has(match[1]!.toLowerCase())).length
+    return (written.match(/=/gu)?.length ?? 0) > named
+  }
+  return comparesPartOfAttribute(selector) || unnamed(selector) || unnamed(selector.replace(/\/\*[\s\S]*?(?:\*\/|$)/gu, ''))
+}
 /** A web address's origin, as `https://example.com:8443`, or nothing for one that has none. */
 function originOf(url: string): string {
   try { const origin = new URL(url).origin; return origin === 'null' ? '' : origin } catch { return '' }
@@ -232,7 +248,7 @@ export abstract class PageAutomation {
    * Secrets typed into this page from a secret request (ADR-0219), each with the matcher that finds it once `masked`
    * has made it, held only in memory while the page is open, so whatever the page says back (its words, errors, an
    * evaluated value) reaches the agent with each one masked. Once one is here, `evaluate` stays off for the page's life
-   * (`evaluate`), and `wait_for` and selectors cannot test it (`waitFor`, `checkedSelector`).
+   * (`evaluate`), and `wait_for` and selectors cannot test it (`waitFor`, `checkedSelector`, `comparesValue`).
    */
   private readonly typedSecrets = new Map<string, SecretMatcher | null | undefined>()
   /**
@@ -769,11 +785,11 @@ export abstract class PageAutomation {
     try { return await Promise.race([command, opened]) } finally { this.dialogWaiters.delete(waiter!) }
   }
   /**
-   * `selector`, unless it compares part of an attribute (`^=`, `*=` and the like) on a page a secret was typed into: a
-   * site that copies the field's value into an attribute, as some forms do, would answer it a character at a time.
+   * `selector`, unless it compares an attribute's value (`comparesValue`) on a page a secret was typed into: a site that
+   * keeps the field's value in an attribute, as React does, would answer it a character at a time, or a PIN a guess at a time.
    */
   private checkedSelector(selector: string): string {
-    if (this.typedSecrets.size && comparesPartOfAttribute(selector)) fail('blocked', 'A secret you saved was typed into this page, so a selector here cannot match part of an attribute (^=, $=, *=, ~= or |=), which could spell the secret out. Use a ref from snapshot, or a whole value as in [name="email"].')
+    if (this.typedSecrets.size && comparesValue(selector)) fail('blocked', 'A secret you saved was typed into this page, and a site can keep it in an attribute, so a selector here compares only an attribute that names an element (id, class, name, type, role, for, placeholder or data-testid), and never part of one (^=, $=, *=, ~= or |=). Use a ref from snapshot, or one of those, as in [name="email"].')
     return selector
   }
   /** The DOM node a ref or a selector names (ADR-0220), or a refusal that says what to do instead. */

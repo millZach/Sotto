@@ -884,13 +884,31 @@ describe('where a secret is not typed (the review of the browser-parity branch)'
       await expect(automation_.waitFor({ type: 'wait_for', selector, timeoutMs: 100 }, go)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('part of') })
       await expect(automation_.input({ type: 'click', selector }, go)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('part of') })
     }
-    // A whole value tests only a value guessed whole, and an id or a class nothing: they still reach the page.
+    // An attribute that names an element still reaches the page.
     for (const selector of ['input[name="password"]', '#password']) {
       await expect(automation_.input({ type: 'click', selector }, go)).rejects.not.toMatchObject({ message: expect.stringContaining('part of') })
     }
     // A page no secret was typed into takes any selector.
     const plain = page(), plainly = automation(plain)
     await expect(plainly.input({ type: 'click', selector: 'input[value^="C"]' }, go)).rejects.not.toMatchObject({ message: expect.stringContaining('part of') })
+  })
+
+  it('refuses a selector that compares a whole value a page could have copied the secret into (after the third review)', async () => {
+    const fake = page(), automation_ = automation(fake)
+    await automation_.typeSecret(given('4821'), go, { selector: '#password' })
+    // A site that keeps a field's value in its attribute, as React does, would answer each of ten thousand guesses at a PIN.
+    const guesses = ['input[value="4821"]', "[data-value='4821']", 'a[href="/next?pin=4821"]', '[VALUE=4821]', '[*|value="4821"]', '[v\\61lue="4821"]',
+      '[value/**/="4821"]', ':not([value=""])', 'input[name="pin"][value="4821"]', '[data-x\\[name="4821"]', '[data-x="[name="]', ':has(> [aria-valuetext="4821"])']
+    for (const selector of guesses) {
+      await expect(automation_.waitFor({ type: 'wait_for', selector, timeoutMs: 100 }, go), selector).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('names an element') })
+      await expect(automation_.input({ type: 'click', selector }, go), selector).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('names an element') })
+    }
+    // An attribute that names an element, or one tested only for being there, still reaches the page.
+    for (const selector of ['input[name="pin"]', '[type=password]', '[ID = "pin" i]', '#pin', '[role="button"]', '[data-testid="pin"]', 'label[for="pin"]', 'input[value]', '[placeholder="PIN"]']) {
+      await expect(automation_.input({ type: 'click', selector }, go), selector).rejects.not.toMatchObject({ message: expect.stringContaining('names an element') })
+    }
+    const plain = page(), plainly = automation(plain)
+    await expect(plainly.input({ type: 'click', selector: 'input[value="4821"]' }, go)).rejects.not.toMatchObject({ message: expect.stringContaining('names an element') })
   })
 })
 
