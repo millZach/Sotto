@@ -34,6 +34,7 @@ vi.mock('electron', async () => {
     if (method === 'Accessibility.getFullAXTree') return { nodes: [{ role: { value: 'textbox' }, name: { value: `Password ${page.typed}` } }] }
     if (method === 'Runtime.evaluate') {
       if (params.expression === 'document.activeElement') return { result: { objectId: 'password-1' } }
+      if (params.expression === 'location.origin') return { result: { type: 'string', value: 'http://127.0.0.1:5173' } }
       return { result: { value: [{ tag: 'input', role: '', name: page.typed, x: 0, y: 0, width: 200, height: 30, disabled: false }] } }
     }
     if (method === 'DOM.describeNode') return { node: { backendNodeId: 7, nodeName: 'INPUT', attributes: ['type', 'password', 'aria-label', 'Password'] } }
@@ -102,7 +103,7 @@ beforeAll(async () => {
   answer = async values => { const result = await handlers.get(SECRET_REQUESTS_ANSWER)!(mainEvent, values); record(result); return result }
   const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'p', workingDirectory: work }), copyPath: vi.fn(), reveal: vi.fn() })
   browser = new BrowserService({ files, getWindow: () => null, emit: event => { events.push(event); record(event) }, openExternal: vi.fn(), destination: async () => 'embedded', byDefault: () => true,
-    secret: async (threadId, ref) => secrets.take(threadId, ref) })
+    secret: async (threadId, ref) => secrets.take(threadId, ref), secretSite: async (threadId, ref) => secrets.site(threadId, ref) })
 })
 afterAll(async () => {
   browser.dispose()
@@ -132,7 +133,7 @@ async function browserCall(name: string, args: Record<string, unknown>) {
 
 describe('a secret request\'s value, sent through every way it is delivered', () => {
   it('is typed by Sotto\'s browser from a one-use reference, and the agent reads back only a mask', async () => {
-    const reply = await requestAndAnswer({ label: 'Staging password', reason: 'To sign in to staging.' }, { value: CANARY })
+    const reply = await requestAndAnswer({ label: 'Staging password', reason: 'To sign in to staging.', url: 'http://127.0.0.1:5173/login' }, { value: CANARY })
     expect(reply.status).toBe('saved')
     const secretRef = reply.secretRef as string
     const opened = await browserCall('browser_open', { url: 'http://127.0.0.1:5173/login', description: 'Sign in to staging' })

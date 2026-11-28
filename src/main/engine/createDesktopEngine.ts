@@ -1630,6 +1630,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     hostedBrowserCall: request => hostRouter.hostedBrowser(request),
     hostedBrowserAddress: hostId => desktopHosts.browserAddress(hostId),
     takeSecret: (threadId, ref) => Promise.resolve(secretRequests?.take(threadId, ref) ?? null),
+    secretSite: (threadId, ref) => Promise.resolve(secretRequests?.site(threadId, ref) ?? null),
     async turnRecordsInfo() {
       await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)
       return { path: turns.path(), recentCount: (await turns.recent(20)).length }

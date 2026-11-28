@@ -159,6 +159,18 @@ export abstract class PageAutomation {
    */
   private secretInDocument = false
   /**
+   * The agent ran its own script in the document loaded now (`evaluate`), so a listener it left could read whatever is
+   * typed into the page and hide it anywhere, in any encoding no mask matches. No secret is typed into this document;
+   * only a cross-document navigation that commits clears it (ADR-0222, decision 12).
+   */
+  private scriptedDocument = false
+  /**
+   * A secret typed here has been in the page's own address, as a sign-in form sent by GET puts it. The address stays in
+   * the page's history, where any later document at that site can read it (`navigation.entries()`, `document.referrer`),
+   * so `evaluate` stays off for as long as the page is open.
+   */
+  private secretInAddress = false
+  /**
    * The full catalog (ADR-0220): the page's dialogs, file chooser and load events reach Sotto through the Page domain,
    * which the pane can then answer. Off, the Page domain stays off and dialogs stay Electron's, as before.
    */
@@ -389,7 +401,13 @@ export abstract class PageAutomation {
       this.chooser = { backendNodeId: params.backendNodeId, multiple: params.mode === 'selectMultiple', seq: ++this.dialogSeq }
       for (const waiter of [...this.dialogWaiters]) waiter()
       this.onChange?.()
-    } else if (method === 'Page.frameNavigated' && !(params.frame as { parentId?: unknown } | undefined)?.parentId) this.documentCommitted()
+    } else if (method === 'Page.frameNavigated') {
+      const frame = params.frame as { parentId?: unknown; url?: unknown; urlFragment?: unknown } | undefined
+      const url = `${typeof frame?.url === 'string' ? frame.url : ''}${typeof frame?.urlFragment === 'string' ? frame.urlFragment : ''}`
+      // A frame's address is history the page keeps too; only the main frame's commit is a new document.
+      if (frame?.parentId) this.addressChanged(url)
+      else this.documentCommitted(url)
+    } else if (method === 'Page.navigatedWithinDocument' && typeof params.url === 'string') this.addressChanged(params.url)
     else if (method === 'Page.domContentEventFired') this.loadedAt.domContent = Date.now()
     else if (method === 'Page.loadEventFired') this.loadedAt.load = Date.now()
     else if (method === 'Page.screencastFrame' && typeof params.data === 'string') {
@@ -461,7 +479,10 @@ export abstract class PageAutomation {
   async evaluate(expression: string, awaitPromise = false): Promise<string> {
     this.noDialog()
     if (this.secretInDocument) return fail('blocked', 'This page holds a secret you saved, so evaluate is off here until the page loads another document. Use snapshot, click and type instead.')
+    if (this.secretInAddress) return fail('blocked', 'A secret you saved was in this page\'s address, which its history keeps, so evaluate is off on this page until it closes. Use snapshot, click and type, or open a new page.')
     await this.ready()
+    // From here the script may run, so no secret goes into this document: anything it left listening could take it.
+    this.scriptedDocument = true
     const result = await this.raceDialog(this.send('Runtime.evaluate', { expression, awaitPromise, returnByValue: true, userGesture: true })) as { result?: { type?: string; value?: unknown; description?: string; unserializableValue?: string }; exceptionDetails?: { text?: string; exception?: { description?: string } } } | 'dialog'
     if (result === 'dialog') return this.masked(`The page opened a ${this.dialogOpen?.type ?? 'dialog'} ${this.secretInDocument ? '' : `${JSON.stringify(this.dialogOpen?.message ?? '')} `}while evaluating. Answer it with the dialog action.`)
     if (result.exceptionDetails) return this.masked(`Threw: ${(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text ?? 'An error').slice(0, 4000)}`)
@@ -567,6 +588,8 @@ export abstract class PageAutomation {
    */
   async startScreencast(onFrame: (data: string) => void): Promise<void> {
     this.noDialog()
+    // A page can show what its password field holds (a "show password" button), so no recording starts on one that holds a secret.
+    if (this.secretInDocument) return fail('blocked', 'This page holds a secret you saved, so it is not recorded until it loads another document. Use snapshot, whose words are masked.')
     await this.ready()
     this.screencast = onFrame
     await this.send('Page.startScreencast', { format: 'jpeg', quality: 70, maxWidth: 1280, maxHeight: 1280, everyNthFrame: 1 })
@@ -637,11 +660,15 @@ export abstract class PageAutomation {
   /**
    * Types a secret request's value into a password field (ADR-0219): the one a ref or selector names, focused first, or
    * the focused one. The field was checked when the action was asked for, and again here: right before the value goes,
-   * the page's focused element must be that password field, or nothing is typed. `clear` replaces what it held. The
-   * value is remembered only to mask it in what the page says back, and forgotten with the page.
+   * the page's focused element must be that password field and its document at `origin`, the site the value is for, or
+   * nothing is typed. `take` gives the value only then, so a refusal before it spends nothing (the reference stays for
+   * another try). Nothing is typed into a document the agent ran its own script in, or while the page records. `clear`
+   * replaces what the field held. The value is remembered only to mask it in what the page says back, and forgotten
+   * with the page.
    */
-  async typeSecret(value: string, guard: () => void, target: BrowserTargetFields = {}, clear = false): Promise<void> {
+  async typeSecret(take: () => Promise<string | null>, guard: () => void, target: BrowserTargetFields = {}, clear = false, origin?: string): Promise<void> {
     this.noDialog()
+    this.secretMayGo()
     await this.ready()
     guard()
     const named = target.ref !== undefined || target.selector !== undefined ? await this.nodeOf(target) : null
@@ -652,11 +679,26 @@ export abstract class PageAutomation {
     const field = await this.focusedPassword(named)
     if (clear) await this.selectAll()
     guard()
-    // The last look: a page script could have moved the focus while the field was being focused or cleared.
+    // The last look: a page script could have moved the focus while the field was being focused or cleared, and the
+    // document could have been replaced by one at another site.
     if (await this.focusedPassword(field) !== field) return fail('blocked', 'The password field lost focus. Nothing was typed.')
+    if (origin !== undefined && await this.documentOrigin() !== origin) return fail('blocked', `This page is no longer on ${origin}, the site this secret is for. Nothing was typed.`)
+    this.secretMayGo()
+    guard()
+    const value = await take() ?? fail('blocked', 'This secretRef is unknown, used or expired. Ask for it again with request_secret.')
     this.typedSecrets.add(value)
     this.secretInDocument = true
     await this.send('Input.insertText', { text: value })
+  }
+  /** Refuses a secret where something of the agent's could catch it: a document it ran script in, or a recording. */
+  private secretMayGo(): void {
+    if (this.scriptedDocument) fail('blocked', 'You ran a script in this page, and it could still be listening, so a secret is not typed into it. Load the sign-in page again with navigate, then type it without evaluating first.')
+    if (this.screencast) fail('blocked', 'This page is recording, and a recording could show the secret. Stop it with record_stop, then type it.')
+  }
+  /** The origin of the main frame's document as the page itself has it. `location` cannot be redefined by page script. */
+  private async documentOrigin(): Promise<string | null> {
+    const found = await this.send('Runtime.evaluate', { expression: 'location.origin', returnByValue: true }) as { result?: { value?: unknown } }
+    return typeof found.result?.value === 'string' ? found.result.value : null
   }
   /** Refuses a node that is not an `<input type="password">` the page masks. */
   private async passwordField(backendNodeId: number): Promise<void> {
@@ -677,9 +719,20 @@ export abstract class PageAutomation {
     await this.passwordField(backendNodeId)
     return backendNodeId
   }
-  /** A cross-document navigation committed: the document that held a typed secret is gone (ADR-0220, decision 6). */
-  documentCommitted(): void { this.secretInDocument = false }
-  /** Whether the document loaded now holds a secret typed from a secret request. */
+  /**
+   * A cross-document navigation committed at `url`: the document that held a typed secret is gone (ADR-0220, decision
+   * 6), and so is any script the agent ran in it.
+   */
+  documentCommitted(url?: string): void {
+    this.secretInDocument = false
+    this.scriptedDocument = false
+    if (url !== undefined) this.addressChanged(url)
+  }
+  /** The page's address changed, within its document or with a new one: an address that holds a typed secret is kept in its history. */
+  addressChanged(url: string): void {
+    if (this.typedSecrets.size && this.masked(url) !== url) this.secretInAddress = true
+  }
+  /** Whether the document loaded now holds a secret typed from a secret request, so no picture of it goes to the agent. */
   holdsSecret(): boolean { return this.secretInDocument }
   /**
    * One picture of the page as Chromium drew it, within the snapshot deadline. `rect` is in the visual viewport's CSS
@@ -802,6 +855,8 @@ export abstract class PageAutomation {
       if ((!nativeInput && !editable) || node?.shadowRoots?.some(root => root.shadowRootType !== 'user-agent')) return fail('blocked', 'Typing goes only into a plain text field with focus, and the focused element is not one (it may be a frame or a closed custom element). Click a plain text field, then type.')
       // A secret goes only where the page masks it, so no screenshot shows it to the agent (ADR-0219).
       if (action.secretRef && (node?.nodeName !== 'INPUT' || attributes.get('type') !== 'password')) return fail('blocked', 'A secretRef is typed only into a password field, which the page masks. Click a password field, then type it.')
+      // Refused before the user is asked, as it would be when it ran.
+      if (action.secretRef) this.secretMayGo()
     }
     return JSON.stringify(result.node).slice(0, 16_000)
   }

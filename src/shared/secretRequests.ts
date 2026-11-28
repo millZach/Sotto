@@ -91,6 +91,12 @@ export const SECRET_REQUESTS_RENDERER_ARGUMENT = '--sotto-secret-requests'
 
 export const isSecretRequestId = (id: string): boolean => id.startsWith(SECRET_REQUEST_ID_PREFIX)
 
+/**
+ * Where a secret reference may be typed, as Sotto's browser asks before it takes the value (ADR-0219, decision 7): the
+ * origin of its card's sign-in page, or null when the card named none, which asks the user every time.
+ */
+export interface SecretSite { readonly origin: string | null }
+
 /** The fields a request asks for: its own list, or its one value under the name `value`. */
 export function secretRequestFields(input: RequestSecretInput): SecretRequestField[] {
   if (input.fields) return input.fields.map(field => ({ name: field.name, label: field.label, ...(field.placeholder ? { placeholder: field.placeholder } : {}), secret: field.secret !== false }))

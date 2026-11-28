@@ -320,6 +320,8 @@ export function attachEngineProcessServer(
         return engine.hostedBrowserAddress(args[0] as string)
       case 'engine:takeSecret':
         return engine.takeSecret ? engine.takeSecret(args[0] as string, args[1] as string) : null
+      case 'engine:secretSite':
+        return engine.secretSite ? engine.secretSite(args[0] as string, args[1] as string) : null
       case 'engine:turnRecordsInfo':
         return engine.turnRecordsInfo()
       case 'engine:e2eCertifiedDetailObservation':

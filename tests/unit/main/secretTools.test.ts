@@ -59,8 +59,9 @@ describe('sotto_secrets', () => {
   })
 
   it('answers a saved card with references or files by name, and the one of each for a single value', () => {
-    expect(secretResult({ status: 'saved', delivery: 'secretRef', refs: { value: 'secret-ref:a' } }, false)).toEqual({ status: 'saved', secretRef: 'secret-ref:a' })
-    expect(secretResult({ status: 'saved', delivery: 'secretRef', refs: { user: 'secret-ref:a', password: 'secret-ref:b' } }, true)).toEqual({ status: 'saved', secretRefs: { user: 'secret-ref:a', password: 'secret-ref:b' } })
+    expect(secretResult({ status: 'saved', delivery: 'secretRef', refs: { value: 'secret-ref:a' }, site: 'https://example.com' }, false)).toEqual({ status: 'saved', secretRef: 'secret-ref:a', note: 'Sotto\'s browser types it only on https://example.com.' })
+    expect(secretResult({ status: 'saved', delivery: 'secretRef', refs: { user: 'secret-ref:a', password: 'secret-ref:b' }, site: null }, true)).toEqual({ status: 'saved', secretRefs: { user: 'secret-ref:a', password: 'secret-ref:b' },
+      note: 'The card named no sign-in page, so Sotto asks the user before typing it on any page.' })
     expect(secretResult({ status: 'saved', delivery: 'file', files: { value: '/f' } }, false)).toMatchObject({ status: 'saved', file: '/f' })
     expect(secretResult({ status: 'saved', delivery: 'file', files: { a: '/a' } }, true)).toMatchObject({ status: 'saved', files: { a: '/a' } })
   })

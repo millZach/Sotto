@@ -7,6 +7,7 @@ import { BrowserGrants, alwaysAsks, grantCovers } from './browserGrants'
 import { uploadPaths, type BrowserFiles, type StagedUpload } from './browserFiles'
 import { ToolOperations, fail, parse, workspace } from './common'
 import { isTargeted, type PageAutomation, type TargetedAction } from './pageAutomation'
+import type { SecretSite } from '../../shared/secretRequests'
 import { ThreadFilePages } from './threadFilePages'
 
 const targeted = (action: BrowserAction): action is TargetedAction => isTargeted(action)
@@ -68,6 +69,12 @@ export interface BrowserTaskDependencies {
    * typed; null when the reference is unknown, used, expired or another thread's. Absent, no secret is typed here.
    */
   secret?(threadId: string, ref: string): Promise<string | null>
+  /**
+   * The site a reference's card named, without using the reference: the value is typed only on a page at that origin,
+   * and a card that named none asks the user every time. Null for a reference that is unknown, used, expired or another
+   * thread's. Absent, every secret asks.
+   */
+  secretSite?(threadId: string, ref: string): Promise<SecretSite | null>
   /**
    * The full catalog (ADR-0220), from the `browser-parity` Owl answer read once at start. Off, its actions are refused
    * in words and pages behave exactly as before it.
@@ -515,24 +522,50 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   }
   private async requestAction(record: R, task: BrowserTask, action: BrowserAction, staged?: StagedUpload): Promise<BrowserAgentResult> {
     let target: string | undefined
+    // The site a secret reference is for, or null when its card named none; undefined for anything else.
+    let secretFor: string | null | undefined
     try {
       if (task.pendingAction) return fail('busy', 'A browser action is waiting for the user. Read the task before requesting another action.')
       const generation = record.generation
       target = targeted(action) ? await record.automation.target(action) : undefined
+      // Checked before anything is asked, and the reference is not used.
+      if (action.type === 'type' && action.secretRef) secretFor = await this.secretSite(record, action.secretRef)
       this.working(task)
       if (generation !== record.generation || task.pendingAction) return fail('blocked', 'The page changed. Inspect it and request the action again.')
       if (!record.initial) this.shared(record)
     } catch (error) { if (staged) void this.base.browserFiles?.discard(staged); throw error }
-    const everyTime = this.asksEveryTime(record, action)
+    // A secret whose card named no site asks every time: only the user can say this page is where it goes.
+    const everyTime = this.asksEveryTime(record, action) || secretFor === null
     // A browser grant answers navigate, click and type exactly as the user's own one-time answer would (ADR-0029).
     if (grantCovers(action.type) && !everyTime && this.grants.active(record.page.workspace.threadId)) return this.perform(record, task, action, record.initial, target, true)
-    const description = record.automation.masked(this.describe(record, action, staged))
+    const description = record.automation.masked(this.describe(record, action, staged, secretFor))
     task.pendingAction = { id: randomUUID(), action, description, expiresAt: Date.now() + 5 * 60_000, ...(everyTime ? { everyTime: true } : {}) }
     this.pending.set(task.id, { generation: record.generation, url: record.page.url, initial: record.initial, ...(target ? { target } : {}), ...(staged ? { staged } : {}) })
     return { task: this.publishTask(task), approvalRequired: true }
   }
+  /**
+   * Where a secret reference may be typed (ADR-0219, decision 7): the site its card named, which must be this page's,
+   * or null when the card named none, which asks the user every time. Refused in words for a reference that is
+   * unknown, used or expired, and for a page on another site. The reference is not used.
+   */
+  private async secretSite(record: R, ref: string): Promise<string | null> {
+    if (!this.base.secret) return fail('blocked', 'Secret references are typed only in Sotto\'s browser on this computer.')
+    const site = this.base.secretSite ? await this.base.secretSite(record.page.workspace.threadId, ref) : { origin: null }
+    if (!site) return fail('blocked', 'This secretRef is unknown, used or expired. Ask for it again with request_secret.')
+    let here = ''
+    try { here = new URL(record.page.url).origin } catch { /* Not a web address: no site matches it. */ }
+    if (site.origin !== null && site.origin !== here) return fail('blocked', `This secret is for ${site.origin}, and this page is on ${here || 'no site'}, so nothing was typed. Open ${site.origin} and type it there.`)
+    return site.origin
+  }
+  /**
+   * No picture of a page whose document holds a typed secret goes to the agent: a page can show what a password field
+   * holds. An open dialog is refused first, by the capture, since it has to be answered before anything else.
+   */
+  private noPicture(record: R): void {
+    if (record.automation.holdsSecret() && !record.automation.dialog()) fail('blocked', 'This page holds a secret you saved, and a page can show what a password field holds, so no picture of it goes to you until it loads another document. Use snapshot, whose words are masked.')
+  }
   /** The pending request's words: what will happen, where, and for upload which files. */
-  private describe(record: R, action: BrowserAction, staged?: StagedUpload): string {
+  private describe(record: R, action: BrowserAction, staged?: StagedUpload, secretFor?: string | null): string {
     const where = record.page.device ? `on the test iPhone at ${record.page.url}` : `on ${record.page.url}`
     const at = (target: { x?: number | undefined; y?: number | undefined; ref?: string | undefined; selector?: string | undefined }): string =>
       target.ref ? `element ${target.ref}` : target.selector ? `the element ${JSON.stringify(target.selector)}` : `${target.x}, ${target.y}`
@@ -540,7 +573,11 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       case 'navigate': return `${record.initial ? record.page.device ? 'Open this page on the test iPhone and share it with the thread' : 'Open and share this page with the thread' : this.asksEveryTime(record, action) ? `Take this page, signed in with your ${record.page.profile?.name ?? 'browser'} profile, to another site and share it there` : 'Navigate this page'}: ${action.url}`
       case 'click': return `${action.clickCount === 2 ? 'Double-click' : action.clickCount === 3 ? 'Triple-click' : action.button === 'right' ? 'Right-click' : action.button === 'middle' ? 'Middle-click' : 'Click'} ${action.x !== undefined ? 'at ' : ''}${at(action)} ${where}`
       case 'tap': return `Tap at ${action.x}, ${action.y} ${where}`
-      case 'type': return action.secretRef ? `Type a secret you saved into the focused password field ${where}` : `Type ${JSON.stringify(action.text)} into ${action.ref || action.selector ? at(action) : 'the focused field'} ${where}`
+      case 'type': {
+        if (!action.secretRef) return `Type ${JSON.stringify(action.text)} into ${action.ref || action.selector ? at(action) : 'the focused field'} ${where}`
+        const field = action.ref || action.selector ? `the password field ${at(action)}` : 'the focused password field'
+        return secretFor ? `Type the secret you saved for ${secretFor} into ${field} ${where}` : `Type a secret you saved into ${field} ${where}. Its card named no site, so Sotto asks each time.`
+      }
       case 'key': return `Press ${[...action.modifiers ?? [], action.key].join('+')} ${where}`
       case 'select': return `Choose ${action.values.map(value => JSON.stringify(value)).join(', ')} in ${at(action)} ${where}`
       case 'drag': return `Drag from ${at(action.from)} to ${at(action.to)} ${where}`
@@ -656,8 +693,10 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       } else if (action.type === 'inspect') output = await record.automation.inspect()
       else if (action.type === 'snapshot') {
         output = await record.automation.snapshotText()
-        if (action.includeImage) { capture = await record.automation.capture(record.page.url); image = capture.image }
+        if (action.includeImage && record.automation.holdsSecret()) output = `${output}\n\n(No picture: this page holds a secret you saved, and a page can show what a password field holds. Pictures come back once it loads another document.)`
+        else if (action.includeImage) { capture = await record.automation.capture(record.page.url); image = capture.image }
       } else if (action.type === 'screenshot') {
+        this.noPicture(record)
         capture = await record.automation.capture(record.page.url, undefined, undefined, action.fullPage === true); image = capture.image
         let saved: string | undefined
         if (action.save) {
@@ -696,11 +735,12 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
         this.publish(record)
       }
       else if (action.type === 'type' && action.secretRef) {
-        // Taken only now, so a declined or lapsed request spends nothing. The value is typed and forgotten here.
-        const value = this.base.secret ? await this.base.secret(record.page.workspace.threadId, action.secretRef) : null
-        if (value === null) fail('blocked', this.base.secret ? 'This secretRef is unknown, used or expired. Ask for it again with request_secret.' : 'Secret references are typed only in Sotto\'s browser on this computer.')
+        // Checked again now, and the value taken only as it is typed, after every other check: a declined, lapsed or
+        // refused action spends nothing. A card that named no site goes where the user said yes, this page's site.
+        const ref = action.secretRef, threadId = record.page.workspace.threadId
+        const site = await this.secretSite(record, ref) ?? new URL(record.page.url).origin
         guard()
-        await record.automation.typeSecret(value!, guard, action, action.clear === true)
+        await record.automation.typeSecret(() => this.base.secret!(threadId, ref), guard, action, action.clear === true, site)
         output = 'type completed.'
       } else {
         const said = await record.automation.input(action, guard)
@@ -719,8 +759,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       }
       // Revocation during an asynchronous capture must not release page evidence.
       if (action.type !== 'navigate') guard(reading)
-      // A page with a dialog open draws no new picture until it is answered.
-      const thumbnail = action.type === 'navigate' || (this.parity && record.automation.dialog()) ? null : await record.automation.thumbnail(image).catch(() => null)
+      // A page with a dialog open draws no new picture until it is answered, and one that holds a typed secret keeps none.
+      const thumbnail = action.type === 'navigate' || (this.parity && record.automation.dialog()) || record.automation.holdsSecret() ? null : await record.automation.thumbnail(image).catch(() => null)
       if (action.type !== 'navigate') guard(reading)
       if (record.page.sharedOrigin && task.status === 'working') task.thumbnail = thumbnail
       const note = this.actionNote?.(record, startedAt)

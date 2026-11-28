@@ -6,6 +6,7 @@ import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'
 import type { SottoPlatform } from '../../shared/platform'
 import type { QuestionPageOpen } from '../../shared/questionPageOpen'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import type { SecretSite } from '../../shared/secretRequests'
 import type { AppSettings } from '../../shared/settings'
 import type { ToolsResult } from '../../shared/tools'
 import type { BrowserAgentTools } from '../agents/browserAgentServer'
@@ -186,6 +187,11 @@ export interface DesktopEngine {
    * the reference is gone; null for one that is unknown, used, expired or another thread's. Absent without the feature.
    */
   takeSecret?(threadId: string, ref: string): Promise<string | null>
+  /**
+   * The site a secret reference's card named, so Sotto's browser checks where the value would go before it takes it
+   * (ADR-0219, decision 7); the reference is not used. Null for one that is unknown, used, expired or another thread's.
+   */
+  secretSite?(threadId: string, ref: string): Promise<SecretSite | null>
   turnRecordsInfo(): Promise<EngineTurnRecordsInfo>
 
   // E2E-only hooks (inert in packaged builds).

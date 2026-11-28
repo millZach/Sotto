@@ -16,6 +16,7 @@ import { findImportSources, importCookies, type CookieTarget, type FoundImportSo
 import { toolTargetSchema } from '../../shared/tools'
 import { blockSpellcheckDictionaryDownloads } from '../security'
 import { BrowserDownloads, type BrowserDownloadsDependencies } from './browserDownloads'
+import type { SecretSite } from '../../shared/secretRequests'
 
 interface CaptureLease { count: number; window: BaseWindow; bounds: BrowserBounds; throttling: boolean; temporary: boolean }
 /**
@@ -53,6 +54,8 @@ export interface BrowserDependencies {
   filePages?: ThreadFilePages
   /** A secret request's value for its one-use reference (ADR-0219), from the engine that holds it. */
   secret?(threadId: string, ref: string): Promise<string | null>
+  /** The site a reference's card named, without using it (ADR-0219, decision 7), from the same engine. */
+  secretSite?(threadId: string, ref: string): Promise<SecretSite | null>
   /** The full catalog (ADR-0220): the `browser-parity` Owl answer, read once at start. */
   readonly parity?: boolean
   /** Where screenshots and recordings an agent saves are kept (ADR-0220). */
@@ -101,6 +104,7 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     super({ files: dependencies.files, emit: event => dependencies.emit(event), byDefault: () => dependencies.byDefault(), words: browserWords,
       ...dependencies.filePages ? { filePages: dependencies.filePages } : {},
       ...dependencies.secret ? { secret: (threadId: string, ref: string) => dependencies.secret!(threadId, ref) } : {},
+      ...dependencies.secretSite ? { secretSite: (threadId: string, ref: string) => dependencies.secretSite!(threadId, ref) } : {},
       ...dependencies.parity ? { parity: true } : {}, ...dependencies.browserFiles ? { browserFiles: dependencies.browserFiles } : {} })
     this.downloadList = dependencies.parity && dependencies.downloads
       ? new BrowserDownloads({ ...dependencies.downloads, emit: (download, gone) => { if (!this.disposed) dependencies.emit({ type: 'download', download, ...(gone ? { gone: true as const } : {}) }) } })
@@ -245,8 +249,10 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     })
     // Ctrl with the wheel asks to zoom too, a step at a time as the keys do (ADR-0222).
     if (this.parity && !phone) contents.on('zoom-changed', (_event, direction) => this.zoomPage(record, direction === 'in' ? 'in' : 'out'))
-    // Only a new document committing ends the one a secret was typed into (ADR-0220, decision 6).
-    contents.on('did-navigate', () => record.automation.documentCommitted())
+    // Only a new document committing ends the one a secret was typed into, or the agent ran script in (ADR-0220,
+    // decision 6). Every address a frame reaches is the page's history, which a typed secret must not be in.
+    contents.on('did-navigate', (_event, url) => record.automation.documentCommitted(url))
+    contents.on('did-frame-navigate', (_event, url, _code, _status, mainFrame) => { if (!mainFrame) record.automation.addressChanged(url) })
     const moving = (url: string, mainFrame: boolean): boolean => mainFrame && this.moved(record, url)
     contents.on('did-start-navigation', (_event, url, _inPlace, mainFrame) => {
       if (!moving(url, mainFrame)) return
@@ -258,6 +264,7 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     // started from, never finished loading, and a shared page could not be inspected at the address it reached.
     contents.on('did-redirect-navigation', (_event, url, _inPlace, mainFrame) => { if (moving(url, mainFrame)) this.publish(record) })
     contents.on('did-navigate-in-page', (_event, url, mainFrame) => {
+      record.automation.addressChanged(url)
       if (!moving(url, mainFrame)) return
       record.page.status = 'ready'
       this.publish(record)

@@ -15,8 +15,13 @@ export interface SecretRequestCardProps {
   readonly blocked: string | null
 }
 
+/** A sign-in page's site as the card names it: its host, with a port if it has one. */
+function siteOf(url: string): string | null {
+  try { return new URL(url).host || null } catch { return null }
+}
+
 /**
- * A **secret request** (ADR-0219): the agent asks for values it will not see. They are typed here, held in this card
+ * A **secret request** (ADR-0219): the agent asks for values it must not see. They are typed here, held in this card
  * alone while it shows, and sent to main once on the card's own channel, never as the request's answer, a draft or
  * anything the window keeps. Save securely and Decline are the only ways out; the sign-in page opens in the user's
  * browser. A paired phone shows the request's words and Decline, so the values are always typed on this computer.
@@ -55,11 +60,17 @@ export function SecretRequestCard({ ownerId, request, blocked }: SecretRequestCa
   const openPage = (): void => { if (card.url) void window.sotto?.openExternalLink?.(card.url) }
   const until = new Intl.DateTimeFormat(i18n.locale, { hour: 'numeric', minute: '2-digit' }).format(new Date(card.expiresAt))
   const several = card.fields.length > 1
+  // A reference is typed only on the sign-in page's site, or where the user says yes (ADR-0219, decision 7). A file is
+  // read by the agent's own commands, which it is told never to print, so the card does not say the agent never sees it.
+  const site = card.url ? siteOf(card.url) : null
   const privacy = card.delivery === 'file'
-    ? several ? t`Sotto writes each to a file only you can read, for the agent’s commands, and deletes them within an hour. The agent and its provider never see them.`
-      : t`Sotto writes it to a file only you can read, for the agent’s commands, and deletes it within an hour. The agent and its provider never see it.`
-    : several ? t`Sotto keeps them for the agent’s own Sotto tools to use once each. The agent and its provider never see them.`
-      : t`Sotto keeps it for the agent’s own Sotto tools to use once. The agent and its provider never see it.`
+    ? several ? t`Sotto writes each to a file only you can read, for the agent’s commands, and deletes them within an hour. They stay out of the chat, but anything those commands print reaches the agent and its provider.`
+      : t`Sotto writes it to a file only you can read, for the agent’s commands, and deletes it within an hour. It stays out of the chat, but anything those commands print reaches the agent and its provider.`
+    : site
+      ? several ? t({ message: `Sotto keeps them for the agent’s own Sotto tools to use once each, and types them only on ${site}. The agent and its provider never see them.`, comment: '{site} is the site of the sign-in page, such as dashboard.stripe.com.' })
+        : t({ message: `Sotto keeps it for the agent’s own Sotto tools to use once, and types it only on ${site}. The agent and its provider never see it.`, comment: '{site} is the site of the sign-in page, such as dashboard.stripe.com.' })
+      : several ? t`Sotto keeps them for the agent’s own Sotto tools to use once each, and asks you before typing them on any page. The agent and its provider never see them.`
+        : t`Sotto keeps it for the agent’s own Sotto tools to use once, and asks you before typing it on any page. The agent and its provider never see it.`
   const describedBy = problem ? `${privacyId} ${errorId}` : privacyId
   return <section className="agent-request secret-request" data-kind="secret" aria-labelledby={titleId} aria-busy={sending !== null || undefined}>
     <div className="agent-request__head">

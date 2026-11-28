@@ -81,6 +81,8 @@ describe('secret requests', () => {
   it('writes a file only its user reads, for a command, and deletes it when let go', async () => {
     const { service, directory } = await setup()
     const outcome = service.ask('thread-a', { ...ask, delivery: 'file' })
+    // A phone shows these words: the agent's commands read the file, so they do not say the agent will not see it.
+    expect(shown(service).text).toContain('The agent asks for a value its commands read from a file, and it is told never to print it.')
     await service.save('thread-a', shown(service).id, { value: CANARY })
     const result = await outcome as Extract<SecretOutcome, { delivery: 'file' }>
     const file = result.files.value!
@@ -263,6 +265,36 @@ describe('secret requests', () => {
     void service.ask('thread-b', { ...ask, url: 'https://user:pass@example.com/' })
     expect(shown(service, 'thread-a').secretRequest?.url).toBeUndefined()
     expect(shown(service, 'thread-b').secretRequest?.url).toBeUndefined()
+  })
+
+  it('binds a reference to the site of its card\'s sign-in page, and says so without using it', async () => {
+    let now = 1_000_000
+    const { service } = await setup({ now: () => now, keepMs: 60_000 })
+    const named = service.ask('thread-a', { ...ask, url: 'https://Dashboard.Stripe.com:443/test/apikeys?tab=1' })
+    await service.save('thread-a', shown(service).id, { value: CANARY })
+    const result = await named as Extract<SecretOutcome, { delivery: 'secretRef' }>
+    expect(result.site).toBe('https://dashboard.stripe.com')
+    const ref = result.refs.value!
+    // Asked as often as needed, it is not used; another thread, an unknown reference and a lapsed one have no site.
+    expect(service.site('thread-a', ref)).toEqual({ origin: 'https://dashboard.stripe.com' })
+    expect(service.site('thread-a', ref)).toEqual({ origin: 'https://dashboard.stripe.com' })
+    expect(service.site('thread-b', ref)).toBeNull()
+    expect(service.site('thread-a', 'sr_unknown')).toBeNull()
+    expect(service.take('thread-a', ref)).toBe(CANARY)
+    expect(service.site('thread-a', ref)).toBeNull()
+    // A card with no sign-in page, or one whose address was dropped, names no site.
+    for (const input of [ask, { ...ask, url: 'javascript:alert(1)' }]) {
+      const outcome = service.ask('thread-a', input)
+      await service.save('thread-a', shown(service).id, { value: CANARY })
+      const saved = await outcome as Extract<SecretOutcome, { delivery: 'secretRef' }>
+      expect(saved.site).toBeNull()
+      expect(service.site('thread-a', saved.refs.value!)).toEqual({ origin: null })
+    }
+    const lapsing = service.ask('thread-a', ask)
+    await service.save('thread-a', shown(service).id, { value: CANARY })
+    const lapsed = (await lapsing as Extract<SecretOutcome, { delivery: 'secretRef' }>).refs.value!
+    now += 60_001
+    expect(service.site('thread-a', lapsed)).toBeNull()
   })
 
   it('tells its listeners when a card shows and ends', async () => {

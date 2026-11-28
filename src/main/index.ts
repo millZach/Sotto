@@ -1981,6 +1981,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         pointAtSomething: owlFeatures['quiet-browser'],
         // A secret request's reference is typed from the engine that holds its value (ADR-0219).
         ...(owlFeatures['secret-requests'] && engine.takeSecret ? { secret: (threadId: string, ref: string) => engine.takeSecret!(threadId, ref) } : {}),
+        ...(owlFeatures['secret-requests'] && engine.secretSite ? { secretSite: (threadId: string, ref: string) => engine.secretSite!(threadId, ref) } : {}),
         ...(browserParity ? { parity: true, importScratch } : {}), ...(browserFiles ? { browserFiles } : {}), ...(browserProfiles ? { profiles: browserProfiles } : {}), ...(browserImport ? { browserImport } : {}),
         // A page's download waits in Sotto's own folder until the user says where it goes (ADR-0222). Under test, nothing
         // reaches the tester's Downloads, the Save dialog answers with the test's folder, and Open and Show are recorded.

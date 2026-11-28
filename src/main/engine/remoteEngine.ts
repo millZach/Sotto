@@ -8,6 +8,7 @@ import type { NotificationOpening } from '../../shared/desktopNotifications'
 import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'
 import type { QuestionPageOpen } from '../../shared/questionPageOpen'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import type { SecretSite } from '../../shared/secretRequests'
 import type { AppSettings } from '../../shared/settings'
 import type { ToolsResult } from '../../shared/tools'
 import type { AgentVisual } from '../../shared/visuals'
@@ -366,6 +367,7 @@ export async function startOutOfProcessEngine(
     hostedBrowserAddress: (hostId: string) =>
       connection.request<string | undefined>('engine:hostedBrowserAddress', [hostId]),
     takeSecret: (threadId: string, ref: string) => connection.request<string | null>('engine:takeSecret', [threadId, ref]),
+    secretSite: (threadId: string, ref: string) => connection.request<SecretSite | null>('engine:secretSite', [threadId, ref]),
     turnRecordsInfo: () => connection.request<EngineTurnRecordsInfo>('engine:turnRecordsInfo'),
 
     e2eAgentEvent: (payload: unknown) => { connection.sendPush('engine:e2eAgentEvent', payload) },

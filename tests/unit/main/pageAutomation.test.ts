@@ -62,6 +62,8 @@ function automation(fake: FakePage, options: { parity?: boolean; cursor?: boolea
   return created
 }
 const go = (): void => undefined
+/** A secret reference's value as main hands it over, at the moment it is typed. */
+const given = (value: string) => async (): Promise<string | null> => value
 
 describe('page zoom keeps the agent in CSS pixels (ADR-0222)', () => {
   it('sends a desktop viewport at the zoom, so the page lays out at the size the agent asked for', async () => {
@@ -178,7 +180,7 @@ describe('the agent\'s cursor (ADR-0222)', () => {
 describe('typing a secret (ADR-0219, as Gemini\'s review asked)', () => {
   it('focuses the password field named, checks the focus right before typing, and types nothing else', async () => {
     const focus = { node: 9 }, fake = page(focus), automation_ = automation(fake)
-    await automation_.typeSecret('hunter2-secret', go, { selector: '#password' })
+    await automation_.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
     expect(fake.calls('DOM.focus')).toEqual([{ backendNodeId: 7 }])
     expect(fake.calls('Input.insertText')).toEqual([{ text: 'hunter2-secret' }])
     // The last look at the focus comes right before the value goes.
@@ -188,7 +190,7 @@ describe('typing a secret (ADR-0219, as Gemini\'s review asked)', () => {
 
   it('refuses when the field named is not a password field', async () => {
     const fake = page(), automation_ = automation(fake)
-    await expect(automation_.typeSecret('hunter2-secret', go, { selector: '#name' })).rejects.toMatchObject({ code: 'blocked' })
+    await expect(automation_.typeSecret(given('hunter2-secret'), go, { selector: '#name' })).rejects.toMatchObject({ code: 'blocked' })
     expect(fake.calls('Input.insertText')).toEqual([])
   })
 
@@ -201,7 +203,7 @@ describe('typing a secret (ADR-0219, as Gemini\'s review asked)', () => {
       return base(method, params)
     }
     const automation_ = automation(fake)
-    await expect(automation_.typeSecret('hunter2-secret', go, { selector: '#password' })).rejects.toMatchObject({ code: 'blocked' })
+    await expect(automation_.typeSecret(given('hunter2-secret'), go, { selector: '#password' })).rejects.toMatchObject({ code: 'blocked' })
     expect(fake.calls('Input.insertText')).toEqual([])
     expect(automation_.holdsSecret()).toBe(false)
   })
@@ -209,27 +211,27 @@ describe('typing a secret (ADR-0219, as Gemini\'s review asked)', () => {
   it('refuses when a different password field has the focus than the one named', async () => {
     const focus = { node: 7 }, fake = page(focus), base = fake.handle
     fake.handle = (method, params) => method === 'DOM.focus' ? {} : method === 'DOM.describeNode' && params.objectId === 'active' ? { node: { backendNodeId: 8 } } : method === 'DOM.describeNode' && params.backendNodeId === 8 ? { node: { nodeName: 'INPUT', attributes: ['type', 'password'] } } : base(method, params)
-    await expect(automation(fake).typeSecret('hunter2-secret', go, { selector: '#password' })).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('did not take the focus') })
+    await expect(automation(fake).typeSecret(given('hunter2-secret'), go, { selector: '#password' })).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('did not take the focus') })
     expect(fake.calls('Input.insertText')).toEqual([])
   })
 
   it('replaces what the field held when asked to clear it, and appends otherwise', async () => {
     const cleared = page(), clearing = automation(cleared)
-    await clearing.typeSecret('hunter2-secret', go, { selector: '#password' }, true)
+    await clearing.typeSecret(given('hunter2-secret'), go, { selector: '#password' }, true)
     const methods = cleared.sent.map(entry => entry.method === 'Runtime.evaluate' && String(entry.params.expression).includes('select()') ? 'select' : entry.method)
     expect(methods.indexOf('select')).toBeGreaterThan(-1)
     expect(methods.indexOf('select')).toBeLessThan(methods.indexOf('Input.insertText'))
     const kept = page(), keeping = automation(kept)
-    await keeping.typeSecret('hunter2-secret', go, { selector: '#password' })
+    await keeping.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
     expect(kept.calls('Runtime.evaluate').some(params => String(params.expression).includes('select()'))).toBe(false)
   })
 
   it('types into the focused password field when none is named, and refuses a focused text field', async () => {
     const fake = page({ node: 7 }), automation_ = automation(fake)
-    await automation_.typeSecret('hunter2-secret', go)
+    await automation_.typeSecret(given('hunter2-secret'), go)
     expect(fake.calls('Input.insertText')).toEqual([{ text: 'hunter2-secret' }])
     const text = page({ node: 9 })
-    await expect(automation(text).typeSecret('hunter2-secret', go)).rejects.toMatchObject({ code: 'blocked' })
+    await expect(automation(text).typeSecret(given('hunter2-secret'), go)).rejects.toMatchObject({ code: 'blocked' })
     expect(text.calls('Input.insertText')).toEqual([])
   })
 })
@@ -237,7 +239,7 @@ describe('typing a secret (ADR-0219, as Gemini\'s review asked)', () => {
 describe('a document that holds a typed secret (ADR-0220, decision 6)', () => {
   const typed = async () => {
     const fake = page(), automation_ = automation(fake)
-    await automation_.typeSecret('hunter2-secret', go, { selector: '#password' })
+    await automation_.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
     return { fake, automation_ }
   }
 
@@ -284,7 +286,7 @@ describe('a page\'s dialog words (Gemini\'s review)', () => {
 
   it('masks a typed secret in the refusal an open dialog gives', async () => {
     const fake = page(), automation_ = automation(fake)
-    await automation_.typeSecret('hunter2-secret', go, { selector: '#password' })
+    await automation_.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
     automation_.documentCommitted()
     opened(fake, 'Your password is hunter2-secret')
     await expect(automation_.inspect().then(() => automation_.snapshotText())).rejects.toMatchObject({ message: expect.stringContaining('Your password is ••••••••') })
@@ -293,7 +295,7 @@ describe('a page\'s dialog words (Gemini\'s review)', () => {
 
   it('leaves the dialog\'s words out while the document holds a secret', async () => {
     const fake = page(), automation_ = automation(fake)
-    await automation_.typeSecret('hunter2-secret', go, { selector: '#password' })
+    await automation_.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
     // The page's script could put the field's value into the words in any form: reversed, encoded, split.
     opened(fake, 'terces-2retnuh')
     for (const attempt of [() => automation_.snapshotText(), () => automation_.input({ type: 'click', x: 1, y: 1 }, go), () => automation_.capture('https://shop.example/')]) {
@@ -394,9 +396,87 @@ describe('what is masked (ADR-0219)', () => {
   it('masks a typed secret as written, as JSON writes it, and as an address or a GET form carries it', async () => {
     const fake = page(), automation_ = automation(fake)
     const secret = 'pa ss&word"1'
-    await automation_.typeSecret(secret, go, { selector: '#password' })
+    await automation_.typeSecret(given(secret), go, { selector: '#password' })
     for (const form of [secret, JSON.stringify(secret).slice(1, -1), encodeURIComponent(secret), encodeURIComponent(secret).replace(/%20/gu, '+')]) {
       expect(automation_.masked(`before ${form} after`)).toBe('before •••••••• after')
     }
+  })
+})
+
+describe('where a secret is not typed (the review of the browser-parity branch)', () => {
+  /** A page whose document is at `origin`, as `location.origin` says it. */
+  const at = (origin: string, focus: { node: number } = { node: 7 }): FakePage => {
+    const fake = page(focus), base = fake.handle
+    fake.handle = (method, params) => method === 'Runtime.evaluate' && params.expression === 'location.origin' ? { result: { type: 'string', value: origin } } : base(method, params)
+    return fake
+  }
+  const counted = () => { const take = { calls: 0, fn: async (): Promise<string | null> => { take.calls++; return 'hunter2-secret' } }; return take }
+
+  it('refuses a document the agent ran script in, before the value is taken, until another document commits', async () => {
+    const fake = at('https://github.com'), automation_ = automation(fake), take = counted()
+    fake.handle = ((base: Handler) => (method: string, params: Record<string, unknown>) => method === 'Runtime.evaluate' && params.userGesture ? { result: { type: 'string', value: 'ok' } } : base(method, params))(fake.handle)
+    await automation_.evaluate('document.querySelector("#password").addEventListener("input", () => undefined)')
+    await expect(automation_.typeSecret(take.fn, go, { selector: '#password' }, false, 'https://github.com')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('ran a script') })
+    // Asked for, it is refused before the user is asked.
+    await expect(automation_.target({ type: 'type', selector: '#password', secretRef: `secret-ref:${'a'.repeat(32)}` })).rejects.toMatchObject({ code: 'blocked' })
+    expect(take.calls).toBe(0)
+    expect(fake.calls('Input.insertText')).toEqual([])
+    // A hash change keeps the document; a new one commits without the agent's script.
+    fake.emit('Page.navigatedWithinDocument', { frameId: 'main', url: 'https://github.com/login#again' })
+    await expect(automation_.typeSecret(take.fn, go, { selector: '#password' }, false, 'https://github.com')).rejects.toMatchObject({ code: 'blocked' })
+    fake.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://github.com/login' } })
+    await automation_.typeSecret(take.fn, go, { selector: '#password' }, false, 'https://github.com')
+    expect(take.calls).toBe(1)
+    expect(fake.calls('Input.insertText')).toEqual([{ text: 'hunter2-secret' }])
+  })
+
+  it('takes the value only after every check, so a refused focus spends nothing', async () => {
+    const focus = { node: 9 }, fake = at('https://github.com', focus), base = fake.handle, take = counted()
+    fake.handle = (method, params) => method === 'DOM.focus' ? {} : base(method, params)
+    await expect(automation(fake).typeSecret(take.fn, go, { selector: '#password' }, false, 'https://github.com')).rejects.toMatchObject({ code: 'blocked' })
+    expect(take.calls).toBe(0)
+  })
+
+  it('types nothing when the document is not at the site the value is for', async () => {
+    const fake = at('https://attacker.example'), take = counted()
+    await expect(automation(fake).typeSecret(take.fn, go, { selector: '#password' }, false, 'https://github.com')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('https://github.com') })
+    expect(take.calls).toBe(0)
+    expect(fake.calls('Input.insertText')).toEqual([])
+    const own = at('https://github.com')
+    await automation(own).typeSecret(take.fn, go, { selector: '#password' }, false, 'https://github.com')
+    expect(own.calls('Input.insertText')).toEqual([{ text: 'hunter2-secret' }])
+  })
+
+  it('types nothing while the page records, and starts no recording on a page that holds a secret', async () => {
+    const recording = page(), recorder = automation(recording), take = counted()
+    await recorder.startScreencast(() => undefined)
+    await expect(recorder.typeSecret(take.fn, go, { selector: '#password' })).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('recording') })
+    expect(take.calls).toBe(0)
+    const holding = page(), holder = automation(holding)
+    await holder.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
+    await expect(holder.startScreencast(() => undefined)).rejects.toMatchObject({ code: 'blocked' })
+    expect(holding.calls('Page.startScreencast')).toEqual([])
+  })
+
+  it('keeps evaluate off for the page\'s life once its address, or a frame\'s, has held a typed secret', async () => {
+    const secret = 'pa ss&word"1'
+    for (const reaching of [
+      (fake: FakePage) => fake.emit('Page.frameNavigated', { frame: { id: 'main', url: `https://shop.example/session?password=${encodeURIComponent(secret).replace(/%20/gu, '+')}` } }),
+      (fake: FakePage) => fake.emit('Page.navigatedWithinDocument', { frameId: 'main', url: `https://shop.example/#${encodeURIComponent(secret)}` }),
+      (fake: FakePage) => fake.emit('Page.frameNavigated', { frame: { id: 'child', parentId: 'main', url: `https://shop.example/frame?p=${encodeURIComponent(secret)}` } }),
+    ]) {
+      const fake = page(), automation_ = automation(fake)
+      await automation_.typeSecret(given(secret), go, { selector: '#password' })
+      reaching(fake)
+      fake.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/thanks' } })
+      expect(automation_.holdsSecret()).toBe(false)
+      await expect(automation_.evaluate('btoa(navigation.entries().map(entry => entry.url).join())')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('address') })
+    }
+    // An address that never held it leaves evaluate to come back with the next document, as before.
+    const plain = page(), plainly = automation(plain)
+    await plainly.typeSecret(given(secret), go, { selector: '#password' })
+    plain.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/thanks' } })
+    plain.handle = (method) => method === 'Runtime.evaluate' ? { result: { type: 'number', value: 2 } } : {}
+    expect(await plainly.evaluate('1 + 1')).toBe('2')
   })
 })

@@ -96,6 +96,24 @@ describe('a secret request card', () => {
     expect(Object.getPrototypeOf(sent.values)).toBe(Object.prototype)
   })
 
+  it('says truly where a value can go: the sign-in page\'s site, a page the user says yes to, or a file the agent\'s commands read', () => {
+    bridge()
+    card(secretRequest({ url: 'https://dashboard.stripe.com/test/apikeys' }))
+    expect(screen.getByText(/types it only on dashboard\.stripe\.com\. The agent and its provider never see it\./u)).toBeInTheDocument()
+    cleanup()
+    card()
+    expect(screen.getByText(/asks you before typing it on any page\. The agent and its provider never see it\./u)).toBeInTheDocument()
+    cleanup()
+    // A file is read by the agent's own commands, so the card cannot say the agent never sees it.
+    card(secretRequest({ delivery: 'file' }))
+    const privacy = screen.getByText(/file only you can read/u)
+    expect(privacy).not.toHaveTextContent('never see')
+    expect(privacy).toHaveTextContent('anything those commands print reaches the agent and its provider')
+    cleanup()
+    card(secretRequest({ delivery: 'file', fields: [{ name: 'user', label: 'User name', secret: false }, { name: 'password', label: 'Password', secret: true }] }))
+    expect(screen.getByText(/to a file only you can read/u)).not.toHaveTextContent('never see')
+  })
+
   it('opens the sign-in page in the user\'s browser', async () => {
     const { openExternalLink } = bridge()
     const { user } = card(secretRequest({ url: 'https://dashboard.stripe.com/test/apikeys' }))

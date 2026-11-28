@@ -10,7 +10,7 @@ const schema = (input: z.ZodType): Record<string, unknown> => z.toJSONSchema(inp
 export const secretToolDefinitions: readonly ThreadToolDefinition[] = [
   { name: REQUEST_SECRET_TOOL, inputSchema: schema(requestSecretInputSchema), description: [
     'Ask the user for a password, API key, token, pairing code or any value you must not see, on a private card in this thread. Open it, don\'t offer it, and never ask for such a value in chat.',
-    'One value, or up to eight on one card with fields (a user name can be shown with secret: false). url adds a button that opens a sign-in or setup page.',
+    'One value, or up to eight on one card with fields (a user name can be shown with secret: false). url adds a button that opens a sign-in or setup page, and Sotto\'s browser then types a secretRef only on that page\'s site; without url it asks the user before typing it anywhere.',
     'Returns a one-use secretRef (secretRefs by field name) that Sotto\'s own tools take, such as browser_action type with secretRef, or with delivery: "file" a file (files by name) your command reads,',
     'as `sudo -S cmd < "$file"` or `adb pair host:port "$(cat "$file")"`. Never print, copy or echo a file\'s contents. Call release_secret when you are done.',
   ].join(' '), _meta: { 'anthropic/alwaysLoad': true } },
@@ -73,7 +73,10 @@ export class SecretToolServer implements ScopedThreadTools {
 /** The tool's answer: references or files by field name for a card with fields, the one of each for a single value. */
 export function secretResult(outcome: SecretOutcome, named: boolean): Record<string, unknown> {
   if (outcome.status !== 'saved') return { status: outcome.status, note: UNSAVED[outcome.status] }
-  if (outcome.delivery === 'secretRef') return named ? { status: 'saved', secretRefs: outcome.refs } : { status: 'saved', secretRef: outcome.refs.value }
+  if (outcome.delivery === 'secretRef') {
+    const note = outcome.site ? `Sotto's browser types it only on ${outcome.site}.` : 'The card named no sign-in page, so Sotto asks the user before typing it on any page.'
+    return named ? { status: 'saved', secretRefs: outcome.refs, note } : { status: 'saved', secretRef: outcome.refs.value, note }
+  }
   const note = 'Owner-only file. Read it inside a command and never print it. Deleted after an hour, when you call release_secret, or when the thread closes.'
   return named ? { status: 'saved', files: outcome.files, note } : { status: 'saved', file: outcome.files.value, note }
 }

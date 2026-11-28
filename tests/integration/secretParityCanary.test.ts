@@ -4,7 +4,8 @@
  * ref and by selector into a page that echoes it every way it can (its words, its title, its address through a form sent
  * by GET, a dialog, an evaluated value), and goes through a hash change, Stop sharing and sharing again, snapshots and
  * screenshots. It appears nowhere but the page: no tool result, browser event, log line or task. While the document
- * that holds it is loaded, evaluate stays off and a dialog's words are not passed on in any form.
+ * that holds it is loaded, evaluate stays off, no picture of the page goes to the agent and a dialog's words are not
+ * passed on in any form; once the page's address has held it, evaluate stays off for the page's life.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -42,6 +43,7 @@ vi.mock('electron', async () => {
     if (method === 'Runtime.evaluate') {
       const expression = String(params.expression)
       if (expression === 'document.activeElement') return { result: { objectId: 'active' } }
+      if (expression === 'location.origin') return { result: { type: 'string', value: new URL(page.contents.at(-1)!.url).origin } }
       if (expression.startsWith('document.querySelector("#password")')) return { result: { objectId: 'password' } }
       if (expression.includes('document.title')) return { result: { value: { title: 'Sign in', text: `Echo ${page.typed}`, state: 'complete' } } }
       if (expression.startsWith('Array.from(document.querySelectorAll')) return { result: { value: [{ tag: 'input', role: '', name: page.typed, x: 0, y: 0, width: 200, height: 30, disabled: false }] } }
@@ -123,7 +125,7 @@ beforeAll(async () => {
   answer = async values => { const result = await handlers.get(SECRET_REQUESTS_ANSWER)!(mainEvent, values); record(result); return result }
   const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'p', workingDirectory: work }), copyPath: vi.fn(), reveal: vi.fn() })
   browser = new BrowserService({ files, getWindow: () => null, emit: event => { events.push(event); record(event) }, openExternal: vi.fn(), destination: async () => 'embedded', byDefault: () => true,
-    parity: true, secret: async (threadId, ref) => secrets.take(threadId, ref) })
+    parity: true, secret: async (threadId, ref) => secrets.take(threadId, ref), secretSite: async (threadId, ref) => secrets.site(threadId, ref) })
 })
 afterAll(async () => {
   browser.dispose()
@@ -135,7 +137,7 @@ afterAll(async () => {
 })
 
 async function secretRef(): Promise<string> {
-  const call = tools.call(THREAD, 'request_secret', { label: 'Staging password', reason: 'To sign in to staging.' })
+  const call = tools.call(THREAD, 'request_secret', { label: 'Staging password', reason: 'To sign in to staging.', url: 'http://127.0.0.1:5173/login' })
   await vi.waitFor(() => expect(secrets.requests().get(THREAD)?.length).toBe(1))
   const requestId = secrets.requests().get(THREAD)![0]!.id
   expect(await answer({ answer: 'save', threadId: THREAD, requestId, values: { value: CANARY } })).toEqual({ ok: true })
@@ -195,8 +197,8 @@ describe('a secret typed into a page with the full catalog on', () => {
     const answered = await act({ type: 'dialog', accept: true })
     expect(answered.text).toContain('Accepted the alert dialog.')
     contents().debugger.emit('message', {}, 'Page.javascriptDialogClosed', {})
-    const shot = await act({ type: 'screenshot' })
-    expect(shot.isError).toBeFalsy()
+    // Answered, the page still holds the secret, so no picture of it goes to the agent.
+    expect(await act({ type: 'screenshot' })).toMatchObject({ isError: true, text: expect.stringContaining('no picture of it goes to you') })
   })
 
   it('is masked in the page\'s title and in an address a form sent by GET', async () => {
@@ -209,10 +211,9 @@ describe('a secret typed into a page with the full catalog on', () => {
     const pages = await call('browser_pages', {})
     expect(pages.text).toContain('Welcome back ••••••••')
     expect(pages.text).toContain('password=••••••••')
-    // A new document committed, so evaluate is on again, and what it reads back is masked.
-    const evaluated = await act({ type: 'evaluate', expression: 'document.body.innerText' })
-    expect(evaluated.isError).toBeFalsy()
-    expect(evaluated.text).toContain('field holds ••••••••')
+    // A new document committed, but its address holds the value, and the page's history keeps it: evaluate stays off.
+    const evaluated = await act({ type: 'evaluate', expression: 'btoa(location.search)' })
+    expect(evaluated).toMatchObject({ isError: true, text: expect.stringContaining('address') })
     await call('browser_status', {})
   })
 

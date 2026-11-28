@@ -9256,12 +9256,22 @@ msgid "Sotto is starting it and sending the brief."
 msgstr "Sotto is starting it and sending the brief."
 
 #: src/renderer/src/agents/requests/SecretRequestCard.tsx
-msgid "Sotto keeps it for the agent’s own Sotto tools to use once. The agent and its provider never see it."
-msgstr "Sotto keeps it for the agent’s own Sotto tools to use once. The agent and its provider never see it."
+msgid "Sotto keeps it for the agent’s own Sotto tools to use once, and asks you before typing it on any page. The agent and its provider never see it."
+msgstr "Sotto keeps it for the agent’s own Sotto tools to use once, and asks you before typing it on any page. The agent and its provider never see it."
+
+#. {site} is the site of the sign-in page, such as dashboard.stripe.com.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps it for the agent’s own Sotto tools to use once, and types it only on {site}. The agent and its provider never see it."
+msgstr "Sotto keeps it for the agent’s own Sotto tools to use once, and types it only on {site}. The agent and its provider never see it."
 
 #: src/renderer/src/agents/requests/SecretRequestCard.tsx
-msgid "Sotto keeps them for the agent’s own Sotto tools to use once each. The agent and its provider never see them."
-msgstr "Sotto keeps them for the agent’s own Sotto tools to use once each. The agent and its provider never see them."
+msgid "Sotto keeps them for the agent’s own Sotto tools to use once each, and asks you before typing them on any page. The agent and its provider never see them."
+msgstr "Sotto keeps them for the agent’s own Sotto tools to use once each, and asks you before typing them on any page. The agent and its provider never see them."
+
+#. {site} is the site of the sign-in page, such as dashboard.stripe.com.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps them for the agent’s own Sotto tools to use once each, and types them only on {site}. The agent and its provider never see them."
+msgstr "Sotto keeps them for the agent’s own Sotto tools to use once each, and types them only on {site}. The agent and its provider never see them."
 
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto keeps up to 32 servers. Remove one you no longer use, then add this one."
@@ -9350,12 +9360,12 @@ msgid "Sotto will not send your last prompt twice. Reconnect to check it."
 msgstr "Sotto will not send your last prompt twice. Reconnect to check it."
 
 #: src/renderer/src/agents/requests/SecretRequestCard.tsx
-msgid "Sotto writes each to a file only you can read, for the agent’s commands, and deletes them within an hour. The agent and its provider never see them."
-msgstr "Sotto writes each to a file only you can read, for the agent’s commands, and deletes them within an hour. The agent and its provider never see them."
+msgid "Sotto writes each to a file only you can read, for the agent’s commands, and deletes them within an hour. They stay out of the chat, but anything those commands print reaches the agent and its provider."
+msgstr "Sotto writes each to a file only you can read, for the agent’s commands, and deletes them within an hour. They stay out of the chat, but anything those commands print reaches the agent and its provider."
 
 #: src/renderer/src/agents/requests/SecretRequestCard.tsx
-msgid "Sotto writes it to a file only you can read, for the agent’s commands, and deletes it within an hour. The agent and its provider never see it."
-msgstr "Sotto writes it to a file only you can read, for the agent’s commands, and deletes it within an hour. The agent and its provider never see it."
+msgid "Sotto writes it to a file only you can read, for the agent’s commands, and deletes it within an hour. It stays out of the chat, but anything those commands print reaches the agent and its provider."
+msgstr "Sotto writes it to a file only you can read, for the agent’s commands, and deletes it within an hour. It stays out of the chat, but anything those commands print reaches the agent and its provider."
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Sotto’s compaction of this idle thread is unconfirmed. Reconnect to see its result."

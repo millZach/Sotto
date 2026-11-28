@@ -471,16 +471,17 @@ export class HostBrowserPage {
     if (method === 'Page.frameNavigated') {
       const frame = params.frame as { id?: string; parentId?: string; url?: string; urlFragment?: string } | undefined
       if (!frame) return
-      if (frame.parentId) { this.blankUnsafeFrame(frame.id, frame.url ?? ''); return }
+      if (frame.parentId) { this.automation.addressChanged(`${frame.url ?? ''}${frame.urlFragment ?? ''}`); this.blankUnsafeFrame(frame.id, frame.url ?? ''); return }
       this.mainFrame = frame.id ?? this.mainFrame
-      // A new document committed, shared or not: one that held a typed secret is gone (ADR-0220, decision 6).
-      this.automation.documentCommitted()
+      // A new document committed, shared or not: one that held a typed secret, or the agent's script, is gone (ADR-0220, decision 6).
+      this.automation.documentCommitted(`${frame.url ?? ''}${frame.urlFragment ?? ''}`)
       const url = safeBrowserUrl(`${frame.url ?? ''}${frame.urlFragment ?? ''}`)
       if (url && url !== this.current.url) this.update({ url })
       this.refresh()
       return
     }
     if (method === 'Page.navigatedWithinDocument') {
+      if (typeof params.url === 'string') this.automation.addressChanged(params.url)
       if (params.frameId !== this.mainFrame) return
       const url = safeBrowserUrl(typeof params.url === 'string' ? params.url : '')
       if (url) this.update({ url, status: 'ready' })

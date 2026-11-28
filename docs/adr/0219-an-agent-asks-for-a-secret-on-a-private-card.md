@@ -30,3 +30,12 @@ A **secret request** is the card; a **secret reference** and a **secret file** a
 ## Consequences
 
 An agent that needs a credential has a way to get one that is not the chat, and the instructions say so. Antigravity threads still ask in chat until `agy` takes the larger tool set. `takeSecret` is the seam for every later Sotto tool that types or sends a value: it must take the value once, as late as it can, and mask it in what it reads back.
+
+## November 27 amendment: where a reference is typed, and what a file's card says
+
+A second review of this branch found that a reference could be typed on any page the agent reached, and that the card promised more of a file than is true. Each is now held as follows.
+
+- **Decision 7, the site.** A reference is bound to the site of its card's sign-in page, the origin of `url` as Sotto kept it. Sotto's browser types it only on a page at that origin. It checks when the agent asks, again when the action runs, and once more against the document's own `location.origin` just before the value is taken, so a page whose address changed without another document loading is caught. A page on another site is refused in words, under the browser grant too, and the reference is kept for its own site. A card that named no page binds no site, so every `type` with its reference asks the user, whatever grant the thread holds: the request names the page it would go to, and **Allow this thread** is refused for it. The tool's answer tells the agent which of the two it has. The limit is the site itself: Sotto cannot tell a sign-in page from any other page on the site the agent named, nor an agent's own server on `localhost` from the user's.
+- **Decision 7, spending.** The value is taken only after every other check, the field's focus and the site among them, so an action refused for any reason spends nothing.
+- **Decision 7, the page's script and pictures.** A secret is not typed into a document the agent ran script in, or while the page records, and no picture of a page that holds one goes to the agent (ADR-0222, November 27 amendment).
+- **Decisions 3 and 6.** A file is read by the agent's own commands, so the card no longer says the agent and its provider never see it. It says the file stays out of the chat, but anything those commands print reaches the agent and its provider. The words a phone shows say the agent's commands read it from a file and the agent is told never to print it. A reference's card names the site it is typed on, or says Sotto asks before typing it on any page.

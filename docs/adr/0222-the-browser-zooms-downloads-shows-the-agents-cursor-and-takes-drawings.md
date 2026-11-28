@@ -33,3 +33,11 @@ No mock-up round was held. Rez's request settled the direction, and each piece s
 ## Consequences
 
 The user can zoom without breaking an agent's work, keep what a page downloads where they choose, watch where an agent acts, and show an agent what they mean by drawing on the page. An agent can start a download but never places or reads it unless the user saves it in the thread's folder. Passkeys work as in Chrome. Still open: zoom, downloads and the cursor on a paired host's page, and passkeys on macOS and Linux, which were not checked here.
+
+## November 27 amendment: what the owner's review tightened
+
+A review of this branch by its owner found places where the decisions above let a secret, a file or a name slip. Each is now held as follows.
+
+- **Decision 12, before a secret is typed.** Once the agent has run `evaluate` in a document, a secret is not typed into it until another document commits in the main frame, since the agent's script could still be listening for keys or reading the field. `evaluate` is the one way an agent runs its own script in a page: `wait_for`, `select` and selectors pass the agent's words to the page as values, not as code, and `navigate` takes only http and https addresses. A secret is not typed while the page records, either.
+- **Decision 12, an address that held it.** Once the page's address, a frame's address or an address within the document has held the value, as a form sent by GET leaves it, `evaluate` stays off for the rest of the page's life, since the page's history and `document.referrer` keep that address across documents.
+- **Decision 12, pictures.** While a page's document holds a typed secret, no picture of it goes to the agent or into the task: `screenshot` is refused, `snapshot` with `includeImage` gives its words alone, the task keeps no thumbnail, and recording does not start, since a page can draw what a password field holds. An open dialog is still refused first, as before.

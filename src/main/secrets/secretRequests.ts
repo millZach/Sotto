@@ -6,13 +6,13 @@ import { join, resolve } from 'node:path'
 import type { AgentRequest } from '../../shared/agents'
 import {
   SECRET_KEEP_MS, SECRET_REQUEST_DEFAULT_WAIT_MS, SECRET_REQUEST_ID_PREFIX, SECRET_REQUEST_MAX_WAIT_MS, SECRET_REF_PATTERN, secretRequestFields,
-  type RequestSecretInput, type SecretRequestCard, type SecretRequestField,
+  type RequestSecretInput, type SecretRequestCard, type SecretRequestField, type SecretSite,
 } from '../../shared/secretRequests'
 import type { SottoThreadRequests } from '../agents/sottoRequests'
 
 /** How a card ended for its agent: saved (with what it gets), declined, closed with its call or thread, or not answered. */
 export type SecretOutcome =
-  | { readonly status: 'saved'; readonly delivery: 'secretRef'; readonly refs: Readonly<Record<string, string>> }
+  | { readonly status: 'saved'; readonly delivery: 'secretRef'; readonly refs: Readonly<Record<string, string>>; readonly site: string | null }
   | { readonly status: 'saved'; readonly delivery: 'file'; readonly files: Readonly<Record<string, string>> }
   | { readonly status: 'declined' | 'cancelled' | 'timed_out' }
 
@@ -27,6 +27,8 @@ interface Waiting {
   readonly request: AgentRequest
   readonly fields: readonly SecretRequestField[]
   readonly delivery: 'secretRef' | 'file'
+  /** The origin of the card's sign-in page, or null when it named none. */
+  readonly site: string | null
   readonly settle: (outcome: SecretOutcome) => void
   readonly timer: ReturnType<typeof setTimeout>
   readonly release: () => void
@@ -35,7 +37,11 @@ interface Waiting {
 
 /** A value kept for its agent, by reference or as a file. Values live in this process's memory and nowhere else. */
 interface Kept { readonly threadId: string; readonly expiresAt: number; readonly timer: ReturnType<typeof setTimeout> }
-interface KeptRef extends Kept { readonly value: string }
+/**
+ * `site` is the origin of the card's sign-in page: Sotto's browser types the value only on a page at that origin, and
+ * asks the user every time when the card named none (ADR-0219, decision 7).
+ */
+interface KeptRef extends Kept { readonly value: string; readonly site: string | null }
 
 export interface SecretRequestOptions {
   /** Sotto's own folder: secret files go in `secret-files` inside it. */
@@ -120,7 +126,7 @@ export class SecretRequests implements SottoThreadRequests {
     const request: AgentRequest = {
       id, kind: 'permission',
       // A client that knows nothing of the card shows these words and Decline: the values are typed on the computer.
-      text: `${input.label}: ${input.reason}\nThe agent asks for ${fields.length === 1 ? 'a value' : `${fields.length} values`} it will not see. Enter ${fields.length === 1 ? 'it' : 'them'} in Sotto on the computer, or decline here.`,
+      text: `${input.label}: ${input.reason}\nThe agent asks for ${fields.length === 1 ? 'a value' : `${fields.length} values`} ${delivery === 'file' ? `its commands read from ${fields.length === 1 ? 'a file' : 'files'}, and it is told never to print ${fields.length === 1 ? 'it' : 'them'}` : 'it will not see'}. Enter ${fields.length === 1 ? 'it' : 'them'} in Sotto on the computer, or decline here.`,
       options: [],
       permissionChoices: [{ id: 'decline', label: 'Decline', kind: 'deny' }],
       context: { toolName: 'Sotto', action: input.label },
@@ -132,7 +138,7 @@ export class SecretRequests implements SottoThreadRequests {
       timer.unref?.()
       const gone = (): void => { this.end(id, { status: 'cancelled' }) }
       wait.signal?.addEventListener('abort', gone, { once: true })
-      this.waiting.set(id, { threadId, request, fields, delivery, settle: resolveOutcome, timer, release: () => { wait.signal?.removeEventListener('abort', gone) }, saving: false })
+      this.waiting.set(id, { threadId, request, fields, delivery, site: url ? new URL(url).origin : null, settle: resolveOutcome, timer, release: () => { wait.signal?.removeEventListener('abort', gone) }, saving: false })
       this.changed()
     })
   }
@@ -185,8 +191,8 @@ export class SecretRequests implements SottoThreadRequests {
       if (waiting.delivery === 'secretRef') {
         // Without a prototype, a field named like `constructor` or `__proto__` is a key like any other.
         const refs = Object.create(null) as Record<string, string>
-        for (const field of waiting.fields) refs[field.name] = this.keepRef(threadId, fieldValue(values, field.name), expiresAt)
-        if (!this.end(requestId, { status: 'saved', delivery: 'secretRef', refs })) { for (const ref of Object.values(refs)) this.dropRef(ref); throw new Error('The agent stopped waiting before the card was saved. Nothing was kept.') }
+        for (const field of waiting.fields) refs[field.name] = this.keepRef(threadId, fieldValue(values, field.name), expiresAt, waiting.site)
+        if (!this.end(requestId, { status: 'saved', delivery: 'secretRef', refs, site: waiting.site })) { for (const ref of Object.values(refs)) this.dropRef(ref); throw new Error('The agent stopped waiting before the card was saved. Nothing was kept.') }
         return
       }
       const files = Object.create(null) as Record<string, string>
@@ -201,11 +207,19 @@ export class SecretRequests implements SottoThreadRequests {
    * reference is gone. Null for a reference that is unknown, used, expired or another thread's.
    */
   take(threadId: string, ref: string): string | null {
-    if (!SECRET_REF_PATTERN.test(ref)) return null
-    const kept = this.refs.get(ref)
-    if (!kept || kept.threadId !== threadId) return null
+    const kept = this.kept(threadId, ref)
+    if (!kept) return null
     this.dropRef(ref)
     return kept.expiresAt >= this.now() ? kept.value : null
+  }
+
+  /**
+   * The site a reference's card named, so a tool can check where the value would go before it takes it: the reference
+   * is not used. Null for one that is unknown, used, expired or another thread's.
+   */
+  site(threadId: string, ref: string): SecretSite | null {
+    const kept = this.kept(threadId, ref)
+    return kept && kept.expiresAt >= this.now() ? { origin: kept.site } : null
   }
 
   /** The agent is done with these: each of its own references and files goes now. Returns how many went. */
@@ -243,11 +257,16 @@ export class SecretRequests implements SottoThreadRequests {
   /** What is held now, for tests and for the window's count: never a value. */
   held(): { readonly waiting: number; readonly refs: number; readonly files: number } { return { waiting: this.waiting.size, refs: this.refs.size, files: this.files.size } }
 
-  private keepRef(threadId: string, value: string, expiresAt: number): string {
+  private kept(threadId: string, ref: string): KeptRef | null {
+    if (!SECRET_REF_PATTERN.test(ref)) return null
+    const kept = this.refs.get(ref)
+    return kept && kept.threadId === threadId ? kept : null
+  }
+  private keepRef(threadId: string, value: string, expiresAt: number, site: string | null): string {
     const ref = `secret-ref:${randomBytes(16).toString('hex')}`
     const timer = setTimeout(() => this.dropRef(ref), Math.max(0, expiresAt - this.now()))
     timer.unref?.()
-    this.refs.set(ref, { threadId, value, expiresAt, timer })
+    this.refs.set(ref, { threadId, value, expiresAt, timer, site })
     return ref
   }
   private dropRef(ref: string): void {
