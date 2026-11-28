@@ -614,8 +614,10 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     return owner ? this.downloadList.agentView(threadId, owner.workingDirectory, pageId => this.sharedNow(pageId, threadId), (pageId, text) => this.masked(pageId, text)) : []
   }
   /**
-   * Threads closed (archived or settled) or deleted just now: a download still asking in one is cancelled, since nobody
-   * is left to answer it (ADR-0222, November 27 amendment). One started later in a thread the user opened again waits.
+   * Threads their provider closed (archived or settled there) or deleted just now: a download still asking in one is
+   * cancelled, since nobody is left to answer it (ADR-0222, November 27 amendment). The user's Settle is not a close: it
+   * keeps running work and Undo brings it back, so a download in a settled thread still asks. One started later in a
+   * thread opened again waits.
    */
   threadsEnded(threadIds: readonly string[]): void {
     if (this.disposed) return

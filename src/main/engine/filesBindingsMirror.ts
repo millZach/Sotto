@@ -183,6 +183,8 @@ export class FilesBindingsTracker {
         this.threadTitles.set(thread.id, thread.title)
         ;(titlePatch ??= {})[thread.id] = thread.title
       }
+      // The provider's close, not the user's Settle, which keeps running work and is undone in a press: a download
+      // waiting in a settled thread keeps asking (ADR-0222, November 27 amendment).
       const closed = isThreadClosed(thread)
       if (closed !== this.closedThreads.has(thread.id)) {
         if (closed) this.closedThreads.add(thread.id)
