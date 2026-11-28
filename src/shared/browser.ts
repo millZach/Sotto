@@ -11,9 +11,15 @@ export const BROWSER_EVENT = `${BROWSER_CHANNEL}event`
 export const BROWSER_FRAME_EVENT = `${BROWSER_CHANNEL}frame`
 /** What a page an agent asked to open says until it is opened: by the user's answer, the browser grant, or the user loading it. */
 export const BROWSER_WAITING_TO_OPEN = 'Waiting for you to open and share this page.'
+/** The longest address the window takes, as written and once parsed. */
+export const BROWSER_URL_MAX = 8192
+/** The longest title of a page the window takes. */
+export const BROWSER_TITLE_MAX = 512
+/** The longest output of a browser task the window takes. */
+export const BROWSER_OUTPUT_MAX = 200_000
 
 export function safeBrowserUrl(input: string): string | null {
-  if (UNSAFE_URL_CHARACTERS.test(input) || input.length > 8192) return null
+  if (UNSAFE_URL_CHARACTERS.test(input) || input.length > BROWSER_URL_MAX) return null
   try {
     const url = new URL(input)
     return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null
@@ -146,7 +152,7 @@ export const browserNavigateSchema = browserRequestSchema.extend({ url: browserU
 export const browserBoundsSchema = z.object({ x: z.number().finite().min(0).max(32768), y: z.number().finite().min(0).max(32768), width: z.number().finite().positive().max(32768), height: z.number().finite().positive().max(32768) }).strict()
 export const browserMountSchema = browserRequestSchema.extend({ bounds: browserBoundsSchema.nullable() })
 export const browserOpenLinkSchema = z.object({ url: browserUrlSchema, destination: z.enum(['external', 'embedded']).optional(), target: toolTargetSchema.optional() }).strict()
-export const browserPageSchema = z.object({ id: z.string().uuid(), workspace: fileWorkspaceSchema, url: browserUrlSchema, title: z.string().max(512), status: z.enum(['loading', 'ready', 'unavailable']), error: z.string().max(2000).nullable(), canGoBack: z.boolean(), canGoForward: z.boolean(), sharedOrigin: z.string().nullable().optional(), viewport: browserPageViewportSchema.nullable().optional(), device: browserDeviceSchema.nullable().optional(),
+export const browserPageSchema = z.object({ id: z.string().uuid(), workspace: fileWorkspaceSchema, url: browserUrlSchema, title: z.string().max(BROWSER_TITLE_MAX), status: z.enum(['loading', 'ready', 'unavailable']), error: z.string().max(2000).nullable(), canGoBack: z.boolean(), canGoForward: z.boolean(), sharedOrigin: z.string().nullable().optional(), viewport: browserPageViewportSchema.nullable().optional(), device: browserDeviceSchema.nullable().optional(),
   ...browserPageParityShape }).strict()
 /** What the renderer may know of a thread's browser grant (ADR-0029): that it is live, since when, and where it came from. */
 export const browserGrantSchema = z.object({ grantedAt: z.number(), source: z.enum(['settings', 'user']) }).strict()
@@ -309,14 +315,14 @@ export const browserTaskSchema = z.object({
   thumbnail: z.string().nullable(), summary: z.string().nullable(), unchecked: z.array(z.string()),
   // `everyTime`: the action asks every time, whatever grant the thread holds, so only Allow once answers it (ADR-0220, ADR-0221).
   pendingAction: z.object({ id: z.string().uuid(), action: browserActionSchema, description: z.string(), expiresAt: z.number(), everyTime: z.literal(true).optional() }).nullable(),
-  output: z.string().max(200_000).nullable(),
+  output: z.string().max(BROWSER_OUTPUT_MAX).nullable(),
   /** The task's page kind, so a task on the test iPhone floats in the phone player before its page is listed. */
   device: browserDeviceSchema.nullable().optional(),
   /** A page the agent opened in the background (ADR-0220): it never takes the pane or floats the player on its own. */
   background: z.boolean().optional(),
   evidence: z.array(z.object({ id: z.string(), at: z.number(), url: z.string(), viewport: z.object({ width: z.number(), height: z.number() }).nullable(), image: z.string().max(2_000_000), width: z.number(), height: z.number() })).max(3).optional(),
 }).strict()
-export const browserAgentResultSchema = z.object({ task: browserTaskSchema, output: z.string().max(200_000).optional(), image: z.string().max(16_000_000).optional(), approvalRequired: z.boolean() }).strict()
+export const browserAgentResultSchema = z.object({ task: browserTaskSchema, output: z.string().max(BROWSER_OUTPUT_MAX).optional(), image: z.string().max(16_000_000).optional(), approvalRequired: z.boolean() }).strict()
 export const browserEventSchema = z.discriminatedUnion('type', [z.object({ type: z.literal('page'), page: browserPageSchema }).strict(), z.object({ type: z.literal('closed'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid() }).strict(), z.object({ type: z.literal('task'), task: browserTaskSchema }).strict(), z.object({ type: z.literal('browser-grant'), threadId: z.string(), grant: browserGrantSchema.nullable() }).strict(), z.object({ type: z.literal('point'), threadId: z.string(), workspaceId: z.string(), pageId: z.string().uuid(), point: browserPointStateSchema }).strict(), z.object({ type: z.literal('download'), download: browserDownloadSchema, gone: z.literal(true).optional() }).strict()])
 export type BrowserTask = z.infer<typeof browserTaskSchema>
 export type BrowserAction = z.infer<typeof browserActionSchema>

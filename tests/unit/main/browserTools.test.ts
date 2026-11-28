@@ -14,6 +14,7 @@ import { BROWSER_COMMAND_DEADLINE_MS } from '../../../src/main/tools/browserAuto
 import { PageAutomation } from '../../../src/main/tools/pageAutomation'
 import { FilesService } from '../../../src/main/files/service'
 import type { ToolsResult } from '../../../src/shared/tools'
+import { browserEventSchema, type BrowserEvent } from '../../../src/shared/browser'
 import { deferred } from '../../fixtures/deferred'
 
 vi.mock('electron', async () => {
@@ -1596,6 +1597,22 @@ describe('downloads in the service (ADR-0222)', () => {
       started('export-hunter2-secret.csv')
       expect(await service.agentDownloads(target.threadId)).toEqual([expect.objectContaining({ file: 'export-••••••••.csv' })])
     } finally { mask.mockRestore() }
+  })
+
+  it('tells the window of a task whose output, with the note of a download, is longer than the window takes (the fourth review, P-L1)', async () => {
+    const { service, target, emit, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Read the page' }))
+    // A read as long as one is said, during which the page starts a download.
+    const inspect = vi.spyOn(PageAutomation.prototype, 'inspect').mockImplementation(async () => { started('report.pdf'); return 'x'.repeat(200_000) })
+    try {
+      const read = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'inspect' } }))
+      expect(read.output).toContain('The page started downloading "report.pdf"')
+    } finally { inspect.mockRestore() }
+    const told = emit.mock.calls.map(([event]) => event as BrowserEvent).filter(event => event.type === 'task' && event.task.id === task.id).at(-1)
+    const parsed = browserEventSchema.safeParse(told)
+    expect(parsed.success).toBe(true)
+    expect((parsed.data as Extract<BrowserEvent, { type: 'task' }>).task.output).toHaveLength(200_000)
   })
 
   it('tells the agent nothing of a download from a page that left the site it was shared on, however lately the agent acted', async () => {

@@ -19,8 +19,9 @@ import { BrowserProfiles } from '../../src/main/tools/browserProfiles'
 import { createBrowserAgentServer } from '../../src/main/tools/browserAgentTools'
 import { FilesService } from '../../src/main/files/service'
 import { SECRET_REQUESTS_ANSWER, SECRET_VALUE_MAX } from '../../src/shared/secretRequests'
-import type { BrowserEvent, BrowserTask } from '../../src/shared/browser'
+import { BROWSER_CHANNEL, BROWSER_EVENT, type BrowserEvent, type BrowserTask } from '../../src/shared/browser'
 import { ipcRegistry } from '../fixtures/ipcHarness'
+import { createToolsBridges } from '../../src/preload/tools'
 
 const CANARY = 'CANARY-51c8 a0d2&b7e6-s3cr3t'
 /** The page: what was typed into its password field (7), which element has the focus (9 a text field), and whether focus is refused. */
@@ -377,5 +378,49 @@ describe('a typed secret of any length, and one the page\'s own address holds (t
       contents.emit('did-start-navigation', {}, next, false, true)
       expect(JSON.parse((await call('browser_pages', {})).text).pages.find((entry: { pageId: string }) => entry.pageId === signIn.pageId).url).toBe(`${new URL(address).origin}/done?pin=••••••••`)
     }
+  })
+})
+
+describe('what the window is sent of a page that holds a short secret is what it takes (the fourth review, P-L1)', () => {
+  it('delivers every news of the page through the preload, and lists it, with the PIN masked in its title, dialog and address', async () => {
+    fresh()
+    // A PIN of four characters, whose mask is twice as long.
+    const pin = '4821', address = 'https://github.com/login'
+    const signIn = await opened(address)
+    expect((await signIn.act({ type: 'type', selector: '#password', secretRef: await secretRef({ url: address }, pin) })).isError).toBeFalsy()
+    const listeners = new Map<string, (...args: unknown[]) => void>()
+    const bridges = createToolsBridges({ invoke: async (channel, payload) => channel === `${BROWSER_CHANNEL}list` ? browser.list(payload) : undefined, on: (channel, listener) => listeners.set(channel, listener), removeListener: channel => listeners.delete(channel) })
+    const delivered: BrowserEvent[] = []
+    const unsubscribe = bridges.browser.onEvent(event => { delivered.push(event) })
+    const from = events.length, contents = page.contents.at(-1)! as (typeof page.contents)[number] & { debugger: { emit(event: string, ...args: unknown[]): boolean } }
+    // The page's title, a dialog and an address, each as long as the window takes, with the PIN at its end.
+    contents.emit('page-title-updated', {}, `${'t'.repeat(508)}${pin}`)
+    contents.debugger.emit('message', {}, 'Page.javascriptDialogOpening', { type: 'prompt', message: `${'d'.repeat(1996)}${pin}`, defaultPrompt: `${pin} `.repeat(500) })
+    const moved = `${address}#${'a'.repeat(8192 - address.length - 1 - pin.length)}${pin}`
+    contents.url = moved
+    contents.emit('did-navigate-in-page', {}, moved, true)
+    const sent = events.slice(from).filter(event => event.type === 'page')
+    expect(sent.length).toBeGreaterThanOrEqual(3)
+    for (const event of sent) listeners.get(BROWSER_EVENT)!({}, event)
+    expect(delivered).toHaveLength(sent.length)
+    const last = delivered.at(-1) as Extract<BrowserEvent, { type: 'page' }>
+    expect(`${last.page.url} ${last.page.title} ${JSON.stringify(last.page.dialog)}`).not.toContain(pin)
+    expect(last.page.dialog?.message).toMatch(/^d+•+$/u)
+    const listed = await bridges.browser.list({ threadId: THREAD })
+    expect(listed.ok).toBe(true)
+    unsubscribe()
+    contents.debugger.emit('message', {}, 'Page.javascriptDialogClosed', {})
+  })
+
+  it('tells the window a title with the secret split by a mark the title loses masked whole (the fourth review, P-L3)', async () => {
+    fresh()
+    const address = 'https://github.com/login'
+    const signIn = await opened(address)
+    expect((await signIn.act({ type: 'type', selector: '#password', secretRef: await secretRef({ url: address }) })).isError).toBeFalsy()
+    const from = events.length, split = `${CANARY.slice(0, 3)}‪${CANARY.slice(3)}`
+    page.contents.at(-1)!.emit('page-title-updated', {}, `${'t'.repeat(505)}${split}`)
+    const title = (events.slice(from).filter(event => event.type === 'page').at(-1) as Extract<BrowserEvent, { type: 'page' }>).page.title
+    expect(title).toMatch(/^t+•+$/u)
+    expect(title.length).toBeLessThanOrEqual(512)
   })
 })

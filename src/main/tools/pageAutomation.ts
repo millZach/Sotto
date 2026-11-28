@@ -1,7 +1,7 @@
-import { presetSize, type BrowserAction, type BrowserAppearance, type BrowserBounds, type BrowserCapture, type BrowserDialog, type BrowserTargetFields } from '../../shared/browser'
 import { ToolFailure, fail } from './common'
 import { SNAPSHOT_TEXT, fieldContents, formatSnapshot, keyEvents, modifierMask, type AXNode } from './pageSnapshot'
-import { MASK, maskSecrets, secretMatchers, type SecretMatcher } from './secretMask'
+import { BROWSER_URL_MAX, safeBrowserUrl, presetSize, type BrowserAction, type BrowserAppearance, type BrowserBounds, type BrowserCapture, type BrowserDialog, type BrowserTargetFields } from '../../shared/browser'
+import { MASK, maskSecrets, secretMatchers, type SecretMatcher, type Tidy } from './secretMask'
 
 /**
  * The page's debugger, as a page automation drives it: Electron's own on the desktop, a DevTools session over a pipe
@@ -39,9 +39,6 @@ export type TargetedAction = Extract<BrowserAction, { type: 'click' | 'type' | '
 export const isTargeted = (action: BrowserAction): action is TargetedAction => ['click', 'type', 'tap', 'key', 'select', 'drag', 'upload', 'dialog'].includes(action.type)
 /** How much of a dialog's words Sotto shows. */
 const DIALOG_WORDS = 2000
-/** A dialog's untrusted words as Sotto shows them: no control or direction-changing characters. */
-// eslint-disable-next-line no-control-regex -- Untrusted page words shown in Sotto's own chrome.
-const pageWords = (value: string): string => value.replace(/[\x00-\x09\x0b-\x1f\x7f\u202a-\u202e\u2066-\u2069]/gu, ' ')
 /** How much of a console message and of an error the agent is told. */
 const CONSOLE_WORDS = 500, ERROR_WORDS = 2000
 /** How much of an element's name, words and role a pick, a comment on the page or inspect says. */
@@ -507,10 +504,12 @@ export abstract class PageAutomation {
     }, () => null)
     const html = await this.bounded<{ outerHTML?: string }>('DOM.getOuterHTML', { backendNodeId }).then(result => result.outerHTML ?? '', () => '')
     // Markup cut short has its words cut back from that end by as much as a secret takes written out, as the part
-    // of one the cut left is there; they are masked before they are tidied and again before they are cut (`told`).
+    // of one the cut left is there. They are masked before they are tidied, once tidied, and so before that end goes,
+    // as a secret the tidy joins can reach into it; and again before they are cut (`told`).
     const cut = html.length > ELEMENT_MARKUP + this.overread
     const words = markupText(cut ? html.slice(0, ELEMENT_MARKUP + this.overread) : html, text => this.masked(text))
-    return { element: { ...described.element, text: this.told(cut ? words.slice(0, Math.max(0, words.length - this.overread)) : words, ELEMENT_TEXT) }, box }
+    const kept = cut ? this.masked(words) : words
+    return { element: { ...described.element, text: this.told(cut ? kept.slice(0, Math.max(0, kept.length - this.overread)) : kept, ELEMENT_TEXT) }, box }
   }
   private async describe(node: { nodeId: number } | { backendNodeId: number }): Promise<Omit<PointedElement, 'box'> | null> {
     const described = await this.bounded<{ node?: { nodeName?: string; localName?: string; nodeType?: number; attributes?: string[] } }>('DOM.describeNode', node)
@@ -521,11 +520,10 @@ export abstract class PageAutomation {
     for (let index = 0; index + 1 < (found.attributes?.length ?? 0); index += 2) attributes.set(found.attributes![index]!, found.attributes![index + 1]!)
     const tree = await this.bounded<{ nodes?: { ignored?: boolean; role?: { value?: unknown }; name?: { value?: unknown } }[] }>('Accessibility.getPartialAXTree', { ...node, fetchRelatives: false }).catch(() => ({ nodes: [] }))
     const accessible = tree.nodes?.[0]
-    // A pick goes into the user's message to the agent, so its words are masked as the agent's own reads are: before
-    // they are tidied or cut, and again after.
-    const role = this.told(String(accessible?.role?.value ?? attributes.get('role') ?? ''), 100)
-    // eslint-disable-next-line no-control-regex -- Untrusted page words shown in Sotto's own chrome.
-    const name = this.masked(this.masked(String(accessible?.name?.value || attributes.get('aria-label') || attributes.get('alt') || '')).replace(/[\x00-\x1f\x7f‪-‮⁦-⁩]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, ELEMENT_NAME))
+    // A pick goes into the user's message to the agent, so its words are masked as the agent's own reads are: tidied
+    // onto one line, then masked, then cut (`told`).
+    const role = this.told(String(accessible?.role?.value ?? attributes.get('role') ?? ''), INSPECT_ROLE)
+    const name = this.told(String(accessible?.name?.value || attributes.get('aria-label') || attributes.get('alt') || ''), ELEMENT_NAME, 'line')
     const id = attributes.get('id')
     return { element: { tag, role: ['generic', 'none', 'presentation'].includes(role) ? '' : role, name, text: '', selector: id ? `#${cssIdentifier(this.masked(id))}` : tag } }
   }
@@ -568,11 +566,11 @@ export abstract class PageAutomation {
     return { type: dialog.type, message: this.dialogWords(dialog.message), ...(dialog.defaultPrompt !== undefined ? { defaultPrompt: this.dialogWords(dialog.defaultPrompt) } : {}) }
   }
   /**
-   * A dialog's words as the pane and the agent are told them: masked, then cut at `DIALOG_WORDS` and tidied
-   * (`pageWords`), then masked again, since a secret the page wrote with a tab in it reads as the secret once the tab
-   * is a space.
+   * A dialog's words as the pane and the agent are told them, at most `max` characters: with no control or
+   * direction-changing character, each made a space, then masked, then cut (`told`), so a secret the page wrote with a
+   * tab in it is masked whole.
    */
-  private dialogWords(words: string): string { return this.masked(pageWords(this.told(words, DIALOG_WORDS))) }
+  private dialogWords(words: string, max = DIALOG_WORDS): string { return this.told(words, max, 'words') }
   /** Whether the page's DOMContentLoaded came at or after `at`, as a navigation's readiness wait asks. */
   domContentSince(at: number): boolean { return this.loadedAt.domContent >= at }
   /** Whether an agent's file chooser waits for `upload`. */
@@ -612,13 +610,14 @@ export abstract class PageAutomation {
     try { return maskSecrets(text, this.matchers(), origin ?? this.origin()) } catch { return MASK }
   }
   /**
-   * The page's words as the agent is told them, at most `max` characters: masked before they are cut, and a secret the
-   * cut would split masked whole, so no cut leaves the start of one. Words the page itself cuts are read `overread`
-   * past `max` for this. Never throws, as `masked`.
+   * The page's words as the agent and the window are told them, at most `max` characters, as every place that cuts
+   * them says them: tidied as that place tidies them (`Tidy`), then masked, then cut, with a secret the cut would split
+   * masked whole, so no cut leaves the start of one; and what is said cut again at `max`, which takes off only the end
+   * of a mask longer than the secret it stands for. Words the page itself cuts are read `overread` past `max` for this.
+   * Never throws, as `masked`.
    */
-  told(text: string, max: number): string {
-    if (!this.typedSecrets.size) return text.slice(0, max)
-    try { return maskSecrets(text, this.matchers(), this.origin(), max) } catch { return MASK }
+  told(text: string, max: number, tidy?: Tidy): string {
+    try { return maskSecrets(text, this.typedSecrets.size ? this.matchers() : [], this.origin(), max, tidy).slice(0, max) } catch { return MASK.slice(0, max) }
   }
   /**
    * How much further than a cap the page's words are read while a secret is typed here, so a secret that starts before
@@ -642,8 +641,27 @@ export abstract class PageAutomation {
   }
   /** The page's own origin, which masking leaves whole, or nothing once the page is gone. */
   private origin(): string { return this.page.isGone() ? '' : originOf(this.page.url()) }
-  /** An address as the agent and the window are told it: masked as the page's words are, with its own origin left whole. */
-  maskedUrl(url: string): string { return this.masked(url, originOf(url)) }
+  /**
+   * An address as the agent and the window are told it: masked as the page's words are, with its own origin left whole,
+   * and still an address the window takes (`safeBrowserUrl`), at the same origin. Each character of a mask is nine once
+   * the window escapes it, so a masked address can run past what the window takes: it is cut until it fits, which takes
+   * off only its end. One whose mask reaches into its origin, or that does not parse once masked, is said as its origin
+   * and a mask.
+   */
+  maskedUrl(url: string): string {
+    if (!this.typedSecrets.size) return url
+    const origin = originOf(url), said = this.masked(url, origin)
+    if (said === url) return url
+    const fits = (address: string): boolean => { const safe = safeBrowserUrl(address); return safe !== null && safe.length <= BROWSER_URL_MAX && originOf(safe) === origin }
+    if (fits(said)) return said
+    if (originOf(said) === origin) {
+      // The longest start of it that fits, found by halving: a longer start is no shorter once escaped.
+      let low = origin.length, high = said.length - 1
+      while (low < high) { const middle = Math.ceil((low + high) / 2); if (fits(said.slice(0, middle))) low = middle; else high = middle - 1 }
+      if (low > origin.length) return said.slice(0, low)
+    }
+    return origin ? `${origin}/${MASK}` : said
+  }
   /**
    * The page as an agent reads it in the full catalog (ADR-0220): its address and title, the accessibility tree with a
    * ref on each element, the words on screen, and what its console and network said. Refs replace the last snapshot's.
@@ -653,8 +671,8 @@ export abstract class PageAutomation {
     await this.ready()
     const result = await this.send('Accessibility.getFullAXTree') as { nodes?: AXNode[] }
     // While the document holds a typed secret, what its fields hold is left out (`fieldContents`). Each name and value
-    // is masked before it is put on one line and cut, as the whole snapshot is after.
-    const formatted = formatSnapshot(result.nodes ?? [], undefined, this.secretInDocument, words => this.masked(words))
+    // is put on one line, then masked, then cut (`told`), and the whole snapshot is masked after.
+    const formatted = formatSnapshot(result.nodes ?? [], undefined, this.secretInDocument, (words, max, tidy) => this.told(words, max, tidy))
     this.refs = formatted.refs
     const read = await this.send('Runtime.evaluate', { expression: `({ title: document.title, text: document.body ? document.body.innerText.slice(0, ${SNAPSHOT_TEXT + this.overread}) : '', state: document.readyState })`, returnByValue: true }) as { result?: { value?: { title?: string; text?: string; state?: string } } }
     const page = read.result?.value ?? {}
@@ -814,7 +832,7 @@ export abstract class PageAutomation {
   private noDialog(): void {
     if (!this.dialogOpen) return
     // The page's words are masked, and left out while the document holds a secret, since its script could copy the value into them.
-    const words = this.secretInDocument ? '' : `: ${JSON.stringify(this.dialogWords(this.dialogOpen.message).slice(0, 300))}`
+    const words = this.secretInDocument ? '' : `: ${JSON.stringify(this.dialogWords(this.dialogOpen.message, 300))}`
     fail('blocked', `The page has a ${this.dialogOpen.type} dialog open${words}. Answer it with the dialog action first.`)
   }
   /** A command that a dialog opening interrupts: the page waits for the dialog, so the command returns once it is answered. */

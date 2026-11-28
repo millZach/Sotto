@@ -5,6 +5,7 @@ import { ToolFailure } from '../../../src/main/tools/common'
 import { maskSecrets, secretMatcher } from '../../../src/main/tools/secretMask'
 import { SECRET_VALUE_MAX } from '../../../src/shared/secretRequests'
 import { SNAPSHOT_TEXT, type AXNode } from '../../../src/main/tools/pageSnapshot'
+import { browserCaptureResultSchema, browserDialogSchema, browserPointStateSchema, safeBrowserUrl } from '../../../src/shared/browser'
 
 // The real matcher, wrapped so a test can make it fail once and see what the page then says back.
 vi.mock('../../../src/main/tools/secretMask', async importOriginal => {
@@ -943,7 +944,8 @@ describe('page words are masked before they are cut or tidied (after the third r
   it('reads the visible text past its cut, so a secret the cut would split is masked whole', async () => {
     const snapshot = await (await typedOn(showing(`${'a'.repeat(SNAPSHOT_TEXT - 5)}${secret} and more`))).snapshotText()
     expect(snapshot).not.toContain('hunte')
-    expect(snapshot).toContain(`${'a'.repeat(10)}••••••••`)
+    // The mask the cut ran on to is cut at the cap once masked (the fourth review, P-L1).
+    expect(snapshot).toContain(`${'a'.repeat(10)}•••••\n`)
   })
 
   it('cuts the visible text where the page\'s own words reach the cap, however much shorter the masks before it are', async () => {
@@ -1009,13 +1011,14 @@ describe('page words are masked before they are cut or tidied (after the third r
     fake.emit('Runtime.exceptionThrown', { exceptionDetails: { exception: { description: `${'e'.repeat(1995)}${secret}` } } })
     // A snapshot says both; inspect says the errors.
     const snapshot = await automation_.snapshotText(), inspected = await automation_.inspect()
+    // Each mask the cut ran on to is cut at the cap once masked (the fourth review, P-L1).
     for (const said of [snapshot, inspected]) {
       expect(said).not.toContain('hunte')
-      expect(said).toContain(`${'e'.repeat(5)}••••••••`)
+      expect(said).toContain(`${'e'.repeat(5)}•••••`)
     }
-    expect(snapshot).toContain(`${'c'.repeat(5)}••••••••`)
+    expect(snapshot).toContain(`${'c'.repeat(5)}•••••`)
     fake.emit('Page.javascriptDialogOpening', { type: 'alert', message: `${'d'.repeat(1995)}${secret}` })
-    expect(automation_.dialog()?.message).toMatch(/d{5}••••••••$/u)
+    expect(automation_.dialog()?.message).toMatch(/^d{1995}•{5}$/u)
 
     const tabbed = 'tab\there-secret', other = showing('')
     const elsewhere = await typedOn(other, tabbed)
@@ -1032,8 +1035,9 @@ describe('page words are masked before they are cut or tidied (after the third r
     })
     const said = await (await typedOn(fake)).inspect()
     expect(said).not.toContain('hunte')
-    expect(said).toContain(`${'n'.repeat(5)}••••••••`)
-    expect(said).toContain(`${'m'.repeat(5)}••••••••`)
+    // Each mask the cut ran on to is cut at the cap once masked (the fourth review, P-L1).
+    expect(said).toContain(`${'n'.repeat(5)}•••••"`)
+    expect(said).toContain(`${'m'.repeat(5)}•••••"`)
   })
 
   it('masks the element the user picks or comments on, which goes into their message to the agent', async () => {
@@ -1061,7 +1065,8 @@ describe('page words are masked before they are cut or tidied (after the third r
       expect(said).toContain('••••••••')
     }
     expect(picked?.element).toMatchObject({ name: 'Your password: ••••••••', selector: '#••••••••', text: expect.stringMatching(/x{5} ••••••••$/u) })
-    expect(commented?.element).toMatchObject({ role: '••••••••', selector: '#••••••••', name: expect.stringMatching(/y{5}••••••••$/u), text: expect.stringMatching(/z{5}••••••••$/u) })
+    // Each mask the cut ran on to is cut at the cap once masked (the fourth review, P-L1).
+    expect(commented?.element).toMatchObject({ role: '••••••••', selector: '#••••••••', name: expect.stringMatching(/^y{495}•{5}$/u), text: expect.stringMatching(/^z{995}•{5}$/u) })
     expect((await automation_.pointed({ backendNodeId: 31 }))?.element.text).not.toContain('corr')
   })
 
@@ -1269,3 +1274,108 @@ describe('a secret\'s typing that fails says none of the error it met (after the
     expect(said.message).toContain('{"text":"••••••••"}')
   })
 })
+
+describe('what is masked fits where it goes, and is tidied before it is cut (after the fourth review)', () => {
+  /**
+   * A page whose tree is `tree`, and whose element at node 30, the one the pointer is over, is named `name` and has
+   * `html` for its markup. Anything else is answered as `page()` answers it.
+   */
+  const naming = (tree: AXNode[] = [], name = '', html = '<p></p>'): FakePage => {
+    const fake = page(), base = fake.handle
+    fake.handle = (method, params) => {
+      if (method === 'Accessibility.getFullAXTree') return { nodes: tree }
+      if (method === 'Runtime.evaluate' && String(params.expression ?? '').startsWith('({ title')) return { result: { value: { title: '', text: '', state: 'complete' } } }
+      if (method === 'DOM.describeNode' && (params.nodeId === 30 || params.backendNodeId === 30)) return { node: { nodeType: 1, localName: 'p', attributes: [] } }
+      if (method === 'Accessibility.getPartialAXTree') return { nodes: [{ role: { value: 'paragraph' }, name: { value: name } }] }
+      if (method === 'DOM.getBoxModel') return { model: { border: [0, 0, 10, 0, 10, 10, 0, 10] } }
+      if (method === 'DOM.getOuterHTML') return { outerHTML: html }
+      return base(method, params)
+    }
+    return fake
+  }
+  const typedOn = async (fake: FakePage, value: string): Promise<TestAutomation> => {
+    const automation_ = automation(fake)
+    await automation_.typeSecret(given(value), go, { selector: '#password' })
+    return automation_
+  }
+  /** What point mode tells the window of the element at node 30, once the pointer is over it. */
+  const hovered = async (automation_: TestAutomation, fake: FakePage): Promise<{ tag: string; name: string }> => {
+    const hover = vi.fn()
+    await automation_.point({ r: 1, g: 2, b: 3 }, { hover, pick: vi.fn() })
+    fake.emit('Overlay.nodeHighlightRequested', { nodeId: 30 })
+    await vi.waitFor(() => expect(hover).toHaveBeenCalled())
+    await automation_.unpoint()
+    return hover.mock.calls[0]![0] as { tag: string; name: string }
+  }
+
+  it('keeps a picture\'s address, a hovered element\'s name and a dialog\'s words within what the window takes, once masked (P-L1)', async () => {
+    // A PIN of four characters, whose mask is twice as long.
+    const pin = '4821', fake = naming([], `${'n'.repeat(496)}${pin}`), automation_ = await typedOn(fake, pin)
+    automation_.documentCommitted()
+    const origin = 'https://shop.example/'
+    // An address as long as one may be, which its mask makes longer; and one whose many masks the window escapes, at
+    // 72 characters each.
+    for (const url of [`${origin}${'a'.repeat(8192 - origin.length - pin.length)}${pin}`, `${origin}?${`${pin}/`.repeat(1500)}`]) {
+      const parsed = browserCaptureResultSchema.safeParse(await automation_.capture(url))
+      expect(parsed.success, url.slice(0, 60)).toBe(true)
+      expect(parsed.data!.url).not.toContain(pin)
+      expect(parsed.data!.url.startsWith(origin)).toBe(true)
+      // The window can send it back as it was given it.
+      expect(safeBrowserUrl(parsed.data!.url)).toBe(parsed.data!.url)
+    }
+    const hover = await hovered(automation_, fake)
+    expect(browserPointStateSchema.safeParse({ state: 'hover', ...hover }).success).toBe(true)
+    expect(hover.name).not.toContain(pin)
+    fake.emit('Page.javascriptDialogOpening', { type: 'prompt', message: `${'d'.repeat(1996)}${pin}`, defaultPrompt: `${pin} `.repeat(500) })
+    const dialog = automation_.dialog()
+    expect(browserDialogSchema.safeParse(dialog).success).toBe(true)
+    expect(JSON.stringify(dialog)).not.toContain(pin)
+  })
+
+  it('says only the origin and a mask of an address whose mask would change its origin (P-L1)', async () => {
+    // A secret that runs from the host into the path: masked, the host would be another.
+    const automation_ = await typedOn(naming(), 'ple/checkout')
+    const said = automation_.maskedUrl('https://shop.example/checkout?step=2')
+    expect(new URL(said).origin).toBe('https://shop.example')
+    expect(said).not.toContain('checkout')
+    expect(browserCaptureResultSchema.shape.url.safeParse(said).success).toBe(true)
+  })
+
+  it('tidies a snapshot\'s names, a dialog\'s words and a hovered or picked element\'s name before cutting them, so a secret tidying joins is masked whole (P-L3)', async () => {
+    // The secret with a line break or a tab where its space is, right where each is cut.
+    const tree: AXNode[] = [
+      { nodeId: '1', role: { value: 'RootWebArea' }, childIds: ['2', '3'] },
+      { nodeId: '2', parentId: '1', role: { value: 'heading' }, name: { value: `${'a'.repeat(190)}correct\n  horse` }, backendDOMNodeId: 21 },
+      { nodeId: '3', parentId: '1', role: { value: 'textbox' }, name: { value: 'Note' }, value: { value: `${'v'.repeat(192)}correct\thorse` }, backendDOMNodeId: 22 },
+    ]
+    const fake = naming(tree, `${'h'.repeat(493)}correct\thorse`), automation_ = await typedOn(fake, 'correct horse')
+    automation_.documentCommitted()
+    const snapshot = await automation_.snapshotText()
+    expect(snapshot).not.toMatch(/correct|horse/u)
+    expect(snapshot).toContain(`${'a'.repeat(5)}••••••••`)
+    expect(snapshot).toContain(`${'v'.repeat(5)}••••••••`)
+    expect((await hovered(automation_, fake)).name).toMatch(/h{5}•+$/u)
+    expect((await automation_.pointed({ backendNodeId: 30 }))?.element.name).toMatch(/h{5}•+$/u)
+    fake.emit('Page.javascriptDialogOpening', { type: 'alert', message: `${'d'.repeat(1990)}correct\thorse` })
+    expect(automation_.dialog()?.message).toMatch(/d{5}••••••••$/u)
+  })
+
+  it('cuts a dialog\'s words where the page\'s own words reach the cap, however much shorter the masks before it are', async () => {
+    // A guard on the order of P-L3's fix: masked first, a page of copies is one mask, so a cut counted after it would
+    // reach the copy that Sotto's own read of the dialog cut in two.
+    const secret = 'hunter2-secret', fake = naming(), automation_ = await typedOn(fake, secret)
+    fake.emit('Page.javascriptDialogOpening', { type: 'alert', message: secret.repeat(200) })
+    expect(automation_.dialog()?.message).toBe('••••••••')
+  })
+
+  it('masks a picked element\'s words before it drops the end its markup was cut at, so a secret its spaces join is masked whole (P-L3)', async () => {
+    // Markup longer than is read, whose last words, as read, are the secret across a line break and then 190 letters.
+    const phrase = 'correct horse', read = 200_000 + phrase.length * 15, tail = `correct\n\nhorse${'y'.repeat(190)}`
+    const filler = read - '<div><!--'.length - '-->'.length - tail.length
+    const html = `<div><!--${'z'.repeat(filler)}-->${tail}${'y'.repeat(50)}</div>`
+    const automation_ = await typedOn(naming([], '', html), phrase)
+    const text = (await automation_.pointed({ backendNodeId: 30 }))?.element.text ?? ''
+    expect(text).not.toMatch(/correct|horse/u)
+  })
+})
+

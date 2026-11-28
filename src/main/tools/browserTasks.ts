@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { PARITY_ONLY_ACTIONS, browserAgentActionSchema, browserAgentCloseSchema, browserAgentOpenSchema, browserAnswerActionSchema, browserControlTaskSchema, browserCreateSchema, browserDialogAnswerSchema, browserEmulateSchema, browserFinishTaskSchema, browserNavigateSchema, browserParityOpenSchema, browserRequestSchema, browserShareSchema, browserStableActionSchema, browserStartTaskSchema, browserTaskRequestSchema, parityOpenUrl, presetSize, safeBrowserUrl, type BrowserAction, type BrowserAgentResult, type BrowserCapture, type BrowserEvent, type BrowserPage, type BrowserTask } from '../../shared/browser'
+import { BROWSER_OUTPUT_MAX, BROWSER_TITLE_MAX, PARITY_ONLY_ACTIONS, browserAgentActionSchema, browserAgentCloseSchema, browserAgentOpenSchema, browserAnswerActionSchema, browserControlTaskSchema, browserCreateSchema, browserDialogAnswerSchema, browserEmulateSchema, browserFinishTaskSchema, browserNavigateSchema, browserParityOpenSchema, browserRequestSchema, browserShareSchema, browserStableActionSchema, browserStartTaskSchema, browserTaskRequestSchema, parityOpenUrl, presetSize, safeBrowserUrl, type BrowserAction, type BrowserAgentResult, type BrowserCapture, type BrowserEvent, type BrowserPage, type BrowserTask } from '../../shared/browser'
 import { toolListRequestSchema, toolTargetSchema } from '../../shared/tools'
 import type { FileWorkspace } from '../../shared/files'
 import type { FilesService } from '../files/service'
@@ -227,7 +227,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
    * (`observable`).
    */
   private view(record: R): BrowserPage {
-    return { ...record.page, url: record.automation.maskedUrl(record.page.url), title: record.automation.masked(record.page.title) }
+    return { ...record.page, url: record.automation.maskedUrl(record.page.url), title: record.automation.told(record.page.title, BROWSER_TITLE_MAX, 'title') }
   }
   /** The thread's working copy. A thread Sotto no longer lists takes its browser grant with it. */
   protected async owner(threadId: string, expected?: string): Promise<FileWorkspace> {
@@ -817,7 +817,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       if (note) output = `${output} ${note}`
       // Whatever the page says back, its address included, goes on with a secret typed into it masked (ADR-0219).
       output = record.automation.masked(output)
-      task.output = output
+      // The window takes so much of it, and what it is cut from is masked already, so only the end of a mask can go.
+      task.output = output.slice(0, BROWSER_OUTPUT_MAX)
       const grantNote = granted ? ' Not asked: you let this thread use the browser without asking.' : ''
       task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: this.stepDetail(action, output, grantNote), url: record.automation.maskedUrl(observedUrl), viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40)

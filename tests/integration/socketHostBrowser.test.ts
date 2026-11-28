@@ -26,7 +26,7 @@ class FakePage {
   readonly automation = { observe: vi.fn(), clear: vi.fn(), dispose: vi.fn(), inspect: vi.fn(async () => '{}'), capture: vi.fn(), input: vi.fn(async () => undefined),
     target: vi.fn(async () => 'BUTTON'), evidence: vi.fn(async () => null), thumbnail: vi.fn(async () => null),
     // What the page says back, masked against a typed secret (ADR-0219); none is typed here.
-    masked: vi.fn((text: string) => text), maskedUrl: vi.fn((url: string) => url) }
+    masked: vi.fn((text: string) => text), told: vi.fn((text: string, max: number) => text.slice(0, max)), maskedUrl: vi.fn((url: string) => url) }
   onChange(listener: (state: HostPageState) => void): () => void { this.changes.add(listener); return () => this.changes.delete(listener) }
   onClose(listener: () => void): () => void { this.closes.add(listener); return () => this.closes.delete(listener) }
   async navigate(url: string): Promise<void> { this.set({ url, status: 'loading' }); this.set({ status: 'ready', title: 'Page' }) }

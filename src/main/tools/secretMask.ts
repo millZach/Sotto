@@ -199,31 +199,94 @@ function cover(text: string, reading: number, needle: Needle, covered: Uint8Arra
 }
 
 /**
+ * How a place tidies the page's words before it says them, as the place itself would: `words` makes each control
+ * character but a line break, and each bidirectional mark, a space, one for one; `line` makes each of those a space too,
+ * closes up each run of spaces to one and drops them at either end, as one line says it; `title` drops each control
+ * character and bidirectional mark, as a window's title says it.
+ */
+export type Tidy = 'words' | 'line' | 'title'
+
+/** Whether `tidy` takes a character out or makes it a space: a control character, or a bidirectional mark. */
+function isMark(code: number, tidy: Tidy): boolean {
+  return (code <= 0x1f && !(tidy === 'words' && code === 0x0a)) || code === 0x7f || (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069)
+}
+/** Whether a character is one a regular expression's `\s` matches. */
+function isSpace(code: number): boolean {
+  return code === SPACE || (code >= 0x09 && code <= 0x0d) || code === 0xa0 || code === 0x1680 || (code >= 0x2000 && code <= 0x200a) || code === 0x2028 || code === 0x2029 || code === 0x202f || code === 0x205f || code === 0x3000 || code === 0xfeff
+}
+/**
+ * `text` tidied as `tidy` says, and where in `text` each of its characters came from: character `j` of the tidied text
+ * stands for `text` from `from[j]` up to `from[j + 1]`, with the characters taken out after it, and the first one for
+ * those taken out before it as well.
+ */
+function tidied(text: string, tidy: Tidy): { text: string; from: Int32Array } {
+  const codes = new Uint16Array(text.length), from = new Int32Array(text.length + 1)
+  let length = 0, spaces = -1
+  for (let at = 0; at < text.length; at++) {
+    const code = text.charCodeAt(at), mark = isMark(code, tidy)
+    if (tidy === 'words') { from[length] = at; codes[length++] = mark ? SPACE : code; continue }
+    if (tidy === 'title') { if (!mark) { from[length] = at; codes[length++] = code } continue }
+    if (mark || isSpace(code)) { if (spaces < 0) spaces = at; continue }
+    if (spaces >= 0 && length > 0) { from[length] = spaces; codes[length++] = SPACE }
+    spaces = -1
+    from[length] = at; codes[length++] = code
+  }
+  from[0] = 0; from[length] = text.length
+  const parts: string[] = []
+  for (let at = 0; at < length; at += 8192) parts.push(String.fromCharCode(...codes.subarray(at, Math.min(length, at + 8192))))
+  return { text: parts.join(''), from: from.subarray(0, length + 1) }
+}
+/** `text` tidied as `tidy` says (`Tidy`): how a place that tidies the page's words says them with no secret typed in it. */
+export function tidyWords(text: string, tidy: Tidy): string { return tidied(text, tidy).text }
+
+/** Marks in `covered` each character of `text` that holds one of `secrets` in any reading, but for those inside `keep`. */
+function coverAll(text: string, secrets: readonly SecretMatcher[], keep: string, covered: Uint8Array): boolean {
+  const kept = keptCounts(text, keep)
+  let found = false
+  for (const secret of secrets) for (const reading of READINGS) if (cover(text, reading, reading & ESCAPED_ONCE ? secret.spaced : secret.plain, covered, kept)) found = true
+  return found
+}
+
+/**
  * `text` with each run of characters that holds one of `secrets`, in any of the four readings, replaced by `MASK`. A
  * secret found wholly inside a copy of `keep`, the page's own origin, is left: the agent knows the site it was given,
  * and a PIN that is also the page's port would otherwise mask every address on it.
  *
- * With `max`, only the first `max` characters of `text` are said, and a run the cut would fall inside is masked whole:
- * the text is masked before it is cut, so no cut leaves the start of a secret. Masks are shorter or longer than what
- * they replace, so the cut is counted in `text`, never in what is said; a text the page itself cut must run far enough
- * past `max` that a secret starting before `max` is in it whole.
+ * With `tidy`, the words are tidied as the place they go tidies them (`Tidy`) before they are cut, and a secret is looked
+ * for both in the words as the page wrote them and once they are tidied, so neither a mark the page put inside a secret
+ * nor the spaces tidying closes up leaves part of one. A place that tidies the page's words passes its tidy here rather
+ * than tidying what this says: tidied after the cut, the rest of a secret the cut split could read as part of it.
+ *
+ * With `max`, only the first `max` characters of the tidied words are said, and a run the cut would fall inside is
+ * masked whole: the words are masked before they are cut, so no cut leaves the start of a secret. Masks are shorter or
+ * longer than what they replace, so the cut is counted in the words, never in what is said, which can be longer than
+ * `max`; a place that takes no more than `max` cuts what this says again, which takes off only the end of a mask. Words
+ * the page itself cut must run far enough past `max` that a secret starting before `max` is in them whole.
  */
-export function maskSecrets(text: string, secrets: Iterable<SecretMatcher | null>, keep = '', max = text.length): string {
-  if (!text) return text
-  const covered = new Uint8Array(text.length), kept = keptCounts(text, keep)
+export function maskSecrets(text: string, secrets: Iterable<SecretMatcher | null>, keep = '', max?: number, tidy?: Tidy): string {
+  const view = tidy ? tidied(text, tidy) : null, words = view ? view.text : text
+  if (!words) return words
+  const matchers = [...secrets].filter(secret => secret !== null)
+  const covered = new Uint8Array(words.length)
   let found = false
-  for (const secret of secrets) {
-    if (!secret) continue
-    for (const reading of READINGS) if (cover(text, reading, reading & ESCAPED_ONCE ? secret.spaced : secret.plain, covered, kept)) found = true
+  if (view && matchers.length) {
+    // A secret in the words as the page wrote them covers each tidied character that stands for any part of it.
+    const raw = new Uint8Array(text.length)
+    if (coverAll(text, matchers, keep, raw)) {
+      const counts = new Int32Array(text.length + 1)
+      for (let index = 0; index < text.length; index++) counts[index + 1] = counts[index]! + raw[index]!
+      for (let index = 0; index < words.length; index++) if (counts[view.from[index + 1]!]! > counts[view.from[index]!]!) { covered[index] = 1; found = true }
+    }
   }
-  let length = Math.max(0, Math.min(max, text.length))
-  if (!found) return text.slice(0, length)
-  if (length > 0 && covered[length - 1]) { const end = covered.indexOf(0, length); length = end < 0 ? text.length : end }
+  if (matchers.length && coverAll(words, matchers, keep, covered)) found = true
+  let length = Math.max(0, Math.min(max ?? words.length, words.length))
+  if (!found) return words.slice(0, length)
+  if (length > 0 && covered[length - 1]) { const end = covered.indexOf(0, length); length = end < 0 ? words.length : end }
   const parts: string[] = []
   for (let at = 0; at < length;) {
     const end = covered.indexOf(covered[at] ? 0 : 1, at)
     const stop = end < 0 || end > length ? length : end
-    parts.push(covered[at] ? MASK : text.slice(at, stop))
+    parts.push(covered[at] ? MASK : words.slice(at, stop))
     at = stop
   }
   return parts.join('')
