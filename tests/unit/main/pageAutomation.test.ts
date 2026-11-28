@@ -1037,3 +1037,33 @@ describe('the masker cuts a text without splitting a secret (after the third rev
     expect(maskSecrets(`a ${encodeURIComponent(encodeURIComponent('hunter2-secret'))} b`, [hunter], '', 3)).toBe('a ••••••••')
   })
 })
+
+describe('a secret\'s typing that fails says none of the error it met (after the third review)', () => {
+  const secret = 'hunter2-secret'
+  /** A page whose debugger fails the typing with `error`. */
+  const failing = (error: unknown): FakePage => {
+    const fake = page(), base = fake.handle
+    fake.handle = (method, params) => {
+      if (method === 'Input.insertText') throw error
+      return base(method, params)
+    }
+    return fake
+  }
+  const refusal = async (error: unknown): Promise<ToolFailure> => {
+    const thrown = await automation(failing(error)).typeSecret(given(secret), go, { selector: '#password' }).then(() => null, (caught: unknown) => caught)
+    expect(thrown).toBeInstanceOf(ToolFailure)
+    return thrown as ToolFailure
+  }
+
+  it('says its own words for an error from the debugger, which could quote the command and so the secret', async () => {
+    const said = await refusal(new Error(`Input.insertText failed: {"text":"${secret}"}`))
+    expect(said.message).toBe('The typing stopped. The secret may not have been typed, and this secretRef is used. Ask for it again with request_secret.')
+    expect(said.code).toBe('unavailable')
+  })
+
+  it('masks a refusal of Sotto\'s own kind that quotes the secret, as one a paired host sends back could', async () => {
+    const said = await refusal(new ToolFailure('unavailable', `The host could not send {"text":"${secret}"}`))
+    expect(said.message).not.toContain(secret)
+    expect(said.message).toContain('{"text":"••••••••"}')
+  })
+})

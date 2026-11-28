@@ -163,9 +163,13 @@ const FIELD_TEXT = `function() {
 }`
 /** What a refusal ends with once a secret request's value was taken (ADR-0219): the reference is used up. */
 export const SECRET_SPENT = 'this secretRef is used. Ask for it again with request_secret.'
-/** An error's own words as a sentence, for a refusal that goes on to say the reference is spent. */
+/**
+ * A refusal's own words as a sentence, for one that goes on to say the reference is spent. Only Sotto's refusals are
+ * said: another error's words, from the debugger or the page, could quote the command it failed on, which held the
+ * secret.
+ */
 function sentenceOf(error: unknown): string {
-  const words = (error instanceof Error && error.message.trim()) || 'The typing stopped.'
+  const words = (error instanceof ToolFailure && error.message.trim()) || 'The typing stopped.'
   return /[.!?]$/u.test(words) ? words : `${words}.`
 }
 
@@ -859,8 +863,9 @@ export abstract class PageAutomation {
     if (!this.typedSecrets.has(value)) this.typedSecrets.set(value, undefined)
     this.secretInDocument = true
     try { await this.send('Input.insertText', { text: value }) } catch (error) {
-      // Whether the page took any of it is not known, so the document is still taken to hold it.
-      return fail(error instanceof ToolFailure ? error.code : 'unavailable', `${sentenceOf(error)} The secret may not have been typed, and ${SECRET_SPENT}`)
+      // Whether the page took any of it is not known, so the document is still taken to hold it. A refusal a paired
+      // host sends back is a ToolFailure too, and its words are masked in case they quote the command.
+      return fail(error instanceof ToolFailure ? error.code : 'unavailable', this.masked(`${sentenceOf(error)} The secret may not have been typed, and ${SECRET_SPENT}`))
     }
   }
   /** Refuses a secret where something of the agent's could catch it: a document it ran script in, or a recording. */
