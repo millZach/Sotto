@@ -35,3 +35,9 @@ A review found that a page in a profile, once the user shared it, followed the t
 - **Sharing stays with the site the user shared.** When a shared page in a profile goes to another origin, by a link, a redirect or the page's own script, it becomes private again, grant or not, and says so with **Share with agent**.
 - **An agent's navigate to another site asks every time.** "Take this page, signed in with your Work profile, to another site and share it there" asks the user even under the grant, with **Allow once** alone; **Allow this thread** is not offered, and a request to allow it for the thread is refused. Allowed, the page is shared at the new site.
 - **Downloads ask.** Decision 3's "no downloads" holds while the full catalog is off. With it on, a profile page's download waits for the user to place it, as every page's does ([ADR-0222](0222-the-browser-zooms-downloads-shows-the-agents-cursor-and-takes-drawings.md), decision 3).
+
+## November 27 amendment: a list Sotto cannot read is kept as it is
+
+The owner's review found that a profiles file Sotto failed to read counted as no profiles, so the sweep at the next start deleted every profile's sign-ins and the next Add wrote over the file.
+
+- **Only a missing file is no profiles.** A `browser-profiles.json` that fails to read, is not JSON, or is not the version-1 file this Sotto writes (a newer Sotto's, or one damaged) is trusted for nothing but showing what it can: each entry that is a whole profile is still listed, so its pages open. While that lasts, Sotto adds and removes no profile, refusing in words before a removal closes a page or deletes any data, and the sweep at start deletes no partition, since a profile it cannot read is still the user's. A failed read is tried again next time rather than remembered. The file keeps its strict version-1 shape, as Sotto's other files do; the tolerant read is for showing only.

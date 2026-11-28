@@ -541,10 +541,14 @@ export class BrowserService extends BrowserTasks<PageRecord> {
       return fail('unavailable', t({ message: `Sotto could not read the sign-ins from ${browser}. Close ${browser}, then try again. Nothing was added.`, comment: '{browser} is Firefox or Zen.' }))
     }
   }) }
-  /** The user's Remove: the profile's pages close, then its cookies and site data are deleted (ADR-0221). */
+  /**
+   * The user's Remove: the profile's pages close, then its cookies and site data are deleted (ADR-0221). A list Sotto
+   * cannot read refuses first, so nothing closes or is deleted for a removal that could not be written.
+   */
   removeProfile(payload: unknown) { return this.run(async () => {
     const request = parse(browserRemoveProfileSchema, payload)
     const store = this.profileStore()
+    try { await store.writable() } catch (error) { if (error instanceof ProfileProblem) return fail('blocked', error.message); throw error }
     for (const record of [...this.pages.values()]) {
       if (record.page.profile?.id !== request.id) continue
       const { threadId, workspaceId } = record.page.workspace

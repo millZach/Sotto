@@ -1176,6 +1176,23 @@ describe('browser profiles in the service (ADR-0221)', () => {
     expect(used.partition).not.toContain('sotto-profile-')
   })
 
+  it('refuses to remove a profile while its list cannot be read, before closing a page or deleting anything', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'sotto-profiles-'))
+    cleanup.push(() => rm(folder, { recursive: true, force: true }))
+    const work = { id: '6f1c1d0e-6a2b-4d39-9c43-1b0b9e1f4a11', name: 'Work' }
+    const file = join(folder, 'browser-profiles.json')
+    await writeFile(file, JSON.stringify({ version: 1, profiles: [work, { id: 'broken' }] }))
+    const profiles = new BrowserProfiles(file)
+    const { service, target } = await browserFixture(false, new Set(), () => false, true, { profiles, browserImport: { sources: async () => [], copy: vi.fn() } })
+    const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: work.id }))
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { clearData: ReturnType<typeof vi.fn> }
+    expect(await service.removeProfile({ id: work.id })).toMatchObject({ ok: false, error: { message: expect.stringContaining('could not read its list of browser profiles') } })
+    expect(used.clearData).not.toHaveBeenCalled()
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.map(other => other.id)).toContain(page.id)
+    expect(await service.addProfile({ name: 'Personal' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('could not read') } })
+    expect(await readFile(file, 'utf8')).toContain('"broken"')
+  })
+
   it('closes a removed profile\'s pages and deletes its data', async () => {
     const { service, target, emit } = await withProfiles()
     const { profile } = unwrap(await service.addProfile({ name: 'Work' }))

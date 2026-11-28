@@ -31,14 +31,53 @@ describe('browser profiles (ADR-0221)', () => {
     expect(await profiles.remove(work.id)).toBeNull()
   })
 
-  it('stops at its limit, adds one at a time, and reads a broken file as none', async () => {
+  it('stops at its limit and adds one at a time', async () => {
     const file = join(root, 'browser-profiles.json')
     const profiles = new BrowserProfiles(file)
     await Promise.all(Array.from({ length: BROWSER_PROFILES_MAX }, (_, index) => profiles.add(`Profile ${index}`)))
     expect(await profiles.list()).toHaveLength(BROWSER_PROFILES_MAX)
     await expect(profiles.add('One more')).rejects.toThrow('Remove a profile')
-    await writeFile(file, '{ not json')
-    expect(await new BrowserProfiles(file).list()).toEqual([])
+  })
+
+  it('keeps a file it cannot read as it is: lists what it can, changes nothing and deletes no profile\'s sign-ins', async () => {
+    const file = join(root, 'browser-profiles.json')
+    const work = await new BrowserProfiles(file).add('Work')
+    const partitions = join(root, 'Partitions')
+    const unnamed = 'sotto-profile-6f1c1d0e-6a2b-4d39-9c43-1b0b9e1f4a11'
+    for (const name of [`sotto-profile-${work.id}`, unnamed]) await mkdir(join(partitions, name), { recursive: true })
+    const broken = [
+      '{ not json',
+      JSON.stringify({ version: 1, profiles: [work, { id: 'not-an-id', name: '' }] }),
+      // A newer Sotto's file: this one does not know what else it holds.
+      JSON.stringify({ version: 2, profiles: [work], more: true }),
+    ]
+    for (const text of broken) {
+      await writeFile(file, text)
+      const profiles = new BrowserProfiles(file)
+      // What it can read is still listed, so the user's pages in it still open.
+      expect(await profiles.list()).toEqual(text.startsWith('{ not') ? [] : [work])
+      await expect(profiles.add('Personal')).rejects.toThrow('could not read its list of browser profiles')
+      await expect(profiles.remove(work.id)).rejects.toThrow('could not read its list of browser profiles')
+      await profiles.sweepPartitions(root)
+      expect((await readdir(partitions)).sort()).toEqual([`sotto-profile-${work.id}`, unnamed].sort())
+      expect(await readFile(file, 'utf8')).toBe(text)
+    }
+  })
+
+  it('treats only a missing file as no profiles, and reads again after a failed read', async () => {
+    const file = join(root, 'browser-profiles.json')
+    // A folder where the file should be fails to read with something other than "no such file".
+    await mkdir(file)
+    const profiles = new BrowserProfiles(file)
+    expect(await profiles.list()).toEqual([])
+    await expect(profiles.add('Work')).rejects.toThrow('could not read its list of browser profiles')
+    const partitions = join(root, 'Partitions'), kept = 'sotto-profile-6f1c1d0e-6a2b-4d39-9c43-1b0b9e1f4a11'
+    await mkdir(join(partitions, kept), { recursive: true })
+    await profiles.sweepPartitions(root)
+    expect(await readdir(partitions)).toEqual([kept])
+    // Once it reads, it works: a failed read is not remembered as none.
+    await rm(file, { recursive: true })
+    expect((await profiles.add('Work')).name).toBe('Work')
   })
 
   it('deletes partition folders no profile names at the next start, and nothing else', async () => {
