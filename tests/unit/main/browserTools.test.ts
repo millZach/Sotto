@@ -1393,6 +1393,23 @@ describe('page zoom in the service (ADR-0222)', () => {
     expect(await service.answerAction({ ...target, taskId: task.id, actionId: pending.task.pendingAction!.id, allow: true })).toMatchObject({ ok: false, error: { code: 'blocked' } })
   })
 
+  it('takes a zoom as the site\'s by its host name, as Chromium does, so another port on it lapses too', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => false, true)
+    const waiting = async (url: string) => {
+      const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url }))
+      const at = { ...target, pageId: page.id }
+      unwrap(await service.share({ ...at, enabled: true }))
+      const task = unwrap(await service.startTask({ ...at, description: 'Press Save' }))
+      const pending = unwrap(await service.action({ ...at, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+      return { ...at, taskId: task.id, actionId: pending.task.pendingAction!.id }
+    }
+    // The fixture's page is on localhost:4321. Chromium zooms localhost:5173 with it, and 127.0.0.1 not.
+    const otherPort = await waiting('http://localhost:5173/'), otherHost = await waiting('http://127.0.0.1:4321/')
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    expect(await service.answerAction({ ...otherPort, allow: true })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    expect((await service.answerAction({ ...otherHost, allow: true })).ok).toBe(true)
+  })
+
   it('keeps an agent\'s viewport in CSS pixels at the page\'s zoom', async () => {
     const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
     unwrap(await service.share({ ...target, enabled: true }))

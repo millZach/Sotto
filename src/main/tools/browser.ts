@@ -71,7 +71,8 @@ export interface BrowserDependencies {
   /** Where a page's downloads wait for the user and are saved, and the system's Save dialog and shell (ADR-0222), with the full catalog on. */
   readonly downloads?: Omit<BrowserDownloadsDependencies, 'emit'>
 }
-const hostOf = (url: string): string => { try { return new URL(url).host } catch { return '' } }
+/** A page's zoom key: Chromium keeps zoom by host name, so every port on a host zooms together. */
+const hostOf = (url: string): string => { try { return new URL(url).hostname } catch { return '' } }
 /** The keys that zoom a page, as Chrome's do: Ctrl (Command on a Mac) with =, + or -, and 0 for its own size. */
 function zoomKey(input: Electron.Input): 'in' | 'out' | 'reset' | null {
   if (input.type !== 'keyDown' || input.alt || !(input.control || input.meta)) return null
