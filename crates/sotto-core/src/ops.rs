@@ -3501,12 +3501,6 @@ fn read_pipe(mut pipe: impl Read, limit: Option<usize>, stop_at_limit: bool, lin
     (kept, overflowed)
 }
 
-/// A Git action's failure in Node's runner's words (kept for unit tests).
-#[cfg(test)]
-fn action_git_words(error: GitRunError) -> String {
-    action_tool_words("git", error)
-}
-
 /// A Git or `gh` action's failure in Node's runner's words.
 fn action_tool_words(tool: &str, error: GitRunError) -> String {
     let timed_out = format!("{tool} timed out");
@@ -3589,7 +3583,7 @@ mod tests {
     #[test]
     fn says_a_large_windows_exit_code_as_node_does() {
         use std::os::windows::process::ExitStatusExt;
-        let said = |code: u32| action_git_words(GitRunError::Failed(format!("git exited with status {}", std::process::ExitStatus::from_raw(code))));
+        let said = |code: u32| action_tool_words("git", GitRunError::Failed(format!("git exited with status {}", std::process::ExitStatus::from_raw(code))));
         assert_eq!(said(0xC000_0005), "git exited with 3221225477.");
         assert_eq!(said(0x8000_0000), "git exited with 2147483648.");
         assert_eq!(said(128), "git exited with 128.");
