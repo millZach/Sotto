@@ -893,14 +893,18 @@ mod tests {
         }
 
         // 3. Push a new commit to remote and verify fetch + live post-fetch collision check + fast-forward.
+        // Leave `cloned_path`'s `core.autocrlf` untouched so it stays consistent with whatever line endings
+        // `git clone` wrote on Windows runners (`core.autocrlf=true`), then normalize `\r\n` when asserting content.
         let cloned_path = projects_root.join("app");
-        git_ok(&cloned_path, &["config", "core.autocrlf", "false"]);
         fs::write(seed.join("README.md"), "v2\n").unwrap();
         git_ok(&seed, &["add", "-A"]);
         git_ok(&seed, &["commit", "-m", "Second"]);
         git_ok(&seed, &["push", "origin", "main"]);
-        let FetchInspect::ReadyToFastForward { remote: ff_remote, fetched } = fetch_and_inspect_for_ff(&cloned_path) else {
-            panic!("expected ReadyToFastForward");
+        let (ff_remote, fetched) = match fetch_and_inspect_for_ff(&cloned_path) {
+            FetchInspect::ReadyToFastForward { remote, fetched } => (remote, fetched),
+            FetchInspect::Done(outcome) => {
+                panic!("expected ReadyToFastForward, got Done(current={}, reason={:?}, fetched={:?})", outcome.current, outcome.reason, outcome.fetched);
+            }
         };
         // If another project appeared on the folder during fetch, fast-forward is skipped.
         let blocked = finish_fast_forward(
@@ -915,6 +919,9 @@ mod tests {
         // Otherwise fast-forward succeeds cleanly.
         let update = finish_fast_forward(&cloned_path, &ff_remote, fetched, &[]);
         assert!(update.current, "reason={:?}", update.reason);
-        assert_eq!(fs::read_to_string(cloned_path.join("README.md")).unwrap(), "v2\n");
+        assert_eq!(
+            fs::read_to_string(cloned_path.join("README.md")).unwrap().replace("\r\n", "\n"),
+            "v2\n"
+        );
     }
 }
