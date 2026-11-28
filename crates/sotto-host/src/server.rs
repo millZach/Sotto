@@ -1021,6 +1021,8 @@ impl RunningServer {
         // Close phone access first so Tailscale Serve removes its mapping before the host stops
         // and no descriptor rewrite races with `cleanup_descriptor` (matching `src/host/index.ts:488-503`).
         self.state.phones.close().await;
+        // Stop any in-flight `project-setup` clones/fetches and refuse new ones before releasing the host lock.
+        self.state.project_copies.close().await;
         let _ = self.descriptor_stop_tx.send(true);
         let _ = self.descriptor_task.await;
         let _ = self.shutdown_tx.send(true);
@@ -1712,11 +1714,19 @@ async fn handle_websocket_upgrade(
     let (in_tx, mut in_rx) = mpsc::channel(64);
 
     // Dedicated cancel-safe reader task: `read_ws_message` is never cancelled mid-frame by
-    // coordinator broadcasts, revocations, or timers.
+    // coordinator broadcasts, revocations, or timers, and WebSocket Pings are answered right
+    // away so slow operations never starve the peer's heartbeat.
+    let ping_out_tx = out_tx.clone();
     let reader_task = tokio::spawn(async move {
         let mut reader_state = WsReaderState::default();
         loop {
             let res = read_ws_message(&mut read_half, deflate, &mut reader_state).await;
+            if let Ok(WsMessage::Ping(payload)) = res {
+                if ping_out_tx.send(OutboundFrame::Pong(payload)).is_err() {
+                    break;
+                }
+                continue;
+            }
             let done = matches!(&res, Ok(WsMessage::Close) | Err(_));
             if in_tx.send(res).await.is_err() || done {
                 break;
@@ -1847,7 +1857,7 @@ async fn handle_websocket_upgrade(
                             let _ = out_tx.send(OutboundFrame::Close);
                             break;
                         }
-                        let reply = handle_ws_request(
+                        if let Some(reply) = dispatch_ws_request(
                             &state,
                             &mode,
                             &client_id,
@@ -1858,17 +1868,15 @@ async fn handle_websocket_upgrade(
                             &out_tx,
                             &text,
                         )
-                        .await;
-                        let mut encoded = serde_json::to_string(&reply).map_err(std::io::Error::other)?;
-                        // An answer too large for one frame is refused in its place, as Node's socket server refuses it,
-                        // rather than closing the socket, which would only have the client ask again.
-                        if encoded.len() > sotto_core::HOST_MAX_FRAME_BYTES {
-                            let op = serde_json::from_str::<Value>(&text).ok().and_then(|req| req.get("op").and_then(Value::as_str).map(ToString::to_string));
-                            let refused = HostResponseEnvelope::err(reply.id.clone(), HostErrorCode::TooLarge, too_large_words(op.as_deref().unwrap_or("")));
-                            encoded = serde_json::to_string(&refused).map_err(std::io::Error::other)?;
-                        }
-                        if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
-                            break;
+                        .await
+                        {
+                            let op = serde_json::from_str::<Value>(&text)
+                                .ok()
+                                .and_then(|req| req.get("op").and_then(Value::as_str).map(ToString::to_string));
+                            let encoded = encode_ws_reply(&reply, op.as_deref().unwrap_or(""))?;
+                            if out_tx.send(OutboundFrame::Text(encoded)).is_err() {
+                                break;
+                            }
                         }
                     }
                     Ok(WsMessage::Ping(payload)) => {
@@ -2074,34 +2082,78 @@ async fn push_answer_receipts(
     true
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn handle_ws_request(
+fn encode_ws_reply(reply: &HostResponseEnvelope, op: &str) -> std::io::Result<String> {
+    let encoded = serde_json::to_string(reply).map_err(std::io::Error::other)?;
+    // An answer too large for one frame is refused in its place, as Node's socket server refuses it,
+    // rather than closing the socket, which would only have the client ask again.
+    if encoded.len() > sotto_core::HOST_MAX_FRAME_BYTES {
+        let refused = HostResponseEnvelope::err(reply.id.clone(), HostErrorCode::TooLarge, too_large_words(op));
+        return serde_json::to_string(&refused).map_err(std::io::Error::other);
+    }
+    Ok(encoded)
+}
+
+/// Resolves the current user's home directory matching Node's `os.homedir()` fallback order,
+/// returning `None` when no absolute path is configured (never falling back to Sotto's own data directory).
+fn resolve_user_home_from<F>(windows: bool, mut get_var: F) -> Option<PathBuf>
+where
+    F: FnMut(&str) -> Option<std::ffi::OsString>,
+{
+    let absolute_non_empty = |val: std::ffi::OsString| -> Option<PathBuf> {
+        if val.is_empty() {
+            return None;
+        }
+        let path = PathBuf::from(val);
+        path.is_absolute().then_some(path)
+    };
+    if windows {
+        if let Some(p) = get_var("USERPROFILE").and_then(absolute_non_empty) {
+            return Some(p);
+        }
+        if let (Some(drive), Some(path)) = (get_var("HOMEDRIVE"), get_var("HOMEPATH")) {
+            if !drive.is_empty() && !path.is_empty() {
+                let mut combined = drive;
+                combined.push(path);
+                if let Some(p) = absolute_non_empty(combined) {
+                    return Some(p);
+                }
+            }
+        }
+        get_var("HOME").and_then(absolute_non_empty)
+    } else {
+        get_var("HOME")
+            .and_then(absolute_non_empty)
+            .or_else(|| get_var("USERPROFILE").and_then(absolute_non_empty))
+    }
+}
+
+fn resolve_user_home() -> Option<PathBuf> {
+    resolve_user_home_from(cfg!(windows), |key| std::env::var_os(key))
+}
+
+#[allow(clippy::result_large_err)]
+fn parse_and_auth_ws_request(
     state: &HostState,
-    mode: &ListenerMode,
     client_id: &str,
-    client_name: &str,
     upgrade_session: &str,
-    wire: &mut ClientWireState,
-    watcher_peer: &mut WatcherPeerState,
-    out_tx: &mpsc::UnboundedSender<OutboundFrame>,
     raw: &str,
-) -> HostResponseEnvelope {
+) -> Result<HostRequestEnvelope, HostResponseEnvelope> {
     let req: HostRequestEnvelope = match serde_json::from_str(raw) {
         Ok(r) => r,
         Err(_) => {
-            return HostResponseEnvelope::err(
+            return Err(HostResponseEnvelope::err(
                 String::new(),
                 HostErrorCode::InvalidRequest,
                 HostErrorCode::InvalidRequest.default_message(),
-            );
+            ));
         }
     };
     if req.v != HOST_PROTOCOL_VERSION {
-        return HostResponseEnvelope::err(
+        return Err(HostResponseEnvelope::err(
             req.id,
             HostErrorCode::InvalidRequest,
             HostErrorCode::InvalidRequest.default_message(),
-        );
+        ));
     }
     if let Some(ref msg_session) = req.session {
         if !constant_time_eq(msg_session.as_bytes(), upgrade_session.as_bytes())
@@ -2113,13 +2165,125 @@ async fn handle_ws_request(
                 .as_deref()
                 != Some(client_id)
         {
-            return HostResponseEnvelope::err(
+            return Err(HostResponseEnvelope::err(
                 req.id,
                 HostErrorCode::Unauthenticated,
                 HostErrorCode::Unauthenticated.default_message(),
-            );
+            ));
         }
     }
+    Ok(req)
+}
+
+/// Dispatches one WebSocket request, returning `Some(reply)` when answered inline or `None` when
+/// handed off to a background task (such as long-running `project-setup` clones/fetches) that will
+/// write its own response frame to `out_tx` without blocking the socket loop.
+#[allow(clippy::too_many_arguments)]
+async fn dispatch_ws_request(
+    state: &Arc<HostState>,
+    mode: &ListenerMode,
+    client_id: &str,
+    client_name: &str,
+    upgrade_session: &str,
+    wire: &mut ClientWireState,
+    watcher_peer: &mut WatcherPeerState,
+    out_tx: &mpsc::UnboundedSender<OutboundFrame>,
+    raw: &str,
+) -> Option<HostResponseEnvelope> {
+    let req = match parse_and_auth_ws_request(state, client_id, upgrade_session, raw) {
+        Ok(r) => r,
+        Err(reply) => return Some(reply),
+    };
+    if req.op == "project-setup" {
+        let parsed = req
+            .fields
+            .keys()
+            .all(|k| k == "request")
+            .then(|| sotto_core::project_setup::ProjectSetupRequest::parse(req.fields.get("request")))
+            .flatten();
+        let Some(parsed) = parsed else {
+            return Some(HostResponseEnvelope::err(
+                req.id,
+                HostErrorCode::InvalidRequest,
+                HostErrorCode::InvalidRequest.default_message(),
+            ));
+        };
+        if !offered_features(state, mode, client_id).iter().any(|f| f == "project-setup") {
+            return Some(HostResponseEnvelope::err(
+                req.id,
+                HostErrorCode::InvalidRequest,
+                HostErrorCode::InvalidRequest.default_message(),
+            ));
+        }
+        let task_state = Arc::clone(state);
+        let task_out_tx = out_tx.clone();
+        let req_id = req.id;
+        tokio::spawn(async move {
+            let reply = match task_state.coordinator.project_setup_context().await {
+                Ok((projects_directory, project_paths, own_folder)) => {
+                    let context = sotto_core::project_setup::ProjectSetupContext {
+                        projects_directory,
+                        project_paths,
+                        home: resolve_user_home(),
+                        own_folder: Some(own_folder),
+                    };
+                    let coord_for_check = task_state.coordinator.clone();
+                    let coord_for_add = task_state.coordinator.clone();
+                    let result = task_state
+                        .project_copies
+                        .set_up(
+                            parsed,
+                            context,
+                            move || async move {
+                                coord_for_check
+                                    .project_setup_context()
+                                    .await
+                                    .map(|(_, paths, _)| paths)
+                                    .map_err(|err| err.message)
+                            },
+                            move |title, path| async move {
+                                coord_for_add.add_project_for_setup(title, path).await
+                            },
+                        )
+                        .await;
+                    HostResponseEnvelope::ok(req_id, result.to_json())
+                }
+                Err(err) => HostResponseEnvelope::err(req_id, err.code, err.message),
+            };
+            if let Ok(encoded) = encode_ws_reply(&reply, "project-setup") {
+                let _ = task_out_tx.send(OutboundFrame::Text(encoded));
+            }
+        });
+        return None;
+    }
+    Some(
+        handle_ws_request(
+            state,
+            mode,
+            client_id,
+            client_name,
+            upgrade_session,
+            wire,
+            watcher_peer,
+            out_tx,
+            req,
+        )
+        .await,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn handle_ws_request(
+    state: &HostState,
+    mode: &ListenerMode,
+    client_id: &str,
+    client_name: &str,
+    upgrade_session: &str,
+    wire: &mut ClientWireState,
+    watcher_peer: &mut WatcherPeerState,
+    out_tx: &mpsc::UnboundedSender<OutboundFrame>,
+    req: HostRequestEnvelope,
+) -> HostResponseEnvelope {
 
     let may_answer = state
         .memory
@@ -3584,74 +3748,6 @@ async fn handle_ws_request(
                 ),
             }
         }
-        "project-setup" => {
-            let parsed = req
-                .fields
-                .keys()
-                .all(|k| k == "request")
-                .then(|| sotto_core::project_setup::ProjectSetupRequest::parse(req.fields.get("request")))
-                .flatten();
-            let Some(parsed) = parsed else {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    HostErrorCode::InvalidRequest.default_message(),
-                );
-            };
-            if !offered_features(state, mode, client_id).iter().any(|f| f == "project-setup") {
-                return HostResponseEnvelope::err(
-                    req.id,
-                    HostErrorCode::InvalidRequest,
-                    HostErrorCode::InvalidRequest.default_message(),
-                );
-            }
-            let (projects_directory, project_paths, own_folder) = match state.coordinator.project_setup_context().await {
-                Ok(ctx) => ctx,
-                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
-            };
-            let home_vars: [&str; 2] = if cfg!(windows) {
-                ["USERPROFILE", "HOME"]
-            } else {
-                ["HOME", "USERPROFILE"]
-            };
-            let home = home_vars
-                .iter()
-                .find_map(|key| {
-                    let val = std::env::var_os(key)?;
-                    if val.is_empty() {
-                        return None;
-                    }
-                    let path = PathBuf::from(val);
-                    path.is_absolute().then_some(path)
-                })
-                .unwrap_or_else(|| own_folder.clone());
-            let context = sotto_core::project_setup::ProjectSetupContext {
-                projects_directory,
-                project_paths,
-                home,
-                own_folder: Some(own_folder),
-            };
-            let coord_for_check = state.coordinator.clone();
-            let coord_for_add = state.coordinator.clone();
-            let result = state
-                .project_copies
-                .set_up(
-                    parsed,
-                    context,
-                    move || async move {
-                        coord_for_check
-                            .project_setup_context()
-                            .await
-                            .map(|(_, paths, _)| paths)
-                            .unwrap_or_default()
-                    },
-                    move |title, path| async move {
-                        coord_for_add.add_project_for_setup(title, path).await
-                    },
-                )
-                .await;
-            HostResponseEnvelope::ok(req.id, result.to_json())
-        }
         "usage-clear" => {
             if !may_answer {
                 return HostResponseEnvelope::err(
@@ -4119,9 +4215,28 @@ mod tests {
 
         /// One request on `connection`, answered as its socket answers it.
         async fn ask(&self, connection: &mut Connection, request: Value) -> Value {
-            let Connection { wire, watcher_peer, out_tx, .. } = connection;
-            let reply = handle_ws_request(&self.server.state, &ListenerMode::Admin, &self.client_id, "Test Desktop", &self.session, wire, watcher_peer, out_tx, &request.to_string()).await;
-            serde_json::to_value(reply).unwrap()
+            let Connection { wire, watcher_peer, out_tx, out_rx } = connection;
+            match dispatch_ws_request(
+                &self.server.state,
+                &ListenerMode::Admin,
+                &self.client_id,
+                "Test Desktop",
+                &self.session,
+                wire,
+                watcher_peer,
+                out_tx,
+                &request.to_string(),
+            )
+            .await
+            {
+                Some(reply) => serde_json::to_value(reply).unwrap(),
+                None => {
+                    let Some(OutboundFrame::Text(raw)) = out_rx.recv().await else {
+                        panic!("deferred request sent no reply frame");
+                    };
+                    serde_json::from_str(&raw).unwrap()
+                }
+            }
         }
 
         fn target(&self) -> Value {
@@ -4427,5 +4542,264 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn resolve_user_home_matches_node_homedir_without_data_dir_fallback() {
+        use std::ffi::OsString;
+        let abs = if cfg!(windows) { r"C:\Users\zach" } else { "/home/zach" };
+        let alt = if cfg!(windows) { r"C:\Users\alt" } else { "/home/alt" };
+
+        // Missing or relative env vars return None rather than falling back to Sotto's own data directory.
+        assert_eq!(resolve_user_home_from(cfg!(windows), |_| None), None);
+        assert_eq!(
+            resolve_user_home_from(cfg!(windows), |_| Some(OsString::from("relative/path"))),
+            None
+        );
+
+        // Windows checks USERPROFILE -> HOMEDRIVE+HOMEPATH -> HOME.
+        assert_eq!(
+            resolve_user_home_from(true, |k| match k {
+                "USERPROFILE" => Some(OsString::from(abs)),
+                "HOME" => Some(OsString::from(alt)),
+                _ => None,
+            }),
+            Some(PathBuf::from(abs))
+        );
+        if cfg!(windows) {
+            assert_eq!(
+                resolve_user_home_from(true, |k| match k {
+                    "HOMEDRIVE" => Some(OsString::from("C:")),
+                    "HOMEPATH" => Some(OsString::from(r"\Users\drivehome")),
+                    _ => None,
+                }),
+                Some(PathBuf::from(r"C:\Users\drivehome"))
+            );
+        }
+
+        // Unix checks HOME -> USERPROFILE.
+        assert_eq!(
+            resolve_user_home_from(false, |k| match k {
+                "HOME" => Some(OsString::from(abs)),
+                "USERPROFILE" => Some(OsString::from(alt)),
+                _ => None,
+            }),
+            Some(PathBuf::from(abs))
+        );
+    }
+
+    async fn send_masked_ws_frame(stream: &mut TcpStream, opcode: u8, payload: &[u8]) {
+        let mask = [0x11u8, 0x22, 0x33, 0x44];
+        let mut frame = Vec::with_capacity(14 + payload.len());
+        frame.push(0x80 | opcode);
+        if payload.len() < 126 {
+            frame.push(0x80 | (payload.len() as u8));
+        } else if payload.len() <= u16::MAX as usize {
+            frame.push(0x80 | 126);
+            frame.extend_from_slice(&(payload.len() as u16).to_be_bytes());
+        } else {
+            panic!("test frame too large");
+        }
+        frame.extend_from_slice(&mask);
+        for (i, &b) in payload.iter().enumerate() {
+            frame.push(b ^ mask[i % 4]);
+        }
+        stream.write_all(&frame).await.unwrap();
+        stream.flush().await.unwrap();
+    }
+
+    async fn read_server_ws_frame(stream: &mut TcpStream) -> (u8, Vec<u8>) {
+        let mut header = [0u8; 2];
+        stream.read_exact(&mut header).await.unwrap();
+        let opcode = header[0] & 0x0f;
+        let len_byte = header[1] & 0x7f;
+        let len = if len_byte < 126 {
+            len_byte as usize
+        } else if len_byte == 126 {
+            let mut ext = [0u8; 2];
+            stream.read_exact(&mut ext).await.unwrap();
+            u16::from_be_bytes(ext) as usize
+        } else {
+            let mut ext = [0u8; 8];
+            stream.read_exact(&mut ext).await.unwrap();
+            u64::from_be_bytes(ext) as usize
+        };
+        let mut payload = vec![0u8; len];
+        stream.read_exact(&mut payload).await.unwrap();
+        (opcode, payload)
+    }
+
+    /// A long-running `project-setup` must not block the per-socket `select!` loop (L1), and
+    /// `RunningServer::close` must cancel in-flight clones/fetches promptly rather than stalling
+    /// shutdown (L2).
+    #[tokio::test]
+    async fn project_setup_does_not_block_socket_loop_and_close_aborts_it() {
+        let dir = tempfile::tempdir().unwrap();
+        // Keep the project folder outside `data_directory` (`own_folder`) so `usual_folder` scans it.
+        let repos_temp = tempfile::tempdir().unwrap();
+        let repos_dir = repos_temp.path().to_path_buf();
+        let seed_dir = repos_dir.join("seed");
+        let slow_repo = repos_dir.join("slow-repo");
+        fs::create_dir_all(&seed_dir).unwrap();
+        fs::create_dir_all(&slow_repo).unwrap();
+
+        // Silent TCP server that accepts `git fetch` and never replies, keeping `project-setup` in flight.
+        let silent_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let silent_port = silent_listener.local_addr().unwrap().port();
+        let run_git = |cwd: &Path, args: &[&str]| {
+            let status = std::process::Command::new("git")
+                .args(args)
+                .current_dir(cwd)
+                .env("GIT_CONFIG_GLOBAL", if cfg!(windows) { "NUL" } else { "/dev/null" })
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .status()
+                .expect("git failed to spawn");
+            assert!(status.success(), "git {args:?} failed");
+        };
+        run_git(&slow_repo, &["init", "-b", "main"]);
+        run_git(&slow_repo, &["remote", "add", "origin", "https://github.com/acme/slow-repo.git"]);
+        run_git(
+            &slow_repo,
+            &[
+                "config",
+                &format!("url.http://127.0.0.1:{silent_port}/.insteadOf"),
+                "https://github.com/",
+            ],
+        );
+
+        let mock = Arc::new(sotto_core::MockProviderAdapter::new("codex"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("codex".into(), mock);
+        let server = RunningServer::start(ServerConfig {
+            data_directory: dir.path().to_path_buf(),
+            host_id: "00000000-0000-4000-8000-000000000002".into(),
+            port: 0,
+            sotto_version: "0.1.0".into(),
+            started_by: None,
+            credentials: HostCredentials::open(dir.path(), None).unwrap(),
+            providers,
+            tailscale: None,
+            phone_retry_interval: None,
+        })
+        .await
+        .unwrap();
+        let port = server.state.port;
+        let code = server.state.pairing.lock().unwrap().issue_pairing_code().code;
+        let client_id = server
+            .state
+            .pairing
+            .lock()
+            .unwrap()
+            .redeem_pairing_code(&code, "Test Desktop")
+            .unwrap()
+            .client_id;
+        let session = server
+            .state
+            .pairing
+            .lock()
+            .unwrap()
+            .issue_session(&client_id)
+            .unwrap()
+            .session;
+        let client = ClientContext {
+            client_id: client_id.clone(),
+            user: "Test Desktop".into(),
+            may_answer: true,
+        };
+        // Register `repos/seed` so `usual_folder` is `repos/` and `project-setup` scans `repos/slow-repo`.
+        server
+            .state
+            .coordinator
+            .run_command(
+                client,
+                json!({
+                    "type": "create-project",
+                    "provider": "codex",
+                    "title": "Seed",
+                    "path": seed_dir.to_string_lossy(),
+                    "useExisting": true
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            )
+            .await
+            .unwrap();
+
+        let mut ws = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let upgrade = format!(
+            "GET /v1/socket HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nAuthorization: Bearer {session}\r\n\r\n"
+        );
+        ws.write_all(upgrade.as_bytes()).await.unwrap();
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            let mut b = [0u8; 1];
+            ws.read_exact(&mut b).await.unwrap();
+            head.push(b[0]);
+        }
+        assert!(
+            String::from_utf8_lossy(&head).starts_with("HTTP/1.1 101 "),
+            "unexpected upgrade response: {}",
+            String::from_utf8_lossy(&head)
+        );
+
+        // Hello first.
+        let hello = json!({ "v": 1, "id": "h1", "op": "hello", "accepts": ["project-setup", "project-origins"] }).to_string();
+        send_masked_ws_frame(&mut ws, 0x01, hello.as_bytes()).await;
+        let (op, payload) = tokio::time::timeout(Duration::from_secs(5), read_server_ws_frame(&mut ws))
+            .await
+            .expect("hello timed out");
+        assert_eq!(op, 0x01);
+        let hello_reply: Value = serde_json::from_slice(&payload).unwrap();
+        assert_eq!(hello_reply["id"], "h1");
+        assert_eq!(hello_reply["ok"], true);
+
+        // Launch slow `project-setup` and wait until `git fetch` actually connects to our silent TCP server.
+        let setup = json!({
+            "v": 1,
+            "id": "setup-1",
+            "op": "project-setup",
+            "request": {
+                "title": "Slow Repo",
+                "repository": { "host": "github.com", "owner": "acme", "name": "slow-repo" }
+            }
+        })
+        .to_string();
+        send_masked_ws_frame(&mut ws, 0x01, setup.as_bytes()).await;
+        let (_held_git_conn, _) = tokio::time::timeout(Duration::from_secs(10), silent_listener.accept())
+            .await
+            .expect("git fetch never connected to silent listener")
+            .unwrap();
+
+        // While `project-setup` is actively blocked in `git fetch`, the SAME WebSocket must answer
+        // both a Ping heartbeat AND another request (`project-origins`) promptly.
+        send_masked_ws_frame(&mut ws, 0x09, b"alive").await;
+        let (pong_op, pong_payload) = tokio::time::timeout(Duration::from_secs(2), read_server_ws_frame(&mut ws))
+            .await
+            .expect("WebSocket Pong starved while project-setup was in flight");
+        assert_eq!(pong_op, 0x0A, "expected Pong frame");
+        assert_eq!(pong_payload, b"alive");
+
+        let origins = json!({ "v": 1, "id": "orig-1", "op": "project-origins" }).to_string();
+        send_masked_ws_frame(&mut ws, 0x01, origins.as_bytes()).await;
+        let reply = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let (frame_op, frame_bytes) = read_server_ws_frame(&mut ws).await;
+                if frame_op == 0x01 {
+                    let v: Value = serde_json::from_slice(&frame_bytes).unwrap();
+                    if v.get("id").and_then(Value::as_str) == Some("orig-1") {
+                        return v;
+                    }
+                }
+            }
+        })
+        .await
+        .expect("project-origins starved while project-setup was in flight");
+        assert_eq!(reply["ok"], true, "{reply}");
+
+        // L2: closing the server aborts the in-flight `project-setup` promptly instead of waiting 2+ minutes.
+        tokio::time::timeout(Duration::from_secs(5), server.close())
+            .await
+            .expect("RunningServer::close stalled waiting on in-flight project-setup");
     }
 }

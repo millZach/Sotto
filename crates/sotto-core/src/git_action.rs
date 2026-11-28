@@ -974,7 +974,7 @@ fn commit(cwd: &str, message: &CommitMessage, progress: &Progress) -> Result<Str
     };
     let input = if message.body.is_empty() { format!("{}\n", message.subject) } else { format!("{}\n\n{}\n", message.subject, message.body) };
     let env = [("GIT_TRACE2_EVENT".to_string(), lock(&trace).path.to_string_lossy().into_owned())];
-    let made = run_action_git_with(cwd, &["commit", "-F", "-"], commit_deadline(), ActionGitExtras { env: &env, stdin: Some(input.as_bytes()), lines: Some(sink) });
+    let made = run_action_git_with(cwd, &["commit", "-F", "-"], commit_deadline(), ActionGitExtras { env: &env, stdin: Some(input.as_bytes()), lines: Some(sink), cancel: None });
     drop(stop);
     let _ = ticker.join();
     lock(&trace).read(progress);
