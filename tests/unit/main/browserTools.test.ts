@@ -1409,11 +1409,11 @@ class ServiceDownloadItem extends EventEmitter {
 }
 
 describe('downloads in the service (ADR-0222)', () => {
-  const withDownloads = async (byDefault: () => boolean = () => false) => {
+  const withDownloads = async (byDefault: () => boolean = () => false, gone: ReadonlySet<string> = new Set(), extra: Partial<BrowserDependencies> = {}) => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-service-downloads-'))
     cleanup.push(() => rm(root, { recursive: true, force: true }))
     const downloads = { pendingFolder: join(root, 'pending'), downloadsFolder: () => join(root, 'Downloads'), chooseSavePath: vi.fn(async () => null), openPath: vi.fn(async () => ''), showItemInFolder: vi.fn() }
-    const fixture = await browserFixture(false, new Set(), byDefault, true, { downloads })
+    const fixture = await browserFixture(false, gone, byDefault, true, { downloads, ...extra })
     const isolated = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as EventEmitter
     const started = (name: string): { item: ServiceDownloadItem; preventDefault: ReturnType<typeof vi.fn> } => {
       const item = new ServiceDownloadItem(name), preventDefault = vi.fn()
@@ -1474,6 +1474,35 @@ describe('downloads in the service (ADR-0222)', () => {
     const listed = unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))
     expect(listed.find(download => download.file === 'later.zip')?.byAgent).toBe(true)
     expect(listed.find(download => download.file === 'mine.zip')?.byAgent).toBe(false)
+  })
+
+  it('tells the agent nothing of a download from a page the user keeps private', async () => {
+    const { service, target, started } = await withDownloads()
+    // The user's own page, never shared: its download is the user's business.
+    started('mine.pdf')
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+    unwrap(await service.share({ ...target, enabled: true }))
+    started('shared.pdf')
+    expect(await service.agentDownloads(target.threadId)).toEqual([{ file: 'shared.pdf', state: 'asking', byAgent: false }, { file: 'mine.pdf', state: 'asking', byAgent: false }])
+    // Stop sharing takes the page's downloads out of what the agent is told.
+    unwrap(await service.share({ ...target, enabled: false }))
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+  })
+
+  it('cancels a download still asking once its thread has closed or gone', async () => {
+    const gone = new Set<string>(), closed = new Set<string>()
+    const { service, target, started } = await withDownloads(() => false, gone, { threadClosed: threadId => closed.has(threadId) })
+    const { item } = started('report.pdf')
+    service.threadsChanged()
+    expect(item.cancelled).toBe(false)
+    closed.add(target.threadId)
+    service.threadsChanged()
+    expect(item.cancelled).toBe(true)
+    const again = await withDownloads(() => false, gone)
+    const second = again.started('notes.txt')
+    gone.add(again.target.threadId)
+    again.service.threadsChanged()
+    expect(second.item.cancelled).toBe(true)
   })
 
   it('blocks a download with the full catalog on but no downloads, as before', async () => {

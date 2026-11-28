@@ -34,6 +34,8 @@ export interface FilesBindingsDelta {
   readonly threadTitles?: Readonly<Record<string, string | null>>
   readonly hostedFolders?: Readonly<Record<string, HostThreadFolders | null>>
   readonly terminalHosts?: Readonly<Record<string, SshTerminalHost | null>>
+  /** Threads that closed (archived or settled) as `true`, and `null` for one reopened or gone (ADR-0222, November 27 amendment). */
+  readonly closedThreads?: Readonly<Record<string, true | null>>
 }
 
 /**

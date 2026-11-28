@@ -160,12 +160,106 @@ describe('what an agent knows of a download (ADR-0222)', () => {
     await inside.finish(); await downloads.act(owner.threadId, first.id, 'save-as')
     answer = join(root, 'elsewhere', 'private.pdf')
     await outside.finish(); await downloads.act(owner.threadId, second.id, 'save-as')
-    const view = downloads.agentView(owner.threadId, thread)
+    const view = downloads.agentView(owner.threadId, thread, () => true)
     expect(view).toContainEqual({ file: 'data.csv', state: 'saved', byAgent: true, path: 'inputs/data.csv' })
     expect(view).toContainEqual({ file: 'private.pdf', state: 'saved', byAgent: false })
     expect(view).toContainEqual({ file: 'later.zip', state: 'asking', byAgent: true })
     expect(JSON.stringify(view)).not.toContain(root.replace(/\\/gu, '\\\\'))
-    expect(downloads.agentView('thread-b', thread)).toEqual([])
+    expect(downloads.agentView('thread-b', thread, () => true)).toEqual([])
+  })
+})
+
+describe('what the owner\'s review of downloads found (ADR-0222, November 27 amendment)', () => {
+  it('gives two downloads of one name, saved to Downloads before either finishes, a name each', async () => {
+    const { downloads, downloadsFolder, owner } = await fixture()
+    const first = new FakeItem('notes.txt', 'one'), second = new FakeItem('notes.txt', 'two')
+    const a = downloads.start(first, owner), b = downloads.start(second, owner)
+    // Both are answered before either has a file in Downloads, so a look at the folder alone finds the name free twice.
+    await Promise.all([downloads.act(owner.threadId, a.id, 'save'), downloads.act(owner.threadId, b.id, 'save')])
+    await Promise.all([first.finish(), second.finish()])
+    await settle(() => expect(downloads.list(owner.threadId).map(download => download.state)).toEqual(['saved', 'saved']))
+    const names = (await readdir(downloadsFolder)).sort()
+    expect(names).toEqual(['notes (1).txt', 'notes.txt'])
+    expect((await Promise.all(names.map(name => readFile(join(downloadsFolder, name), 'utf8')))).sort()).toEqual(['one', 'two'])
+  })
+
+  it('never replaces a file that appears in Downloads after Save, and takes the next free name', async () => {
+    const { downloads, downloadsFolder, owner, showItemInFolder } = await fixture()
+    const item = new FakeItem('report.pdf', 'download')
+    const { id } = downloads.start(item, owner)
+    await downloads.act(owner.threadId, id, 'save')
+    await writeFile(join(downloadsFolder, 'report.pdf'), 'the user\'s own')
+    await item.finish()
+    await settle(() => expect(downloads.list(owner.threadId)[0]?.state).toBe('saved'))
+    expect(await readFile(join(downloadsFolder, 'report.pdf'), 'utf8')).toBe('the user\'s own')
+    expect(await readFile(join(downloadsFolder, 'report (1).pdf'), 'utf8')).toBe('download')
+    // Show in folder goes to the file Sotto wrote, not the one it found there.
+    await downloads.act(owner.threadId, id, 'show')
+    expect(showItemInFolder).toHaveBeenCalledWith(join(downloadsFolder, 'report (1).pdf'))
+  })
+
+  it('takes a name that differs only in case as taken where the disk ignores case', async () => {
+    const { downloads, downloadsFolder, owner } = await fixture()
+    const upper = new FakeItem('Notes.txt', 'upper'), lower = new FakeItem('notes.txt', 'lower')
+    const a = downloads.start(upper, owner), b = downloads.start(lower, owner)
+    await downloads.act(owner.threadId, a.id, 'save'); await downloads.act(owner.threadId, b.id, 'save')
+    await upper.finish(); await lower.finish()
+    await settle(() => expect(downloads.list(owner.threadId).map(download => download.state)).toEqual(['saved', 'saved']))
+    const names = await readdir(downloadsFolder)
+    expect(names).toHaveLength(2)
+    expect((await Promise.all(names.map(name => readFile(join(downloadsFolder, name), 'utf8')))).sort()).toEqual(['lower', 'upper'])
+  })
+
+  it('lets Save as replace the file the user chose in the Save dialog', async () => {
+    let chosen = ''
+    const { downloads, root, owner } = await fixture(() => chosen)
+    chosen = join(root, 'chosen.pdf')
+    await writeFile(chosen, 'older')
+    const item = new FakeItem('report.pdf', 'newer')
+    const { id } = downloads.start(item, owner)
+    await downloads.act(owner.threadId, id, 'save-as')
+    await item.finish()
+    await settle(() => expect(downloads.list(owner.threadId)[0]?.state).toBe('saved'))
+    expect(await readFile(chosen, 'utf8')).toBe('newer')
+  })
+
+  it('does not open a file saved under a name that runs a program', async () => {
+    let chosen = ''
+    const { downloads, root, owner, openPath } = await fixture(() => chosen)
+    chosen = join(root, 'notes.exe')
+    const item = new FakeItem('notes.txt')
+    const { id } = downloads.start(item, owner)
+    await downloads.act(owner.threadId, id, 'save-as')
+    await item.finish()
+    await settle(() => expect(downloads.list(owner.threadId)[0]).toMatchObject({ state: 'saved', opens: false }))
+    await expect(downloads.act(owner.threadId, id, 'open')).rejects.toMatchObject({ code: 'blocked' })
+    expect(openPath).not.toHaveBeenCalled()
+  })
+
+  it('tells the agent only of downloads it started or that came from a page shared with it', async () => {
+    const { downloads, owner, thread } = await fixture()
+    downloads.start(new FakeItem('by-agent.zip'), { ...owner, pageId: 'private-page', byAgent: true })
+    downloads.start(new FakeItem('shared.pdf'), { ...owner, pageId: 'shared-page' })
+    downloads.start(new FakeItem('private.pdf'), { ...owner, pageId: 'private-page' })
+    downloads.start(new FakeItem('no-page.pdf'), { ...owner, pageId: null })
+    const view = downloads.agentView(owner.threadId, thread, pageId => pageId === 'shared-page')
+    expect(view.map(download => download.file).sort()).toEqual(['by-agent.zip', 'shared.pdf'])
+  })
+
+  it('cancels the downloads still asking in a thread that has closed or gone, and keeps the rest', async () => {
+    const { downloads, owner, pendingFolder } = await fixture()
+    const gone = new FakeItem('gone.zip'), kept = new FakeItem('kept.zip'), saving = new FakeItem('saving.zip')
+    const a = downloads.start(gone, { ...owner, threadId: 'thread-gone' })
+    downloads.start(kept, owner)
+    const c = downloads.start(saving, { ...owner, threadId: 'thread-gone' })
+    await downloads.act('thread-gone', c.id, 'save')
+    downloads.cancelThreads(threadId => threadId === 'thread-gone')
+    expect(gone.cancelled).toBe(true)
+    expect(kept.cancelled).toBe(false)
+    // One the user already placed goes on to where they said.
+    expect(saving.cancelled).toBe(false)
+    expect(downloads.list('thread-gone').find(download => download.id === a.id)?.state).toBe('cancelled')
+    await settle(async () => expect(await readdir(pendingFolder)).not.toContain(a.id))
   })
 })
 
@@ -203,5 +297,8 @@ describe('a download\'s name (ADR-0222)', () => {
   it('opens documents and pictures, never programs or scripts', () => {
     for (const name of ['report.pdf', 'photo.JPG', 'notes.txt', 'data.csv']) expect(opensSafely(name)).toBe(true)
     for (const name of ['setup.exe', 'install.MSI', 'run.bat', 'script.ps1', 'link.lnk', 'tool.sh', 'app.dmg', 'page.hta']) expect(opensSafely(name)).toBe(false)
+    // A disk image mounts and can run what it holds, a help file or an add-in runs code, and a shortcut, settings, library
+    // or search file points somewhere else (the review's list).
+    for (const name of ['disk.iso', 'disk.img', 'disk.vhd', 'disk.VHDX', 'help.chm', 'addin.xll', 'app.appref-ms', 'patch.msp', 'x.settingcontent-ms', 'x.library-ms', 'x.search-ms']) expect(opensSafely(name)).toBe(false)
   })
 })

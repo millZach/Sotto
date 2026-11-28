@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, rmSync } from 'node:fs'
-import { copyFile, mkdir, readdir, rename, rm, stat, unlink } from 'node:fs/promises'
-import { basename, dirname, extname, join, relative, isAbsolute } from 'node:path'
+import { constants, mkdirSync, rmSync } from 'node:fs'
+import { copyFile, link, mkdir, readdir, rename, rm, stat, unlink } from 'node:fs/promises'
+import { basename, dirname, extname, join, relative, resolve, isAbsolute } from 'node:path'
 import type { BrowserDownload } from '../../shared/browser'
 import { fail } from './common'
 
@@ -35,12 +35,19 @@ interface DownloadRecord {
   readonly item: DownloadItemLike
   readonly pending: string
   chosen: string | null
+  /** Save as: the user chose `chosen` in the Save dialog, so it may replace a file there. Save to Downloads never does. */
+  replaces: boolean
+  /** The path held for this download from the user's answer until it is placed, so no other download takes it. */
+  reserved: string | null
   /** Chromium finished writing the pending file. */
   finished: boolean
 }
 
 /** Files that run a program or script when opened: Sotto only shows them in their folder (ADR-0222). */
-const RUNS = new Set(['exe', 'msi', 'msix', 'msixbundle', 'appx', 'appxbundle', 'bat', 'cmd', 'com', 'scr', 'pif', 'cpl', 'ps1', 'psm1', 'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh', 'hta', 'lnk', 'url', 'reg', 'inf', 'scf', 'jar', 'application', 'gadget', 'msc', 'app', 'dmg', 'pkg', 'mpkg', 'command', 'tool', 'sh', 'bash', 'zsh', 'run', 'bin', 'appimage', 'deb', 'rpm', 'desktop', 'py', 'pl', 'rb'])
+const RUNS = new Set(['exe', 'msi', 'msix', 'msixbundle', 'appx', 'appxbundle', 'bat', 'cmd', 'com', 'scr', 'pif', 'cpl', 'ps1', 'psm1', 'vbs', 'vbe', 'js', 'jse', 'wsf', 'wsh', 'hta', 'lnk', 'url', 'reg', 'inf', 'scf', 'jar', 'application', 'gadget', 'msc', 'app', 'dmg', 'pkg', 'mpkg', 'command', 'tool', 'sh', 'bash', 'zsh', 'run', 'bin', 'appimage', 'deb', 'rpm', 'desktop', 'py', 'pl', 'rb',
+  // Disk images mount and can run what they hold; help files, add-ins and patches run code; shortcuts, settings,
+  // libraries and saved searches point somewhere else.
+  'iso', 'img', 'vhd', 'vhdx', 'chm', 'xll', 'appref-ms', 'msp', 'settingcontent-ms', 'library-ms', 'search-ms'])
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])(\..*)?$/iu
 /** How many downloads a run keeps listed; the oldest finished one goes first. */
 const KEPT = 100
@@ -58,15 +65,21 @@ export function safeDownloadName(suggested: string): string {
 }
 /** Whether a file of this name is one Sotto opens on the user's press, rather than only showing it in its folder. */
 export function opensSafely(name: string): boolean { return !RUNS.has(extname(name).slice(1).toLowerCase()) }
-/** `folder/name`, or `name (1)` and so on when that is taken. */
-async function freePath(folder: string, name: string): Promise<string> {
-  const extension = extname(name), stem = name.slice(0, name.length - extension.length)
-  for (let count = 0; count < 1000; count++) {
-    const candidate = join(folder, count === 0 ? name : `${stem} (${count})${extension}`)
-    if (!await stat(candidate).then(() => true, () => false)) return candidate
-  }
-  return join(folder, `${stem} ${randomUUID()}${extension}`)
+/** A path as the disk compares it: Windows' and macOS's usual disks ignore case. */
+function sameOnDisk(path: string): string {
+  const full = resolve(path)
+  return process.platform === 'win32' || process.platform === 'darwin' ? full.toLowerCase() : full
 }
+/** Moves a file to `to` only if nothing is there: a hard link, or a copy that refuses to replace, and the original goes. */
+async function moveWithoutReplacing(from: string, to: string): Promise<void> {
+  try { await link(from, to) } catch (error) {
+    if ((error as { code?: string }).code === 'EEXIST') throw error
+    // Another disk, or one that takes no hard links: a copy that fails with EEXIST rather than replace a file.
+    await copyFile(from, to, constants.COPYFILE_EXCL)
+  }
+  await unlink(from).catch(() => undefined)
+}
+/** Save as's move, which may replace the file the user chose in the Save dialog. */
 async function move(from: string, to: string): Promise<void> {
   try { await rename(from, to) } catch (error) {
     if ((error as { code?: string }).code !== 'EXDEV' && (error as { code?: string }).code !== 'EPERM') throw error
@@ -82,6 +95,8 @@ async function move(from: string, to: string): Promise<void> {
  */
 export class BrowserDownloads {
   private readonly records = new Map<string, DownloadRecord>()
+  /** Paths answered for and not yet placed, as the disk compares them (`sameOnDisk`). */
+  private readonly reserved = new Set<string>()
   private disposed = false
   constructor(private readonly dependencies: BrowserDownloadsDependencies) {}
 
@@ -102,7 +117,7 @@ export class BrowserDownloads {
     const pending = join(folder, file)
     item.setSavePath(pending)
     item.pause()
-    const record: DownloadRecord = { item, pending, chosen: null, finished: false, view: {
+    const record: DownloadRecord = { item, pending, chosen: null, replaces: false, reserved: null, finished: false, view: {
       id, threadId: owner.threadId, workspaceId: owner.workspaceId, pageId: owner.pageId, file, host: owner.host.slice(0, 300),
       state: 'asking', receivedBytes: 0, totalBytes: Math.max(0, item.getTotalBytes() || 0), byAgent: owner.byAgent, folder: null, opens: opensSafely(file), startedAt: Date.now(),
     } }
@@ -117,9 +132,13 @@ export class BrowserDownloads {
   list(threadId: string): BrowserDownload[] {
     return [...this.records.values()].filter(record => record.view.threadId === threadId).map(record => ({ ...record.view })).sort((a, b) => b.startedAt - a.startedAt)
   }
-  /** What an agent may know of its thread's downloads: names and states, and a path only for one the user saved in the thread's folder. */
-  agentView(threadId: string, workingDirectory: string): { file: string; state: BrowserDownload['state']; byAgent: boolean; path?: string }[] {
-    return this.list(threadId).map(download => {
+  /**
+   * What an agent may know of its thread's downloads: names and states, and a path only for one the user saved in the
+   * thread's folder. Only a download its own action started, or one from a page `shared` says is shared with it now,
+   * is listed: a page the user keeps private keeps its downloads too.
+   */
+  agentView(threadId: string, workingDirectory: string, shared: (pageId: string) => boolean): { file: string; state: BrowserDownload['state']; byAgent: boolean; path?: string }[] {
+    return this.list(threadId).filter(download => download.byAgent || (download.pageId !== null && shared(download.pageId))).map(download => {
       const record = this.records.get(download.id)!
       const inside = download.state === 'saved' && record.chosen ? relative(workingDirectory, record.chosen) : null
       return { file: download.file, state: download.state, byAgent: download.byAgent, ...(inside && !inside.startsWith('..') && !isAbsolute(inside) ? { path: inside.replace(/\\/gu, '/') } : {}) }
@@ -132,11 +151,19 @@ export class BrowserDownloads {
     if (action === 'save' || action === 'save-as') {
       if (record.view.state !== 'asking') return fail('blocked', 'This download was already answered.')
       const suggested = join(this.dependencies.downloadsFolder(), record.view.file)
-      const target = action === 'save' ? await freePath(this.dependencies.downloadsFolder(), record.view.file) : await this.dependencies.chooseSavePath(suggested)
+      // Save to Downloads holds the free name it finds at once, so a second download of the same name finds the next.
+      const target = action === 'save' ? await this.freePath(this.dependencies.downloadsFolder(), record.view.file) : await this.dependencies.chooseSavePath(suggested)
       if (!target) return { ...record.view }
       // The dialog may have taken a while: the download could have been cancelled or failed meanwhile.
-      if (record.view.state !== 'asking' || this.disposed) return { ...record.view }
+      if (record.view.state !== 'asking' || this.disposed) { if (action === 'save') this.reserved.delete(sameOnDisk(target)); return { ...record.view } }
+      if (action === 'save-as') {
+        // The dialog's answer replaces what is there, but not a file another download is about to put there.
+        if (this.reserved.has(sameOnDisk(target))) return fail('blocked', 'Another download is being saved with that name. Choose another name.')
+        this.reserved.add(sameOnDisk(target))
+      }
       record.chosen = target
+      record.reserved = target
+      record.replaces = action === 'save-as'
       record.view.state = 'saving'
       record.view.folder = dirname(target)
       this.publish(record)
@@ -167,6 +194,35 @@ export class BrowserDownloads {
       rmSync(dirname(record.pending), { recursive: true, force: true })
     }
     this.records.clear()
+    this.reserved.clear()
+  }
+  /**
+   * Cancels the downloads still asking in each thread `gone` names, one that closed or was deleted: nobody is left to
+   * answer them. One the user already placed goes on to where they said.
+   */
+  cancelThreads(gone: (threadId: string) => boolean): void {
+    for (const record of [...this.records.values()]) if (record.view.state === 'asking' && gone(record.view.threadId)) this.cancel(record)
+  }
+  /** `folder/name`, or `name (1)` and so on when a file or another download has it; held for the caller at once. */
+  private async freePath(folder: string, name: string): Promise<string> {
+    const extension = extname(name), stem = name.slice(0, name.length - extension.length)
+    for (let count = 0; count < 1000; count++) {
+      const candidate = join(folder, count === 0 ? name : `${stem} (${count})${extension}`)
+      if (this.reserved.has(sameOnDisk(candidate))) continue
+      if (await stat(candidate).then(() => true, () => false)) continue
+      // Checked again after the look at the disk, which another answer may have overlapped.
+      if (this.reserved.has(sameOnDisk(candidate))) continue
+      this.reserved.add(sameOnDisk(candidate))
+      return candidate
+    }
+    const last = join(folder, `${stem} ${randomUUID()}${extension}`)
+    this.reserved.add(sameOnDisk(last))
+    return last
+  }
+  /** The download no longer holds a path: it is placed, failed or cancelled. */
+  private release(record: DownloadRecord): void {
+    if (record.reserved) this.reserved.delete(sameOnDisk(record.reserved))
+    record.reserved = null
   }
   private progress(record: DownloadRecord): void {
     try {
@@ -178,6 +234,7 @@ export class BrowserDownloads {
     if (record.view.state !== 'asking' && record.view.state !== 'saving') return
     record.view.state = 'cancelled'
     record.chosen = null
+    this.release(record)
     if (!record.finished) { try { record.item.cancel() } catch { /* Already gone. */ } }
     void rm(dirname(record.pending), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(() => undefined)
     this.publish(record)
@@ -192,19 +249,36 @@ export class BrowserDownloads {
     }
     if (record.view.state === 'asking' || record.view.state === 'saving') record.view.state = state === 'cancelled' ? 'cancelled' : 'failed'
     record.chosen = null
+    this.release(record)
     await rm(dirname(record.pending), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(() => undefined)
     this.publish(record)
   }
-  /** Moves the finished file to where the user chose, and its waiting folder away. */
+  /**
+   * Moves the finished file to where the user chose, and its waiting folder away. Save to Downloads never replaces a
+   * file: one that appeared at its name after the user answered sends it to the next free name.
+   */
   private async place(record: DownloadRecord): Promise<void> {
-    const target = record.chosen
+    let target = record.chosen
     if (!target || this.disposed) return
     try {
       await mkdir(dirname(target), { recursive: true })
-      await move(record.pending, target)
+      if (record.replaces) await move(record.pending, target)
+      else for (let tries = 0; ; tries++) {
+        try { await moveWithoutReplacing(record.pending, target); break } catch (error) {
+          if ((error as { code?: string }).code !== 'EEXIST' || tries >= 20) throw error
+          const next = await this.freePath(dirname(target), record.view.file)
+          // Cancelled while the next name was found: Cancel has deleted what was waiting.
+          if (record.chosen !== target) { this.reserved.delete(sameOnDisk(next)); return }
+          this.release(record)
+          record.reserved = record.chosen = target = next
+        }
+      }
       if (record.chosen !== target) { await rm(target, { force: true }).catch(() => undefined); return }
       record.view.state = 'saved'
+      // The name it was saved under decides too: Save as can give a document a program's name.
+      record.view.opens = opensSafely(record.view.file) && opensSafely(basename(target))
     } catch { record.view.state = 'failed'; record.chosen = null }
+    this.release(record)
     await rm(dirname(record.pending), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(() => undefined)
     this.publish(record)
   }

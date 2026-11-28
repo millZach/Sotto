@@ -177,7 +177,8 @@ function browserAgentServer(definitions: readonly BrowserToolDefinition[], instr
       return !!page?.sharedOrigin && page.sharedOrigin === new URL(page.url).origin
     }
     if (name === 'browser_pages') {
-      // Downloads by name and state (ADR-0222): where one went is said only when the user saved it in this thread's folder.
+      // Downloads the agent's action started or a shared page gave, by name and state (ADR-0222): where one went is said
+      // only when the user saved it in this thread's folder.
       const downloads = parity && !compactThread && browser.agentDownloads ? await browser.agentDownloads(threadId) : []
       return text({ pages: pages.map(page => observable(page.id)
         ? { pageId: page.id, url: browser.masked?.(page.id, page.url) ?? page.url, title: browser.masked?.(page.id, page.title) ?? page.title, status: page.status, viewport: page.viewport, ...(page.device ? { device: page.device } : {}), shared: true }

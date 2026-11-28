@@ -62,6 +62,8 @@ export interface BrowserDependencies {
   readonly browserFiles?: BrowserFiles
   /** The user's browser profiles (ADR-0221), with the full catalog on. */
   readonly profiles?: BrowserProfiles
+  /** Whether a thread Sotto lists is closed, archived or settled; its downloads still asking are cancelled (ADR-0222). */
+  threadClosed?(threadId: string): boolean
   /** Other browsers' profiles to copy sign-ins from, and the copy itself; tests give their own. */
   readonly browserImport?: { sources(): Promise<FoundImportSource[]>; copy(folder: string, target: CookieTarget): Promise<{ imported: number; skipped: number }> }
   /** Sotto's own folder where another browser's cookie file is copied to be read, and deleted after (ADR-0221). */
@@ -603,7 +605,15 @@ export class BrowserService extends BrowserTasks<PageRecord> {
   async agentDownloads(threadId: string): Promise<{ file: string; state: BrowserDownload['state']; byAgent: boolean; path?: string }[]> {
     if (!this.downloadList) return []
     const owner = await this.owner(threadId).catch(() => null)
-    return owner ? this.downloadList.agentView(threadId, owner.workingDirectory) : []
+    return owner ? this.downloadList.agentView(threadId, owner.workingDirectory, pageId => this.sharedNow(pageId, threadId)) : []
+  }
+  /**
+   * The thread list changed: a download still asking in a thread that closed or was deleted is cancelled, since nobody
+   * is left to answer it (ADR-0222, November 27 amendment).
+   */
+  threadsChanged(): void {
+    if (this.disposed) return
+    this.downloadList?.cancelThreads(threadId => !this.dependencies.files.hasThread(threadId) || this.dependencies.threadClosed?.(threadId) === true)
   }
   protected actionNote(record: PageRecord, since: number): string | undefined {
     const started = this.downloadList?.list(record.page.workspace.threadId).filter(download => download.pageId === record.page.id && download.startedAt >= since) ?? []

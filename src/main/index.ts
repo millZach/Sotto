@@ -976,7 +976,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     sendToPopup: (channel, payload) => { popup?.window.send(channel, payload) },
     notify: alert => { void desktopNotifier?.notify(alert) },
     publishRecoveryNotice: notice => recoveryNotices.publish(notice),
-    onFilesBindingsDelta: delta => filesBindingsMirror.apply(delta),
+    // A thread that closed or went takes the downloads still asking in it with it (ADR-0222).
+    onFilesBindingsDelta: delta => { filesBindingsMirror.apply(delta); browserService?.threadsChanged() },
     relaunchApp: () => { app.relaunch(); app.quit() },
     downloadsFolder: () => e2eConfiguration !== null ? join(userDataPath, 'downloads') : app.getPath('downloads'),
     log: code => logOperational(code),
@@ -1978,6 +1979,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
         openExternal: url => shell.openExternal(url),
         byDefault: () => workingCopySettings.browserWithoutAsking,
+        threadClosed: threadId => filesBindingsMirror.threadClosed(threadId),
         pointAtSomething: owlFeatures['quiet-browser'],
         // A secret request's reference is typed from the engine that holds its value (ADR-0219).
         ...(owlFeatures['secret-requests'] && engine.takeSecret ? { secret: (threadId: string, ref: string) => engine.takeSecret!(threadId, ref) } : {}),

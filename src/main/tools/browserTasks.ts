@@ -230,6 +230,11 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     this.listed.add(owner.threadId)
     return { workspace: owner, pages: [...this.pages.values()].filter(record => record.page.workspace.workspaceId === owner.workspaceId && record.page.workspace.threadId === owner.threadId).map(record => this.view(record)), grant: this.grantView(owner.threadId) }
   }) }
+  /** Whether a page of the thread is shared with its agent now: not one the user made private, nor one never shared. */
+  protected sharedNow(pageId: string, threadId: string): boolean {
+    const record = this.pages.get(pageId)
+    return record !== undefined && record.page.workspace.threadId === threadId && !record.madePrivate && record.page.sharedOrigin !== null
+  }
   /** `text` about a page, its address or title, with any secret typed into that page masked, as the agent is told it (ADR-0219). */
   masked(pageId: string, text: string): string { return this.pages.get(pageId)?.automation.masked(text) ?? text }
   /** The user's Stop: the thread asks again, whichever its grant's source. Always allowed, even for a thread that has gone. */

@@ -111,6 +111,31 @@ describe('FilesBindingsTracker and FilesBindingsMirror', () => {
     expect(mirror.resolveBinding('t2')).toBeNull()
   })
 
+  it('tells the shell which threads are closed, so what waits on one can end (ADR-0222, November 27 amendment)', () => {
+    const tracker = new FilesBindingsTracker()
+    const mirror = new FilesBindingsMirror()
+    const projects: AgentProject[] = [{ id: 'p1', title: 'Repo', path: '/repo' }]
+    const open = makeThread({ id: 't1', projectId: 'p1', title: 'Open', workingDirectory: '/repo/wt1' })
+    mirror.apply(tracker.syncLocal({ projects, threads: [open] } as unknown as AgentHostSnapshot)!)
+    expect(mirror.threadClosed('t1')).toBe(false)
+    // Archiving closes the thread; its folder and title stay, so only the closed flag moves.
+    const archived = { ...open, archivedAt: '2026-11-27T00:00:00.000Z' }
+    const closing = tracker.syncLocal({ projects, threads: [archived] } as unknown as AgentHostSnapshot)
+    expect(closing).toEqual({ closedThreads: { t1: true } })
+    mirror.apply(closing!)
+    expect(mirror.threadClosed('t1')).toBe(true)
+    const fresh = new FilesBindingsMirror()
+    fresh.apply(tracker.snapshot())
+    expect(fresh.threadClosed('t1')).toBe(true)
+    const reopened = tracker.syncLocal({ projects, threads: [open] } as unknown as AgentHostSnapshot)
+    expect(reopened).toEqual({ closedThreads: { t1: null } })
+    mirror.apply(reopened!)
+    expect(mirror.threadClosed('t1')).toBe(false)
+    mirror.apply(tracker.syncLocal({ projects, threads: [archived] } as unknown as AgentHostSnapshot)!)
+    const deleted = tracker.syncLocal({ projects, threads: [] } as unknown as AgentHostSnapshot)
+    expect(deleted).toEqual({ bindings: { t1: null }, threadTitles: { t1: null }, closedThreads: { t1: null } })
+  })
+
   it('tracks hosted terminal folders and SSH hosts and supports full reset snapshots', () => {
     const tracker = new FilesBindingsTracker()
     const mirror = new FilesBindingsMirror()
