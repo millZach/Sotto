@@ -284,9 +284,9 @@ export abstract class PageAutomation {
   /**
    * Secrets typed into this page from a secret request (ADR-0219), and what a field kept of one (`typeSecret`), each with
    * the matchers that find it and its copies (`secretMatchers`) once `masked` has made them, held only in memory while
-   * the page is open, so whatever the page says back (its words, errors, an
-   * evaluated value) reaches the agent with each one masked. Once one is here, `evaluate` stays off for the page's life
-   * (`evaluate`), and `wait_for` and selectors cannot test it (`waitFor`, `checkedSelector`, `comparesValue`).
+   * the page is open, so whatever the page says back (its words, errors, an evaluated value) reaches the agent with each
+   * one masked. Once one is here, `evaluate` stays off for the page's life (`evaluate`), and `wait_for` and selectors
+   * cannot test it (`waitFor`, `checkedSelector`, `comparesValue`).
    */
   private readonly typedSecrets = new Map<string, readonly SecretMatcher[] | undefined>()
   /**
