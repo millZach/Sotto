@@ -1424,6 +1424,32 @@ describe('page zoom in the service (ADR-0222)', () => {
     expect((await service.answerAction({ ...otherHost, allow: true })).ok).toBe(true)
   })
 
+  it('makes the snapshot refs of every page on the zoomed host stale, another port\'s included, and leaves another host\'s', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    const open = async (url: string) => {
+      const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url }))
+      return { at: { ...target, pageId: page.id }, view: vi.mocked(WebContentsView).mock.results.at(-1)!.value as WebContentsView }
+    }
+    const pages = [{ at: target, view }, await open('http://localhost:5173/'), await open('http://127.0.0.1:4321/')]
+    const clickRef = async (at: typeof target): Promise<string> => {
+      const task = unwrap(await service.startTask({ ...at, description: 'Press Save' }))
+      const result = await service.action({ ...at, taskId: task.id, action: { type: 'click', ref: 'e1' } })
+      unwrap(await service.finishTask({ ...at, taskId: task.id, status: 'failed', summary: 'Checked the ref.', unchecked: [] }))
+      return result.ok ? 'ok' : result.error.message
+    }
+    for (const page of pages) {
+      const send = vi.mocked(page.view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+      send.mockImplementation(async (method: string, params?: object) => method === 'Accessibility.getFullAXTree' ? { nodes: [{ nodeId: '1', role: { value: 'button' }, name: { value: 'Save' }, backendDOMNodeId: 7 }] } : plain(method, params))
+      unwrap(await service.share({ ...page.at, enabled: true }))
+      const task = unwrap(await service.startTask({ ...page.at, description: 'Read the page' }))
+      expect(unwrap(await service.action({ ...page.at, taskId: task.id, action: { type: 'snapshot' } })).output).toContain('[ref=e1]')
+      unwrap(await service.finishTask({ ...page.at, taskId: task.id, status: 'completed', summary: 'Read it.', unchecked: [] }))
+    }
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    for (const page of pages.slice(0, 2)) expect(await clickRef(page.at)).toContain('not in your latest snapshot')
+    expect(await clickRef(pages[2]!.at)).not.toContain('not in your latest snapshot')
+  })
+
   it('keeps an agent\'s viewport in CSS pixels at the page\'s zoom', async () => {
     const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
     unwrap(await service.share({ ...target, enabled: true }))

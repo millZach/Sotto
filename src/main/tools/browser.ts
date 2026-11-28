@@ -590,6 +590,7 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     for (const other of this.pages.values()) {
       if (other.page.device || other.view.webContents.isDestroyed() || other.view.webContents.session !== session || hostOf(other.page.url) !== host) continue
       other.generation++
+      other.automation.forgetRefs()
       this.invalidate(other)
       this.publish(other)
     }
