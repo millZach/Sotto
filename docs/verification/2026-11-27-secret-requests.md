@@ -4,7 +4,7 @@ November 27, 2026, on `feat/browser-parity-and-secret-requests`, from `origin/ma
 
 ## What the spec checks
 
-1. **A secret file for a command.** `request_secret` with `delivery: "file"` shows the card "Sudo password" with **Private**, the agent's reason, one masked **Value**, the note that Sotto writes it to a file only the user can read and deletes it within an hour, **Save securely** and **Decline**, and when it closes. The value typed from the keyboard and Enter save it; the tool's answer names the file, which holds exactly the value (mode 0600 off Windows). `release_secret` deletes it.
+1. **A secret file for a command.** `request_secret` with `delivery: "file"` shows the card "Sudo password" with **Private**, the agent's reason, one masked **Value**, the note that Sotto writes it to a file only the user can read and deletes it within an hour, and that it stays out of the chat but anything those commands print reaches the agent and its provider, **Save securely** and **Decline**, and when it closes. The value typed from the keyboard and Enter save it; the tool's answer names the file, which holds exactly the value (mode 0600 off Windows). `release_secret` deletes it.
 2. **Several values, declined.** A card with **User name** shown as typed, **Password** masked and **Open sign-in page**; **Decline** from the keyboard answers `declined`.
 3. **A secret reference typed into the browser.** The card names the site of the login page the test serves, and the agent's note says the value is typed only there. A reference (`secret-ref:` and 32 hex digits) is given, `browser_action` `type` with `secretRef` types it into the focused password field of a page the test serves, the page's title says the typed password was the one saved, and a second use is refused.
 4. **The value goes nowhere else.** The canary value typed on the cards is absent from the window's page, every tool answer, main's output, and, once Sotto has quit and deleted its secret files, every file in Sotto's data folder, where the transcript and event store live. `tests/integration/secretRequestsCanary.test.ts` checks the same through every delivery.
@@ -12,7 +12,7 @@ November 27, 2026, on `feat/browser-parity-and-secret-requests`, from `origin/ma
 ## What the captures show
 
 - **One value** (`card-1600x1000-*`, `card-1280x800-*`, `card-820x560-*` in dark and light, `card-1280x800-dark-reduced-motion.png`): the card above the composer, which says "Queued until you answer the card". At 820x560 the note wraps to two lines and the buttons stay on one.
-- **Several values** (`fields-1600x1000-*`, `fields-1280x800-*`, `fields-820x560-*`, `fields-1280x800-dark-reduced-motion.png`): User name and Password, the note that Sotto keeps them for the agent's own Sotto tools to use once each, and Save securely, Open sign-in page with its outward arrow, and Decline. Needs you lists Workshop with Answer.
+- **Several values** (`fields-1600x1000-*`, `fields-1280x800-*`, `fields-820x560-*`, `fields-1280x800-dark-reduced-motion.png`): User name and Password, the note that Sotto keeps them for the agent's own Sotto tools to use once each and types them only on example.com, the site of the card's sign-in page, and Save securely, Open sign-in page with its outward arrow, and Decline. Needs you lists Workshop with Answer.
 
 The card has no motion of its own, so reduced motion draws it the same.
 
@@ -36,7 +36,7 @@ These test files check the changes:
 - `pageAutomation.test.ts`, `secretRequests.test.ts` and `secretTools.test.ts`
 - `hostBrowser.test.ts` and `secretRequestCard.test.tsx`
 
-Their new tests failed on the old code and pass. The spec's staging card now names its login page, which the spec needs, since a card that named none asks every time. The spec passed with the other three browser journeys. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-owners-review).
+Their new tests failed on the old code and pass. The spec's staging card now names its login page, which the spec needs, since a card that named none asks every time. The spec passed with the other three browser journeys. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-owners-review). It then ran again with `SOTTO_E2E_EVIDENCE=publish` to make the card's 14 captures again, and each one was looked at; every capture shows the new note. The captures are described above.
 
 ## Not checked here
 
