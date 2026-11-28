@@ -1623,6 +1623,26 @@ describe('downloads in the service (ADR-0222)', () => {
     expect(await service.agentDownloads(target.threadId)).toEqual([expect.objectContaining({ file: 'shared.pdf' })])
   })
 
+  it('counts no download as the agent\'s that starts while it only reads the page, or after Stop sharing ended its action', async () => {
+    const { service, target, view, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Read the page, then press Save' }))
+    const send = vi.mocked(view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => {
+      // The user's own download, while the agent reads the page.
+      if (method === 'Accessibility.getFullAXTree') started('mine.pdf')
+      // The user stops sharing while the agent's click runs.
+      if (method === 'Input.dispatchMouseEvent' && (params as { type?: string }).type === 'mousePressed') unwrap(await service.share({ ...target, enabled: false }))
+      return plain(method, params)
+    })
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'snapshot' } }))
+    const byName = async (file: string) => unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId })).find(download => download.file === file)
+    expect(await byName('mine.pdf')).toMatchObject({ byAgent: false })
+    await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } })
+    // The page is the user's again: what it downloads a moment later is the user's too.
+    started('after.pdf')
+    expect(await byName('after.pdf')).toMatchObject({ byAgent: false })
+  })
 
   it('cancels a download still asking when its thread closes or goes, and only then', async () => {
     const { service, target, started } = await withDownloads()

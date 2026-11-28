@@ -109,6 +109,8 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
    * is the agent's (ADR-0222). It says nothing of what the agent is told: that follows the page's sharing alone.
    */
   private readonly agentActedAt = new Map<string, number>()
+  /** Pages running an agent's action that can set off a download: not one that only reads the page (`READS`). */
+  private readonly acting = new Set<string>()
   /** Each page's timer for the end of the user's hold, moved on by every input (ADR-0220, decision 8). */
   private readonly userTimers = new Map<string, ReturnType<typeof setTimeout>>()
   protected readonly executing = new Set<string>()
@@ -176,7 +178,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   }
   /** Whether a download that starts on this page now was set off by an agent's action (ADR-0222). */
   protected agentCaused(pageId: string): boolean {
-    return this.executing.has(pageId) || Date.now() - (this.agentActedAt.get(pageId) ?? 0) < AGENT_DOWNLOAD_MS
+    return this.acting.has(pageId) || Date.now() - (this.agentActedAt.get(pageId) ?? 0) < AGENT_DOWNLOAD_MS
   }
   /** What the engine keeps for a page goes with it. */
   private forgetPage(pageId: string): void {
@@ -701,6 +703,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     const generation = record.generation, startedAt = Date.now()
     // An action that only reads the page, or sets how it looks or is recorded, cannot set off a download.
     const reading = READS.has(action.type) || action.type === 'appearance' || action.type === 'record_start'
+    if (!reading) this.acting.add(record.page.id)
     const observedUrl = action.type === 'navigate' ? action.url : record.page.url
     // Set once a secret request's value is taken: from then on a failure says the reference is used (ADR-0219).
     let spent = false
@@ -817,7 +820,9 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       throw error
     } finally {
       this.executing.delete(record.page.id)
-      if (this.pages.has(record.page.id) && !reading) this.agentActedAt.set(record.page.id, Date.now())
+      this.acting.delete(record.page.id)
+      // A page the user stopped sharing while the action ran is theirs again, so a download it starts next is theirs too.
+      if (!reading && this.sharedNow(record.page.id, record.page.workspace.threadId)) this.agentActedAt.set(record.page.id, Date.now())
       // Copies made for an upload that was not given go now.
       if (staged) void this.base.browserFiles?.discard(staged)
       for (const listener of this.taskListeners) listener()
