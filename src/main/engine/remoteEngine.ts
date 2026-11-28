@@ -8,11 +8,13 @@ import type { NotificationOpening } from '../../shared/desktopNotifications'
 import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'
 import type { QuestionPageOpen } from '../../shared/questionPageOpen'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import type { SecretSite } from '../../shared/secretRequests'
 import type { AppSettings } from '../../shared/settings'
 import type { ToolsResult } from '../../shared/tools'
 import type { AgentVisual } from '../../shared/visuals'
 import type { ClientIdentity } from '../agents/hostService'
 import type { ThreadToolCallContext } from '../agents/threadToolServer'
+import type { BrowserServerOptions } from '../agents/browserAgentServer'
 import type { ThreadVideoPart } from '../agents/threadMediaScheme'
 import type { RoomBridge } from '../agents/watcherRoomDesktop'
 import type { QuestionPageOpening } from '../hosts/desktopHostRouter'
@@ -180,7 +182,7 @@ export async function startOutOfProcessEngine(
       case 'shell:browserCall':
         return shellBridge.browserTools.call(args[0] as string, args[1] as string, args[2], args[3] as ThreadToolCallContext | undefined)
       case 'shell:browserMcpServer':
-        return shellBridge.browserTools.mcpServer(args[0] as string)
+        return shellBridge.browserTools.mcpServer(args[0] as string, args[1] as BrowserServerOptions | undefined)
       case 'shell:credentialsSet':
         await shellBridge.credentials.set(args[0] as string, args[1] as string)
         return snapshotCredentials(shellBridge)
@@ -364,6 +366,8 @@ export async function startOutOfProcessEngine(
       connection.request<ToolsResult<unknown>>('engine:hostedBrowserCall', [request]),
     hostedBrowserAddress: (hostId: string) =>
       connection.request<string | undefined>('engine:hostedBrowserAddress', [hostId]),
+    takeSecret: (threadId: string, ref: string) => connection.request<string | null>('engine:takeSecret', [threadId, ref]),
+    secretSite: (threadId: string, ref: string) => connection.request<SecretSite | null>('engine:secretSite', [threadId, ref]),
     turnRecordsInfo: () => connection.request<EngineTurnRecordsInfo>('engine:turnRecordsInfo'),
 
     e2eAgentEvent: (payload: unknown) => { connection.sendPush('engine:e2eAgentEvent', payload) },

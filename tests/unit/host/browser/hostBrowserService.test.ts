@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HostBrowserService } from '../../../../src/host/browser/hostBrowserService'
 import { HostBrowserMissing, NO_HOST_BROWSER, type HostBrowser, type HostBrowserPage, type HostPageState } from '../../../../src/host/browser/hostBrowser'
 import { createHostBrowserAgentServer, hostBrowserToolDefinitions } from '../../../../src/main/tools/browserAgentTools'
+import type { BrowserFiles } from '../../../../src/main/tools/browserFiles'
 import type { BrowserAgentResult, BrowserEvent } from '../../../../src/shared/browser'
 import type { ToolsResult } from '../../../../src/shared/tools'
 
@@ -25,6 +26,11 @@ class FakePage {
     capture: vi.fn(async (url: string) => ({ url, image: 'data:image/png;base64,YQ==', width: 1280, height: 800, element: null })),
     input: vi.fn(async () => undefined), target: vi.fn(async () => 'BUTTON|Sign in'),
     evidence: vi.fn(async () => ({ image: 'data:image/jpeg;base64,Yg==', width: 1280, height: 800 })), thumbnail: vi.fn(async () => 'data:image/jpeg;base64,Yw=='),
+    // The full catalog's reads (ADR-0220), asked only with `browser-parity` on.
+    snapshotText: vi.fn(async () => 'heading "Sign in" [ref=e1]'), emulateAppearance: vi.fn(async () => undefined),
+    dialog: vi.fn(() => null), colorScheme: vi.fn(() => null), forgetRefs: vi.fn(), domContentSince: vi.fn(() => false),
+    // What the page says back, masked against a typed secret (ADR-0219); none is typed in these tests.
+    masked: vi.fn((text: string) => text), told: vi.fn((text: string, max: number) => text.slice(0, max)), maskedUrl: vi.fn((url: string) => url), holdsSecret: vi.fn(() => false), showsSecret: vi.fn(async () => false), typedSecret: vi.fn(() => false),
   }
   onChange(listener: (state: HostPageState) => void): () => void { this.changes.add(listener); return () => this.changes.delete(listener) }
   onClose(listener: () => void): () => void { this.closes.add(listener); return () => this.closes.delete(listener) }
@@ -46,12 +52,13 @@ function fakeBrowser(missing = false) {
 
 const services: HostBrowserService[] = []
 afterEach(async () => { for (const service of services.splice(0)) await service.shutDown(); vi.useRealTimers() })
-function setup(options: { withoutAsking?: boolean; missing?: boolean } = {}) {
+function setup(options: { withoutAsking?: boolean; missing?: boolean; parity?: boolean; browserFiles?: BrowserFiles } = {}) {
   listed.clear(); listed.add(workspace.threadId)
   const { browser, pages } = fakeBrowser(options.missing)
   const events: BrowserEvent[] = []
   const saved: boolean[] = []
-  const service = new HostBrowserService({ browser, files, emit: event => events.push(event), withoutAsking: options.withoutAsking ?? true, saveWithoutAsking: async value => { saved.push(value) } })
+  const service = new HostBrowserService({ browser, files, emit: event => events.push(event), withoutAsking: options.withoutAsking ?? true, saveWithoutAsking: async value => { saved.push(value) },
+    ...options.parity ? { parity: true } : {}, ...options.browserFiles ? { browserFiles: options.browserFiles } : {} })
   services.push(service)
   return { service, browser, pages, events, saved }
 }
@@ -165,6 +172,32 @@ describe('a host\'s browser service (ADR-0198)', () => {
     const missing = setup({ missing: true })
     expect(value(await missing.service.available({ threadId: workspace.threadId }))).toEqual({ available: false })
     expect(missing.browser.open).not.toHaveBeenCalled()
+  })
+
+  it('offers the full catalog with the host\'s browser-parity answer on, and saves screenshots where the host keeps them (ADR-0220)', async () => {
+    const save = vi.fn(async () => '/host/browser-files/abc/screenshot.png')
+    const browserFiles = { save, folder: () => '/host/browser-files/abc', sweep: async () => undefined } as unknown as BrowserFiles
+    const { service, pages } = setup({ parity: true, browserFiles })
+    const opened = value(await open(service))
+    const target = { threadId: workspace.threadId, workspaceId, pageId: opened.task.pageId, taskId: opened.task.id }
+
+    const snapshot = value(await service.action({ ...target, action: { type: 'snapshot' } }))
+    expect(snapshot.output).toBe('heading "Sign in" [ref=e1]')
+    value(await service.action({ ...target, action: { type: 'appearance', colorScheme: 'dark' } }))
+    expect(pages[0]!.automation.emulateAppearance).toHaveBeenCalledWith('dark')
+
+    const shot = value(await service.action({ ...target, action: { type: 'screenshot', save: true } }))
+    expect(save).toHaveBeenCalledWith(workspace.threadId, 'screenshot', 'png', expect.any(Uint8Array))
+    expect(JSON.parse(shot.output!)).toMatchObject({ path: '/host/browser-files/abc/screenshot.png' })
+  })
+
+  it('refuses the full catalog\'s actions in words with the host\'s browser-parity answer off', async () => {
+    const { service, pages } = setup()
+    const opened = value(await open(service))
+    const refused = await service.action({ threadId: workspace.threadId, workspaceId, pageId: opened.task.pageId, taskId: opened.task.id, action: { type: 'snapshot' } })
+    expect(refused.ok).toBe(false)
+    if (!refused.ok) expect(refused.error.message).toContain('has no snapshot action')
+    expect(pages[0]!.automation.snapshotText).not.toHaveBeenCalled()
   })
 
   it('closes every page and the browser when the host stops', async () => {

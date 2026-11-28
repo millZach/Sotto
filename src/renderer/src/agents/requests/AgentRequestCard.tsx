@@ -21,6 +21,7 @@ import {
   permissionSummary, pickOption, pickOther, requestAnswerOwnerKey, requestAnswerStore, requestMode, skipAllAnswer, SKIPPED_SELECTION, skipsEachQuestion, structuredAnswer, textOnly, useRequestEntry,
   type RequestAnswer, type RequestAnswerStore, type StructuredQuestion, type SubmitOutcome,
 } from './requestAnswers'
+import { SecretRequestCard, showsSecretCard } from './SecretRequestCard'
 import './requests.css'
 
 const UNNAMED_AGENT = msg({ message: 'The agent', comment: 'Stands in for the coding agent’s name when it is not known, as in “The agent says”.' })
@@ -36,6 +37,11 @@ export interface AgentRequestCardProps {
   readonly ownerTitle: string
   /** Popup links for the Watcher target open its room, as the popup's own Open does. */
   readonly watcher?: boolean
+  /**
+   * Watcher's room: a secret request shows its words and Decline, as the popup and a phone do, and never takes a value
+   * there; the values are typed on the thread's own card (ADR-0219, decision 4).
+   */
+  readonly secretWordsOnly?: boolean
   readonly draftOwner?: RequestDraftOwner
   readonly request: AgentRequest
   /** Why the choices cannot be used right now (disconnected, busy); null when they can. */
@@ -64,7 +70,13 @@ export interface AgentRequestCardProps {
  * exactly the choices the provider offered, sends one answer for this request's own ID, and holds instead of
  * resending when delivery is unknown — the sidebar's Needs you card pops this same card open, on the same store.
  */
-export function AgentRequestCard({ ownerId, ownerTitle, watcher, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], imagesSupported, providerId, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
+export function AgentRequestCard(props: AgentRequestCardProps): ReactNode {
+  // A secret request's values are typed on its own card, never in the answer store (ADR-0219).
+  const secrets = useOwlFeature('secret-requests')
+  return showsSecretCard(props.request, secrets && props.secretWordsOnly !== true) ? <SecretRequestCard ownerId={props.ownerId} request={props.request} blocked={props.blocked} /> : <ProviderRequestCard {...props} />
+}
+
+function ProviderRequestCard({ ownerId, ownerTitle, watcher, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], imagesSupported, providerId, store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const { t } = useLingui()
   const draftQuestions = requestDraftQuestions(request)
   const entryOwner = requestAnswerOwnerKey(ownerId, request, draftOwner)

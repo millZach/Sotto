@@ -84,6 +84,8 @@ export const OWL_FEATURES = [
   { id: 'mods', name: 'Mods', owlSince: '2026-11-25', owner: 'docs/adr/0217-mods-change-how-sotto-looks-and-add-parts-of-their-own.md', sentToStable: false },
   { id: 'parent-thread-coordination', name: 'Parent-to-parent thread coordination', owlSince: '2026-11-22', owner: 'docs/adr/0216-parent-threads-can-coordinate-with-each-other.md', sentToStable: false },
   { id: 'scheduled-tasks', name: 'Scheduled tasks and playbooks', owlSince: '2026-11-26', owner: 'docs/adr/0218-scheduled-tasks-and-playbooks-run-on-the-computer-that-keeps-them.md', sentToStable: false },
+  { id: 'secret-requests', name: 'Secret requests', owlSince: '2026-11-27', owner: 'docs/adr/0219-an-agent-asks-for-a-secret-on-a-private-card.md', sentToStable: false },
+  { id: 'browser-parity', name: 'Full browser tools', owlSince: '2026-11-27', owner: 'docs/adr/0220-sottos-browser-does-what-t3-codes-does.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

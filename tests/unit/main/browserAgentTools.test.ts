@@ -17,7 +17,9 @@ const servers: ReturnType<typeof createBrowserAgentServer>[] = []
 afterEach(async () => { for (const server of servers.splice(0)) await server.close() })
 function setup(shared = false) {
   const page = { id: pageId, workspace, url: 'http://localhost:4567/private', title: 'private-title', status: 'ready', error: null, canGoBack: false, canGoForward: false, sharedOrigin: shared ? 'http://localhost:4567' : null, viewport: null }
-  const service = { list: vi.fn(async () => ({ ok: true, value: { workspace, pages: [page] } })), tasks: vi.fn(async () => ({ ok: true, value: [task] })), action: vi.fn(async () => ({ ok: true, value: { task, output: 'observed', image: 'data:image/png;base64,YQ==', approvalRequired: false } })), waitForAction: vi.fn(), agentOpen: vi.fn(), startTask: vi.fn(), finishTask: vi.fn() }
+  const service = { list: vi.fn(async () => ({ ok: true, value: { workspace, pages: [page] } })), tasks: vi.fn(async () => ({ ok: true, value: [task] })), action: vi.fn(async () => ({ ok: true, value: { task, output: 'observed', image: 'data:image/png;base64,YQ==', approvalRequired: false } })), waitForAction: vi.fn(), agentOpen: vi.fn(), startTask: vi.fn(), finishTask: vi.fn(),
+    // The browser answers whether the agent may see a page from the page itself, as BrowserTasks does.
+    observable: vi.fn((id: string) => id === page.id && page.sharedOrigin !== null && page.sharedOrigin === new URL(page.url).origin) }
   const server = createBrowserAgentServer(() => service as unknown as BrowserService)
   servers.push(server)
   return { server, service, page }

@@ -111,6 +111,47 @@ describe('FilesBindingsTracker and FilesBindingsMirror', () => {
     expect(mirror.resolveBinding('t2')).toBeNull()
   })
 
+  it('tells the shell the moment a thread closes or goes, so what waits on it can end (ADR-0222, November 27 amendment)', () => {
+    const tracker = new FilesBindingsTracker()
+    const mirror = new FilesBindingsMirror()
+    const projects: AgentProject[] = [{ id: 'p1', title: 'Repo', path: '/repo' }]
+    const open = makeThread({ id: 't1', projectId: 'p1', title: 'Open', workingDirectory: '/repo/wt1' })
+    const other = makeThread({ id: 't2', projectId: 'p1', title: 'Other', workingDirectory: '/repo/wt2' })
+    expect(mirror.apply(tracker.syncLocal({ projects, threads: [open, other] } as unknown as AgentHostSnapshot)!)).toEqual([])
+    // Archiving closes the thread; its folder and title stay, so only the closed flag moves.
+    const archived = { ...open, archivedAt: '2026-11-27T00:00:00.000Z' }
+    const closing = tracker.syncLocal({ projects, threads: [archived, other] } as unknown as AgentHostSnapshot)
+    expect(closing).toEqual({ closedThreads: { t1: true } })
+    expect(mirror.apply(closing!)).toEqual(['t1'])
+    // Another thread's change, or the whole list again after a restart, does not end a thread that was closed already.
+    const renamed = { ...other, title: 'Renamed' }
+    expect(mirror.apply(tracker.syncLocal({ projects, threads: [archived, renamed] } as unknown as AgentHostSnapshot)!)).toEqual([])
+    expect(mirror.apply(tracker.snapshot())).toEqual([])
+    const reopened = tracker.syncLocal({ projects, threads: [open, renamed] } as unknown as AgentHostSnapshot)
+    expect(reopened).toEqual({ closedThreads: { t1: null } })
+    expect(mirror.apply(reopened!)).toEqual([])
+    const deleted = tracker.syncLocal({ projects, threads: [open] } as unknown as AgentHostSnapshot)
+    expect(deleted).toEqual({ bindings: { t2: null }, threadTitles: { t2: null } })
+    expect(mirror.apply(deleted!)).toEqual(['t2'])
+    // A restart's list that no longer has a thread ends it too.
+    expect(mirror.apply({ ...tracker.snapshot(), threadTitles: {}, bindings: {} })).toEqual(['t1'])
+  })
+
+  it('leaves a thread or project the user settled open, since Settle keeps its running work and its cards (ADR-0222, November 27 amendment)', () => {
+    const tracker = new FilesBindingsTracker()
+    const mirror = new FilesBindingsMirror()
+    const projects: AgentProject[] = [{ id: 'p1', title: 'Repo', path: '/repo' }]
+    const open = makeThread({ id: 't1', projectId: 'p1', title: 'Open', workingDirectory: '/repo/wt1' })
+    expect(mirror.apply(tracker.syncLocal({ projects, threads: [open] } as unknown as AgentHostSnapshot)!)).toEqual([])
+    const at = '2026-11-27T00:00:00.000Z'
+    // Settle and Settle project put work aside and can be undone; a download waiting there waits, as a card does.
+    for (const snapshot of [{ projects, threads: [{ ...open, workspaceSettledAt: at }] }, { projects: [{ ...projects[0]!, workspaceSettledAt: at }], threads: [open] }]) {
+      const delta = tracker.syncLocal(snapshot as unknown as AgentHostSnapshot)
+      expect(delta?.closedThreads).toBeUndefined()
+      expect(delta ? mirror.apply(delta) : []).toEqual([])
+    }
+  })
+
   it('tracks hosted terminal folders and SSH hosts and supports full reset snapshots', () => {
     const tracker = new FilesBindingsTracker()
     const mirror = new FilesBindingsMirror()

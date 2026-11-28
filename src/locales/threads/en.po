@@ -1910,10 +1910,6 @@ msgstr "Add to prompt"
 msgid "Add to reply"
 msgstr "Add to reply"
 
-#: src/renderer/src/agents/MarkupEditor.tsx
-msgid "Add to reply ({modKey}+Enter)"
-msgstr "Add to reply ({modKey}+Enter)"
-
 #. Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Add Ultrathink to prompt"
@@ -3003,6 +2999,11 @@ msgstr "Close without adding a model source"
 msgid "Closed"
 msgstr "Closed"
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "closed a page"
+msgstr "closed a page"
+
 #: src/renderer/src/agents/requests/CloudIphoneRequest.tsx
 msgid "Cloud iPhone problem"
 msgstr "Cloud iPhone problem"
@@ -3509,6 +3510,11 @@ msgstr "could not check the cloud iPhone"
 msgid "could not click in the page"
 msgstr "could not click in the page"
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not close a page"
+msgstr "could not close a page"
+
 #: src/renderer/src/agents/addProject.ts
 msgid "Could not confirm the new project. Choose the folder again to check; it will not be added twice."
 msgstr "Could not confirm the new project. Choose the folder again to check; it will not be added twice."
@@ -3587,6 +3593,11 @@ msgstr "could not list its pages"
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Could not list the folders on {place}. Nothing was changed. Try again."
 msgstr "Could not list the folders on {place}. Nothing was changed. Try again."
+
+#. A step in the browser line; starts lowercase. Servers are web servers running on this computer.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not list the local servers"
+msgstr "could not list the local servers"
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Could not load this thread’s messages."
@@ -3923,6 +3934,11 @@ msgstr "Cursor’s sign-in is not available right now. Nothing was changed."
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "cut at {kib} KiB"
 msgstr "cut at {kib} KiB"
+
+#. Refuses a secret request; the agent is told and goes on without it.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Decline"
+msgstr "Decline"
 
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "DeepSeek denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
@@ -4417,6 +4433,12 @@ msgstr "Ended when Let agents babysit pull requests was turned off in Settings."
 #: src/renderer/src/agents/babysitting.ts
 msgid "Ended. Sotto could not read #{number} from GitHub for about 16 minutes."
 msgstr "Ended. Sotto could not read #{number} from GitHub for about 16 minutes."
+
+#. {0} is what the agent asked for, such as API key.
+#. placeholder {0}: missing[0]!.label
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Enter {0}, or decline the card."
+msgstr "Enter {0}, or decline the card."
 
 #: src/renderer/src/agents/MessageScrubber.tsx
 msgid "Enter goes there. Up and Down move to the others. Esc closes this."
@@ -5606,6 +5628,11 @@ msgstr "Links from the message above"
 #: src/renderer/src/agents/browserLine.ts
 msgid "listed its pages"
 msgstr "listed its pages"
+
+#. A step in the browser line; starts lowercase. Servers are web servers running on this computer.
+#: src/renderer/src/agents/browserLine.ts
+msgid "listed the local servers"
+msgstr "listed the local servers"
 
 #: src/renderer/src/agents/FilePicker.tsx
 msgid "Loading files…"
@@ -6868,8 +6895,10 @@ msgstr "Open Settings"
 msgid "Open Settings at APIs and your own model servers"
 msgstr "Open Settings at APIs and your own model servers"
 
+#. Opens the page the agent named for getting a secret, in the user’s browser.
 #: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
 msgid "Open sign-in page"
 msgstr "Open sign-in page"
 
@@ -7404,7 +7433,9 @@ msgstr "Previous-provider recovery"
 msgid "Price not given"
 msgstr "Price not given"
 
+#. Tags a card whose values the agent never sees.
 #: src/renderer/src/agents/GitActionButton.tsx
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
 msgid "Private"
 msgstr "Private"
 
@@ -8199,6 +8230,11 @@ msgstr "Save again"
 msgid "Save choices"
 msgstr "Save choices"
 
+#. Sends the values a secret request asked for to Sotto, not to the agent.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Save securely"
+msgstr "Save securely"
+
 #. {keyName} is the kind of key, such as Gemini API key.
 #: src/renderer/src/agents/AntigravityConnection.tsx
 msgid "Save this {keyName} and connect Antigravity"
@@ -8227,6 +8263,7 @@ msgstr "Saving the files"
 #. The Use this folder button while the chosen folder is saved.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Saving…"
 msgstr "Saving…"
@@ -9183,6 +9220,10 @@ msgstr "Sotto couldn't reach the new worker's start. Nothing was started. Try ag
 msgid "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
 msgstr "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
 
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto did not answer. Nothing was saved; try again."
+msgstr "Sotto did not answer. Nothing was saved; try again."
+
 #. {provider} is a provider's name or "The provider"; {wanted} is the chosen model, effort or permission mode.
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."
@@ -9213,6 +9254,24 @@ msgstr "Sotto is sending it the brief."
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto is starting it and sending the brief."
 msgstr "Sotto is starting it and sending the brief."
+
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps it for the agent’s own Sotto tools to use once, and asks you before typing it on any page. The agent and its provider never see it."
+msgstr "Sotto keeps it for the agent’s own Sotto tools to use once, and asks you before typing it on any page. The agent and its provider never see it."
+
+#. {site} is the site of the sign-in page, such as dashboard.stripe.com.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps it for the agent’s own Sotto tools to use once, and types it only on {site}. The agent and its provider never see it."
+msgstr "Sotto keeps it for the agent’s own Sotto tools to use once, and types it only on {site}. The agent and its provider never see it."
+
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps them for the agent’s own Sotto tools to use once each, and asks you before typing them on any page. The agent and its provider never see them."
+msgstr "Sotto keeps them for the agent’s own Sotto tools to use once each, and asks you before typing them on any page. The agent and its provider never see them."
+
+#. {site} is the site of the sign-in page, such as dashboard.stripe.com.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps them for the agent’s own Sotto tools to use once each, and types them only on {site}. The agent and its provider never see them."
+msgstr "Sotto keeps them for the agent’s own Sotto tools to use once each, and types them only on {site}. The agent and its provider never see them."
 
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto keeps up to 32 servers. Remove one you no longer use, then add this one."
@@ -9299,6 +9358,14 @@ msgstr "Sotto will not send your last prompt twice."
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Sotto will not send your last prompt twice. Reconnect to check it."
 msgstr "Sotto will not send your last prompt twice. Reconnect to check it."
+
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto writes each to a file only you can read, for the agent’s commands, and deletes them within an hour. They stay out of the chat, but anything those commands print reaches the agent and its provider."
+msgstr "Sotto writes each to a file only you can read, for the agent’s commands, and deletes them within an hour. They stay out of the chat, but anything those commands print reaches the agent and its provider."
+
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto writes it to a file only you can read, for the agent’s commands, and deletes it within an hour. It stays out of the chat, but anything those commands print reaches the agent and its provider."
+msgstr "Sotto writes it to a file only you can read, for the agent’s commands, and deletes it within an hour. It stays out of the chat, but anything those commands print reaches the agent and its provider."
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Sotto’s compaction of this idle thread is unconfirmed. Reconnect to see its result."
@@ -11152,6 +11219,11 @@ msgstr "Using the browser"
 msgid "Using the cloud iPhone"
 msgstr "Using the cloud iPhone"
 
+#. Labels the one field of a secret request whose title already names it.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Value"
+msgstr "Value"
+
 #. A kind of suggested next prompt: check the work.
 #: src/renderer/src/agents/NextList.tsx
 msgid "Verify"
@@ -11307,6 +11379,11 @@ msgstr "Waiting on you"
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Waiting to start on “{prompt}”."
 msgstr "Waiting to start on “{prompt}”."
+
+#. {until} is a time of day, such as 14:32, when the card closes unanswered.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Waiting until {until}"
+msgstr "Waiting until {until}"
 
 #. In the speed card of a thread on the user’s own model server: no token yet, and how long it has waited, such as 42s.
 #: src/renderer/src/agents/ServerMark.tsx

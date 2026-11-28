@@ -1,0 +1,15 @@
+/* Draw on the page (ADR-0222; Owl): Sotto's mark-up editor in the page's place, over a frozen picture of it, with the
+   comment in its side panel. The editor's own container queries read the browser's width here, so a narrow pane puts
+   the marks and the comment under the picture. Colour only from theme roles; nothing moves. */
+.browser-draw { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: var(--tt-surface); container: thread-pane / inline-size; }
+.browser-draw > .browser-review-problem { margin: 8px 12px; }
+.browser-draw__comment { display: grid; gap: 6px; }
+.browser-draw__comment textarea { display: block; width: 100%; min-height: 72px; padding: 8px 10px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-row); background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); resize: vertical; }
+.browser-draw__comment textarea:focus { border-color: var(--tt-field-border-focus); outline: none; }
+.browser-draw__comment textarea:focus-visible { box-shadow: 0 0 0 2px var(--tt-focus-ring); }
+.browser-draw__comment textarea::placeholder { color: var(--tt-text-muted); }
+.browser-draw__hint { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+@container thread-pane (max-width: 760px) {
+  .browser-draw .markup-editor__side { max-height: 168px; }
+  .browser-draw__comment textarea { min-height: 48px; }
+}

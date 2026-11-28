@@ -1,0 +1,76 @@
+{
+  "zoomLandings": {
+    "1": {
+      "ref": "Target 6",
+      "point": [
+        560,
+        50
+      ],
+      "screenshot": {
+        "url": "http://localhost:43326/",
+        "width": 1000,
+        "height": 600
+      }
+    },
+    "0.5": {
+      "ref": "Target 6",
+      "point": [
+        560,
+        50
+      ],
+      "screenshot": {
+        "url": "http://localhost:43326/",
+        "width": 1000,
+        "height": 600
+      }
+    },
+    "1.75": {
+      "ref": "Target 6",
+      "point": [
+        560,
+        50
+      ],
+      "screenshot": {
+        "url": "http://localhost:43326/",
+        "width": 1000,
+        "height": 600
+      }
+    }
+  },
+  "zoomKeys": "Ctrl+= twice gave 125%, Ctrl+0 gave 100%, More > Zoom in gave 110%",
+  "cursorPixel": {
+    "b": 173,
+    "g": 188,
+    "r": 80
+  },
+  "cursorInAgentScreenshot": false,
+  "recordingShowsCursor": true,
+  "agentToldOfDownloads": [
+    {
+      "file": "bench-notes.txt",
+      "state": "saved",
+      "byAgent": true,
+      "path": "downloads/bench-notes.txt"
+    },
+    {
+      "file": "bench-notes.txt",
+      "state": "saved",
+      "byAgent": false
+    }
+  ],
+  "drawing": {
+    "attachment": "Drawing on Zoom bench",
+    "comment": "Target 3 should be the first button."
+  },
+  "passkeys": {
+    "platformAuthenticator": true,
+    "made": {
+      "id": "U8jPO0oi0cI47I6h0dBG2ceDyz29paaNgT0-l-WULnc",
+      "type": "public-key"
+    },
+    "used": {
+      "id": "U8jPO0oi0cI47I6h0dBG2ceDyz29paaNgT0-l-WULnc"
+    }
+  },
+  "errors": []
+}

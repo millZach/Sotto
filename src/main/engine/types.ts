@@ -6,6 +6,7 @@ import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'
 import type { SottoPlatform } from '../../shared/platform'
 import type { QuestionPageOpen } from '../../shared/questionPageOpen'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import type { SecretSite } from '../../shared/secretRequests'
 import type { AppSettings } from '../../shared/settings'
 import type { ToolsResult } from '../../shared/tools'
 import type { BrowserAgentTools } from '../agents/browserAgentServer'
@@ -33,6 +34,8 @@ export interface FilesBindingsDelta {
   readonly threadTitles?: Readonly<Record<string, string | null>>
   readonly hostedFolders?: Readonly<Record<string, HostThreadFolders | null>>
   readonly terminalHosts?: Readonly<Record<string, SshTerminalHost | null>>
+  /** Threads their provider closed (archived or settled there) as `true`, and `null` for one reopened or gone (ADR-0222, November 27 amendment). */
+  readonly closedThreads?: Readonly<Record<string, true | null>>
 }
 
 /**
@@ -181,6 +184,16 @@ export interface DesktopEngine {
   hostedGitChangesCall(method: HostedGitChangesMethod, payload: unknown): Promise<ToolsResult<unknown>>
   hostedBrowserCall(request: HostBrowserThreadRequest): Promise<ToolsResult<unknown>>
   hostedBrowserAddress(hostId: string): string | undefined | Promise<string | undefined>
+  /**
+   * One use of a secret reference by Sotto's browser in the thread it was given to (ADR-0219): the value once, then
+   * the reference is gone; null for one that is unknown, used, expired or another thread's. Absent without the feature.
+   */
+  takeSecret?(threadId: string, ref: string): Promise<string | null>
+  /**
+   * The site a secret reference's card named, so Sotto's browser checks where the value would go before it takes it
+   * (ADR-0219, decision 7); the reference is not used. Null for one that is unknown, used, expired or another thread's.
+   */
+  secretSite?(threadId: string, ref: string): Promise<SecretSite | null>
   turnRecordsInfo(): Promise<EngineTurnRecordsInfo>
 
   // E2E-only hooks (inert in packaged builds).

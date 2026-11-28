@@ -254,12 +254,15 @@ export class BrowserStore {
     this.patch(threadId, { ...(active ? { activePageId: active } : {}), workspace: thread.workspace ?? page.workspace })
   }
 
-  /** Opens a page, or with `device` the thread's test iPhone, which never becomes Tools > Browser's active page. */
-  async create(bridge: BrowserBridge | undefined, threadId: string, url: string, device?: 'iphone'): Promise<boolean> {
+  /**
+   * Opens a page, or with `device` the thread's test iPhone, which never becomes Tools > Browser's active page. With
+   * `profileId`, the page opens in the user's browser profile (ADR-0221).
+   */
+  async create(bridge: BrowserBridge | undefined, threadId: string, url: string, device?: 'iphone', profileId?: string): Promise<boolean> {
     const target = await this.target(bridge, threadId)
     if (!bridge || !target) return false
     this.patch(threadId, { busy: true, notice: null })
-    const result = await settle(bridge.create({ ...target, url, ...(device ? { device } : {}) }))
+    const result = await settle(bridge.create({ ...target, url, ...(device ? { device } : {}), ...(profileId ? { profileId } : {}) }))
     if (!result.ok) { this.fail(bridge, threadId, result.error, device ? msg`Could not open the test iPhone.` : msg`Could not open the page.`); return false }
     this.upsert(result.value)
     this.patch(threadId, device ? { busy: false } : { busy: false, activePageId: result.value.id })
@@ -388,8 +391,8 @@ export class BrowserStore {
     if (event.type === 'task') { this.receiveTask(event.task); return }
     // A thread this window has not listed learns its grant when it is listed.
     if (event.type === 'browser-grant') { this.patch(event.threadId, { grant: event.grant }); return }
-    // Point at something belongs to the pane that turned it on, which listens for it itself.
-    if (event.type === 'point') return
+    // Point at something belongs to the pane that turned it on, which listens for it itself, as downloads belong to theirs.
+    if (event.type === 'point' || event.type === 'download') return
     if (event.type === 'page') {
       const thread = this.threads.get(event.page.workspace.threadId)
       if (!thread || (thread.workspace !== null && thread.workspace.workspaceId !== event.page.workspace.workspaceId)) return

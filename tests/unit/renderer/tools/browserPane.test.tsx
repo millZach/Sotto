@@ -64,9 +64,9 @@ function fakeBrowser(initial: BrowserPage[] = [page(PAGE_1)], options: { grant?:
 }
 
 let drafts: ThreadDraftStore
-function owl(on: boolean, agents: { showBrowserPreviews?: boolean } = {}): void {
+function owl(on: boolean, agents: { showBrowserPreviews?: boolean } = {}, parity = false): void {
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { owlFeatures: { 'quiet-browser': on } } } as unknown as AppContextValue)
+    update: { owlFeatures: { 'quiet-browser': on, 'browser-parity': parity } } } as unknown as AppContextValue)
   const state = threadsStateFixture()
   vi.mocked(useOptionalAgents).mockReturnValue({ state, threadDrafts: drafts, showBrowserPreviews: agents.showBrowserPreviews ?? true } as unknown as ReturnType<typeof useOptionalAgents>)
 }
@@ -600,5 +600,115 @@ describe('point at something on Owl (ADR-0154)', () => {
     const tools = panel()
     await within(tools).findByRole('button', { name: 'Comment on page' })
     expect(within(tools).queryByRole('button', { name: 'Point at something' })).not.toBeInTheDocument()
+  })
+})
+
+describe('the full browser in the quiet pane (ADR-0220)', () => {
+  it('puts the page’s dialog in the strip’s place, and shows none of it without the full browser', async () => {
+    for (const parity of [true, false]) {
+      owl(true, {}, parity)
+      const browser = fakeBrowser([page(PAGE_1, { dialog: { type: 'confirm', message: 'Ship it?' } })], { tasks: [task()] })
+      mount(browser)
+      const tools = panel()
+      await waitFor(() => expect(tools.querySelector('.browser-pane__strip')).not.toBeNull())
+      if (parity) {
+        expect(within(tools).getByRole('group', { name: /The page asks\s*Ship it\?/u })).toBeInTheDocument()
+        expect(tools).not.toHaveTextContent('Agent is browsing')
+      } else {
+        expect(within(tools).queryByRole('group', { name: /The page asks/u })).not.toBeInTheDocument()
+        expect(tools).toHaveTextContent('Agent is browsing')
+      }
+      cleanup()
+    }
+  })
+
+  it('calls Pause Take over and Resume Hand back, and says when the user is using the page', async () => {
+    owl(true, {}, true)
+    const browser = fakeBrowser([page(PAGE_1, { userActive: true })], { tasks: [task()] })
+    mount(browser)
+    const tools = panel()
+    await waitFor(() => expect(tools.querySelector('.browser-pane__strip')).toHaveTextContent('You are using the page. The agent waits until you stop'))
+    fireEvent.click(within(tools).getByRole('button', { name: 'Take over' }))
+    await waitFor(() => expect(browser.bridge.controlTask).toHaveBeenCalledWith(expect.objectContaining({ taskId: TASK, control: 'pause' })))
+    await waitFor(() => expect(tools.querySelector('.browser-pane__strip')).toHaveTextContent('You have the page. The agent waits until you hand it back'))
+    expect(within(tools).getByRole('button', { name: 'Hand back' })).toBeInTheDocument()
+  })
+
+  it('lists devices and the page’s colours in More only with the full browser', async () => {
+    for (const parity of [true, false]) {
+      owl(true, {}, parity)
+      const browser = fakeBrowser([page(PAGE_1)])
+      mount(browser)
+      const tools = panel()
+      fireEvent.click(await within(tools).findByRole('button', { name: 'More browser actions' }))
+      const menu = within(tools).getByRole('menu', { name: 'More browser actions' })
+      const radios = within(menu).getAllByRole('menuitemradio').map(item => item.textContent)
+      expect(radios.includes('Show as iPhone 12 Pro')).toBe(parity)
+      expect(radios.includes('Page in dark colours')).toBe(parity)
+      cleanup()
+    }
+  })
+
+  it('offers the servers Sotto started with no page open, only with the full browser', async () => {
+    for (const parity of [true, false]) {
+      owl(true, {}, parity)
+      const browser = fakeBrowser([])
+      browser.bridge.localServers = vi.fn(async () => ok([{ port: 5173, url: 'http://localhost:5173/', title: 'Fieldnotes', process: 'node' }]))
+      mount(browser)
+      const tools = panel()
+      await within(tools).findByRole('textbox', { name: 'Address for a new page' })
+      if (parity) expect(await within(tools).findByRole('button', { name: 'Open localhost:5173' })).toBeInTheDocument()
+      else expect(within(tools).queryByRole('heading', { name: 'Servers started from Sotto' })).not.toBeInTheDocument()
+      cleanup()
+    }
+  })
+
+  it('opens the next new page in the profile the user chose, and names it beside the address (ADR-0221)', async () => {
+    owl(true, {}, true)
+    const work = { id: '6f1c1d0e-6a2b-4d39-9c43-1b0b9e1f4a11', name: 'Work' }
+    const browser = fakeBrowser([])
+    browser.bridge.profiles = vi.fn(async () => ok({ profiles: [work], sources: [] }))
+    browser.bridge.addProfile = vi.fn(); browser.bridge.removeProfile = vi.fn()
+    vi.mocked(browser.bridge.create).mockImplementation(async ({ url, profileId }) => ok(page(PAGE_1, { url, title: '', ...profileId ? { profile: work } : {} })))
+    mount(browser)
+    const tools = panel()
+    fireEvent.click(await within(tools).findByRole('radio', { name: /Work/u }))
+    const address = within(tools).getByRole('textbox', { name: 'Address for a new page' })
+    fireEvent.change(address, { target: { value: 'mail.example.com' } })
+    fireEvent.submit(address.closest('form')!)
+    await waitFor(() => expect(browser.bridge.create).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://mail.example.com/', profileId: work.id })))
+    expect(await within(tools).findByTitle(/Open in the profile Work/u)).toBeInTheDocument()
+  })
+
+  it('offers developer tools in More only with the full browser, and opens them for the page shown', async () => {
+    for (const parity of [true, false]) {
+      owl(true, {}, parity)
+      const browser = fakeBrowser([page(PAGE_1)])
+      browser.bridge.devtools = vi.fn(async () => ok(undefined))
+      mount(browser)
+      const tools = panel()
+      fireEvent.click(await within(tools).findByRole('button', { name: 'More browser actions' }))
+      const item = within(tools).queryByRole('menuitem', { name: 'Open developer tools' })
+      if (parity) {
+        fireEvent.click(item!)
+        await waitFor(() => expect(browser.bridge.devtools).toHaveBeenCalledWith({ threadId: workspace.threadId, workspaceId: workspace.workspaceId, pageId: PAGE_1 }))
+      } else expect(item).toBeNull()
+      cleanup()
+    }
+  })
+
+  it('offers no profiles without the full browser, and sends no profile', async () => {
+    owl(true, {}, false)
+    const browser = fakeBrowser([])
+    browser.bridge.profiles = vi.fn(async () => ok({ profiles: [], sources: [] }))
+    mount(browser)
+    const tools = panel()
+    const address = await within(tools).findByRole('textbox', { name: 'Address for a new page' })
+    expect(within(tools).queryByRole('radiogroup', { name: 'Open new pages in' })).not.toBeInTheDocument()
+    expect(browser.bridge.profiles).not.toHaveBeenCalled()
+    fireEvent.change(address, { target: { value: 'localhost:5173' } })
+    fireEvent.submit(address.closest('form')!)
+    await waitFor(() => expect(browser.bridge.create).toHaveBeenCalled())
+    expect(vi.mocked(browser.bridge.create).mock.calls[0]![0]).not.toHaveProperty('profileId')
   })
 })

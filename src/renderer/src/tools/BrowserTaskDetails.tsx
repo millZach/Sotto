@@ -1,7 +1,7 @@
 import React, { useState, type ReactNode } from 'react'
 import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
-import type { BrowserBridge, BrowserTask } from '../../../shared/browser'
+import { asksEveryTime, type BrowserBridge, type BrowserTask } from '../../../shared/browser'
 import { type BrowserStore } from './browserStore'
 import './browserReview.css'
 
@@ -23,7 +23,7 @@ export function BrowserTaskDetails({ task, store, bridge }: { readonly task: Bro
       {active ? <button type="button" className="browser-review-link tt-focusable" onClick={() => void store.controlTask(bridge, task, task.status === 'paused' ? 'resume' : 'pause').then(setProblem)}>{task.status === 'paused' ? t({ message: 'Resume', comment: 'Lets a paused browser task carry on.' }) : t({ message: 'Pause', comment: 'Pauses a browser task.' })}</button> : null}</div>
     {task.pendingAction ? <div className="browser-action-request" role="group" aria-label={t`Browser action permission`}>
       <p>{task.pendingAction.description}</p><div><button type="button" className="tt-button tt-button--primary tt-focusable" disabled={busy || task.status === 'paused'} onClick={() => answer(true)}>{t`Allow once`}</button>
-        <button type="button" className="tt-button tt-focusable" disabled={busy || task.status === 'paused'} title={t`Let this thread open, navigate, click and type in Sotto's browser without asking, and see every page in its browser, until you stop it or Sotto closes.`} onClick={() => answer(true, true)}>{t`Allow this thread to use the browser`}</button>
+        {asksEveryTime(task.pendingAction) ? null : <button type="button" className="tt-button tt-focusable" disabled={busy || task.status === 'paused'} title={t`Let this thread open, navigate, click and type in Sotto's browser without asking, and see every page in its browser, until you stop it or Sotto closes.`} onClick={() => answer(true, true)}>{t`Allow this thread to use the browser`}</button>}
         <button type="button" className="tt-button tt-focusable" disabled={busy} onClick={() => answer(false)}>{t`Deny`}</button></div></div> : null}
     {task.steps.length || task.unchecked.length ? <details className="browser-task__evidence"><summary className="tt-focusable">{unchecked ? t`${plural(steps, { other: '# recorded steps' })}, ${plural(unchecked, { other: '# unchecked' })}` : plural(steps, { other: '# recorded steps' })}</summary>
       <ol>{task.steps.map(step => { const action = step.action; return <li key={step.id}><span>{step.status === 'failed' ? t({ message: `Failed: ${action}`, comment: '{action} is a step a browser task took, in the agent\'s words.' }) : action}</span>{step.detail ? <span>{step.detail}</span> : null}</li> })}</ol>

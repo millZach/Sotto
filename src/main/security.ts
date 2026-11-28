@@ -27,6 +27,20 @@ export function disableDnsPrefetching(commandLine: CommandLineAdapter & { getSwi
 }
 
 /**
+ * The Chromium features Sotto turns off, before the app is ready, keeping any the caller turned off already: one
+ * `disable-features` switch, as Chromium takes only the last. Hidden browser captures need a native surface on
+ * Windows (ADR-0020). The back-forward cache is off everywhere: a document it gives back keeps its script and its
+ * fields, and the browser takes every document its `did-navigate` reports as a new one, which a typed secret's rules
+ * hold only while that is so (ADR-0222, decision 12).
+ */
+export function disableChromiumFeatures(commandLine: CommandLineAdapter & { getSwitchValue(key: string): string }, platform: NodeJS.Platform): void {
+  const disabled = new Set(commandLine.getSwitchValue('disable-features').split(',').filter(Boolean))
+  if (platform === 'win32') disabled.add('CalculateNativeWinOcclusion')
+  disabled.add('BackForwardCache')
+  commandLine.appendSwitch('disable-features', [...disabled].join(','))
+}
+
+/**
  * Chromium withholds SharedArrayBuffer without cross-origin isolation, which
  * file:// renderers can never satisfy. Enabling the feature directly keeps the
  * local inference worker eligible for multithreaded WASM. Must run before the

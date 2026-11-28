@@ -370,6 +370,8 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/tools/browserReview.css',
       'src/renderer/src/tools/browserPane.css',
       'src/renderer/src/tools/browserPoint.css',
+      'src/renderer/src/tools/browserParity.css',
+      'src/renderer/src/tools/browserDraw.css',
       'src/renderer/src/tools/changes.css',
       'src/renderer/src/tools/iphoneSurface.css',
       'src/renderer/src/tools/phonePlayer.css',

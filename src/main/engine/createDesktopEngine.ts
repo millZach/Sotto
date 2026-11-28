@@ -9,7 +9,7 @@ import type { AgentActivity } from '../../shared/agentActivity'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import { BROWSER_EVENT, BROWSER_FRAME_EVENT } from '../../shared/browser'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
-import { E2E_COMPUTER_NAME, E2E_DELEGATION_TOOL_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_PLUGIN_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, e2eAgentEventSchema, e2eDelegationToolSchema, e2eHostSetupToolSchema, e2ePluginToolSchema, e2eVisualToolSchema } from '../../shared/e2e'
+import { E2E_COMPUTER_NAME, E2E_DELEGATION_TOOL_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_PLUGIN_TOOL_CHANNEL, E2E_SECRET_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, e2eAgentEventSchema, e2eDelegationToolSchema, e2eHostSetupToolSchema, e2ePluginToolSchema, e2eSecretToolSchema, e2eVisualToolSchema } from '../../shared/e2e'
 import { FILES_DOWNLOAD_PROGRESS } from '../../shared/files'
 import { GIT_CHANGES_EVENT } from '../../shared/gitChanges'
 import { heldProvidersOf, releasesHeldProvider } from '../../shared/heldProviders'
@@ -65,6 +65,9 @@ import { registerOpenCodeSignInIpc } from '../agents/opencodeSignInIpc'
 import { ClaudeStreamJsonHost } from '../agents/providers/claude/claude'
 import { CodexAppServerHost } from '../agents/providers/codex/codex'
 import { PullRequestToolServer } from '../agents/pullRequestTools'
+import { SecretToolServer } from '../agents/secretTools'
+import { SecretRequests, sweepSecretFiles } from '../secrets/secretRequests'
+import { registerSecretRequestsIpc } from '../secrets/secretRequestsIpc'
 import { registerRequestDraftIpc } from '../agents/requestDraftIpc'
 import { requestDraftOwnerState, requestDraftWatcherOwnerIds } from '../agents/requestDraftOwners'
 import { RequestDraftService } from '../agents/requestDrafts'
@@ -825,6 +828,11 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     changed: () => { shellBridge.sendToMain(PLUGINS_MAIL_GRANTS_CHANGED, null) },
   }) : undefined
   const pluginChanges = pluginsEnabled ? new PluginChangeRequests({ open: pluginThreadOpen, noticed: () => { mailGrants?.noticed() } }) : undefined
+  // Secret requests (ADR-0219): an Owl feature, and this computer's threads only. Nothing the last run kept survives it.
+  const secretRequests = owlFeatures['secret-requests'] && startupSettings.localHostEnabled ? new SecretRequests({ directory: userDataPath, open: pluginThreadOpen }) : undefined
+  // With the feature on or off: a value an earlier run could not delete never waits for the feature to come back.
+  await (secretRequests ? secretRequests.sweep() : sweepSecretFiles(userDataPath))
+  const secretTools = secretRequests ? new SecretToolServer({ admits: threadId => agentHost.admitsSecretRequests(threadId), service: secretRequests }) : undefined
   const pluginProjectOf = (threadId: string): string | null => pluginFolderOfThread(agentControl.watcherSnapshot(), threadId)
   const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer(pluginToolHandlers({
     admits: threadId => agentHost.admitsPluginTools(threadId),
@@ -934,8 +942,10 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     ...(coordinationTools ? [coordinationTools] : []),
     ...(tellTools ? [tellTools] : []),
     ...(councilTools ? [councilTools] : []),
+    ...(secretTools ? [secretTools] : []),
   ])
-  agentControl.useSottoRequests(pluginChanges ? combinedSottoRequests([hostSetupRequests(hostSetup), pluginChanges]) : hostSetupRequests(hostSetup))
+  const ownRequests = [hostSetupRequests(hostSetup), ...(pluginChanges ? [pluginChanges] : []), ...(secretRequests ? [secretRequests] : [])]
+  agentControl.useSottoRequests(ownRequests.length > 1 ? combinedSottoRequests(ownRequests) : ownRequests[0]!)
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
 
@@ -1027,6 +1037,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     void modelRecords?.forgetThreads(threadIds).then(ids => { if (ids.length > 0) { shellBridge.sendToMain(PLUGINS_MODELS_3D_REMOVED, ids); phoneModelViews?.removed(ids) } }, () => undefined)
     void soundRecords?.forgetThreads(threadIds).catch(() => undefined)
     pluginChanges?.forgetThreads(threadIds)
+    secretRequests?.forgetThreads(threadIds)
     void mailGrants?.forgetThreads(threadIds).catch(() => undefined)
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
     void cascadedSettles?.forgetAll(threadIds.map(id => hostEntityKey(hostId, id))).catch(() => undefined)
@@ -1193,6 +1204,8 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
   const cleanupCoordination = registerThreadCoordinationIpc(ipc, threadCoordinationService, senders, () => agentControl.hostId(),
     (channel, payload) => { shellBridge.sendToMain(channel, payload) }, owlFeatures['parent-thread-coordination'] ? hostRouter : undefined)
   // Mods (ADR-0217): Settings › Mods and the mods folder's watch, only while the Owl feature is on.
+  // The secret card's own channel (ADR-0219): values go from the window to the service and nowhere else.
+  const cleanupSecretRequests = registerSecretRequestsIpc(ipc, secretRequests, senders, () => agentControl.hostId())
   const cleanupMods = registerModsIpc(ipc, owlFeatures.mods, {
     folder: modsFolder(userDataPath), coordinator: agentControl, senders,
     send: (channel, payload) => { shellBridge.sendToMain(channel, payload) },
@@ -1397,6 +1410,12 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       if (!pluginTools) throw new Error('Plugins are off in this build.')
       return pluginTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, request.name, request.arguments)
     })
+    ipc.handle(E2E_SECRET_TOOL_CHANNEL, (event, payload: unknown) => {
+      if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
+      const request = e2eSecretToolSchema.parse(payload)
+      if (!secretTools) throw new Error('Secret requests are off in this build.')
+      return secretTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, request.name, request.arguments)
+    })
     ipc.handle(AGENT_E2E, (event, payload: unknown) => {
       if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
       const parsed = e2eAgentEventSchema.parse(payload)
@@ -1408,6 +1427,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       ipc.removeHandler(E2E_MEDIA_TOOL_CHANNEL)
       ipc.removeHandler(E2E_DELEGATION_TOOL_CHANNEL)
       ipc.removeHandler(E2E_PLUGIN_TOOL_CHANNEL)
+      ipc.removeHandler(E2E_SECRET_TOOL_CHANNEL)
       ipc.removeHandler(AGENT_E2E)
     })
   }
@@ -1440,6 +1460,8 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     cleanupLocalApps?.()
     pluginsStop.abort()
     pluginChanges?.close()
+    secretRequests?.close()
+    cleanupSecretRequests()
     mailGrants?.close()
     cleanupPlugins?.()
     stopFollowingCopies()
@@ -1524,6 +1546,7 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
       coordinationTools?.close(),
       tellTools?.close(),
       councilTools?.close(),
+      secretTools?.close(),
       pictureMaker?.close(),
       rustLocalEngine?.close(),
     ])
@@ -1630,6 +1653,8 @@ export async function createDesktopEngine(options: DesktopEngineOptions, shellBr
     },
     hostedBrowserCall: request => hostRouter.hostedBrowser(request),
     hostedBrowserAddress: hostId => desktopHosts.browserAddress(hostId),
+    takeSecret: (threadId, ref) => Promise.resolve(secretRequests?.take(threadId, ref) ?? null),
+    secretSite: (threadId, ref) => Promise.resolve(secretRequests?.site(threadId, ref) ?? null),
     async turnRecordsInfo() {
       await writeFile(turns.path(), '', { flag: 'wx' }).catch(() => undefined)
       return { path: turns.path(), recentCount: (await turns.recent(20)).length }

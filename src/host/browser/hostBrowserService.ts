@@ -13,7 +13,8 @@ interface HostPageRecord extends TaskPage {
   seen: HostPageState
 }
 
-export interface HostBrowserServiceDependencies extends Omit<BrowserTaskDependencies, 'words' | 'byDefault'> {
+/** A paired host's browser takes no secret reference (ADR-0219, decision 9), so it neither types one nor looks up its site. */
+export interface HostBrowserServiceDependencies extends Omit<BrowserTaskDependencies, 'words' | 'byDefault' | 'secret' | 'secretSite'> {
   readonly browser: HostBrowser
   /** The last **Let agents use the browser without asking** a desktop sent, as the host's settings file holds it. */
   readonly withoutAsking: boolean
@@ -42,7 +43,9 @@ export class HostBrowserService extends BrowserTasks<HostPageRecord> {
   constructor(private readonly dependencies: HostBrowserServiceDependencies) {
     const setting = { withoutAsking: dependencies.withoutAsking, saved: dependencies.withoutAsking }
     super({ files: dependencies.files, emit: event => dependencies.emit(event), byDefault: () => setting.withoutAsking, words: () => HOST_WORDS,
-      ...dependencies.filePages ? { filePages: dependencies.filePages } : {} })
+      ...dependencies.filePages ? { filePages: dependencies.filePages } : {},
+      // The full catalog and where its saved screenshots go (ADR-0220), from the host's own `browser-parity` answer.
+      ...dependencies.parity ? { parity: true } : {}, ...dependencies.browserFiles ? { browserFiles: dependencies.browserFiles } : {} })
     this.setting = setting
   }
 
@@ -72,6 +75,8 @@ export class HostBrowserService extends BrowserTasks<HostPageRecord> {
   input(payload: unknown) { return this.run(async () => {
     const request = parse(browserInputSchema, payload)
     const record = await this.owned(request)
+    // The user's own input from the pane hands the page to them for a moment (ADR-0220, decision 8).
+    if (!(request.input.type === 'mouse' && request.input.action !== 'down') && !(request.input.type === 'key' && request.input.action === 'up')) this.userUsed(record)
     await record.host.input(request.input)
   }) }
   /**
@@ -97,6 +102,7 @@ export class HostBrowserService extends BrowserTasks<HostPageRecord> {
     const record: HostPageRecord = { host, automation: host.automation, seen: host.state, generation: 0, initial, madePrivate: false,
       page: { id: randomUUID(), workspace: owner, url: request.url, title: '', status: 'loading', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: null } }
     this.pages.set(record.page.id, record)
+    this.track(record)
     host.onChange(state => this.changed(record, state))
     host.onClose(() => this.gone(record))
     if (!initial) { this.load(record, request.url); this.shareByGrant(record) }

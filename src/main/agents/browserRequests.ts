@@ -9,7 +9,7 @@ export const TOOLS_STILL_DECIDES = 'Tools asks you before opening, navigating, c
 /**
  * Sotto's own browser tools, said in the words the user would use. A native tool carries no
  * description in the frame it asks with, so without this a card is the tool's name and its arguments
- * and nothing else. Sotto owns these seven names and can say honestly what each would do; a tool from
+ * and nothing else. Sotto owns these names and can say honestly what each would do; a tool from
  * anyone else's server keeps the name it came with, because Sotto cannot describe it.
  *
  * Each client spells the name its own way, so the caller passes whatever it holds: Claude Code's
@@ -35,6 +35,17 @@ function browserAction(action: Frame): string {
   if (action.type === 'tap') return 'tap in the page'
   if (action.type === 'swipe') return 'swipe in the page'
   if (action.type === 'key') return 'press ' + (text(action.key) || 'a key') + ' in the page'
+  if (action.type === 'snapshot') return 'read the page'
+  if (action.type === 'hover') return 'point at something in the page'
+  if (action.type === 'select') return 'choose in a menu in the page'
+  if (action.type === 'drag') return 'drag in the page'
+  if (action.type === 'upload') return 'give the page files from this computer'
+  if (action.type === 'wait_for') return 'wait for the page'
+  if (action.type === 'evaluate') return 'run a script in the page'
+  if (action.type === 'dialog') return 'answer the page’s dialog'
+  if (action.type === 'appearance') return 'change the page’s colour scheme'
+  if (action.type === 'record_start') return 'record the page to a video'
+  if (action.type === 'record_stop') return 'stop recording the page'
   return 'work in the page'
 }
 
@@ -60,10 +71,12 @@ export function browserRequestText(name: string, input: unknown, server?: string
   const said = tool === 'browser_pages' ? 'list the pages this thread has open'
     : tool === 'browser_status' ? 'check how its browser task is going'
       : tool === 'browser_start' ? 'start a browser task on a page you shared'
-        : tool === 'browser_open' ? url ? 'open ' + url : 'open a page'
+        : tool === 'browser_open' ? url ? 'open ' + url : typeof args.port === 'number' ? 'open the server on localhost:' + String(args.port) : 'open a page'
           : tool === 'iphone_open' ? url ? 'open ' + url + ' on the test iPhone' : 'open a page on the test iPhone'
           : tool === 'browser_action' ? browserAction(frame(args.action))
             : tool === 'browser_finish' ? 'finish its browser task as ' + (args.status === 'failed' ? 'failed' : 'done')
+              : tool === 'browser_close' ? 'close a page it opened'
+                : tool === 'browser_servers' ? 'list the web servers started from Sotto on this computer'
               : tool === 'iphone_cloud_open' ? 'start a cloud iPhone with ' + (text(args.buildPath) || 'a build')
                 : tool === 'iphone_cloud_action' ? cloudAction(frame(args.action))
                   : tool === 'iphone_cloud_status' ? 'check how its cloud iPhone session is going'

@@ -12,6 +12,7 @@ import { NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
 import { COORDINATION_RENDERER_ARGUMENT } from '../shared/threadCoordination'
 import { MODS_ALL_OFF, MODS_RENDERER_ARGUMENT } from '../shared/mods'
+import { SECRET_REQUESTS_RENDERER_ARGUMENT } from '../shared/secretRequests'
 import { DYNAMIC_THREADS_RENDERER_ARGUMENT } from '../shared/dynamicThreads'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import { COUNCIL_RENDERER_ARGUMENT } from '../shared/council'
@@ -65,7 +66,7 @@ import {
 import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat } from 'node:fs/promises'
 import { homedir, release as osRelease } from 'node:os'
-import { isAbsolute, join } from 'node:path'
+import { basename, isAbsolute, join } from 'node:path'
 
 import {
   bootstrapSotto,
@@ -196,7 +197,7 @@ import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
 import linuxTrayIconPath from '../../build/icon.png?asset'
 import { cloudTranscriptionOn, defaultSettings, dictationOn, type AppSettings } from '../shared/settings'
-import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
+import { blockSpellcheckDictionaryDownloads, disableChromiumFeatures, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
   createE2EClipboard,
   createE2EGlobalShortcuts,
@@ -249,6 +250,9 @@ import { TerminalService } from './tools/terminal'
 import { terminalTakesMenuShortcut } from './terminals/menuShortcuts'
 import { BrowserService } from './tools/browser'
 import { createBrowserAgentServer } from './tools/browserAgentTools'
+import { BrowserFiles } from './tools/browserFiles'
+import { BrowserProfiles } from './tools/browserProfiles'
+import { findImportSources, importCookies, sweepImportScratch, type CookieTarget } from './tools/browserImport'
 import { CloudIphoneService } from './tools/cloudIphone/service'
 import { CloudUsageLedger } from './tools/cloudIphone/usageLedger'
 import { RunCloudClient } from './tools/cloudIphone/runCloudClient'
@@ -858,7 +862,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const widgetRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=widget')
       const featureArguments = [...(dictationTiming && (mainRenderer || widgetRenderer) ? [DICTATION_TIMING_ARGUMENT] : []), ...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []),
         ...(widgetRenderer && livingOwlEnabled ? [LIVING_OWL_RENDERER_ARGUMENT] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
-        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(parentCoordinationEnabled ? [COORDINATION_RENDERER_ARGUMENT] : []), ...(owlFeatures.mods ? [MODS_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []), ...(owlFeatures['scheduled-tasks'] ? [SCHEDULED_TASKS_RENDERER_ARGUMENT] : []),
+        ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(parentCoordinationEnabled ? [COORDINATION_RENDERER_ARGUMENT] : []), ...(owlFeatures.mods ? [MODS_RENDERER_ARGUMENT] : []), ...(owlFeatures['secret-requests'] && startupSettings.localHostEnabled ? [SECRET_REQUESTS_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []), ...(councilEnabled && startupSettings.localHostEnabled ? [COUNCIL_RENDERER_ARGUMENT] : []), ...(owlFeatures['scheduled-tasks'] ? [SCHEDULED_TASKS_RENDERER_ARGUMENT] : []),
         // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
         ...(nextPromptEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         // A Dynamic thread overseer's record and Give it to another model… (ADR-0191), only while its Owl feature is on.
@@ -928,7 +932,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   let cloudIphoneService: CloudIphoneService | undefined
   let desktopNotifier: DesktopNotifier | null = null
   const terminalServiceRef: { current?: TerminalService } = {}
-  const browserAgentServer = createBrowserAgentServer(() => browserService, () => cloudIphoneService)
+  // The full browser catalog (ADR-0220), read once at start like every Owl answer; Antigravity keeps the stable one.
+  const browserParity = owlFeatures['browser-parity']
+  const browserFiles = browserParity ? new BrowserFiles(join(userDataPath, 'browser-files')) : undefined
+  void browserFiles?.sweep()
+  // The user's browser profiles (ADR-0221); a removed one's data goes here, before any session can open it.
+  const browserProfiles = browserParity ? new BrowserProfiles(join(userDataPath, 'browser-profiles.json')) : undefined
+  void browserProfiles?.sweepPartitions(userDataPath)
+  // Under test, other browsers are looked for only in the test's own folder, never the tester's (ADR-0221).
+  const importRoot = e2eConfiguration !== null && !app.isPackaged ? process.env.SOTTO_E2E_IMPORT_ROOT : undefined
+  // Another browser's cookie file is copied into Sotto's own folder to be read; a copy an earlier run left goes now (ADR-0221).
+  const importScratch = join(userDataPath, 'browser-import')
+  if (browserParity) void sweepImportScratch(importScratch).catch(() => undefined)
+  const browserImport = e2eConfiguration !== null ? { sources: () => importRoot ? findImportSources([{ browser: 'Firefox' as const, folder: importRoot }]) : Promise.resolve([]), copy: (folder: string, target: CookieTarget) => importCookies(folder, target, importScratch) } : undefined
+  const browserAgentServer = createBrowserAgentServer(() => browserService, () => cloudIphoneService, browserParity)
   const filesBindingsMirror = new FilesBindingsMirror()
 
   const engineOptions: DesktopEngineOptions = {
@@ -960,7 +977,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     sendToPopup: (channel, payload) => { popup?.window.send(channel, payload) },
     notify: alert => { void desktopNotifier?.notify(alert) },
     publishRecoveryNotice: notice => recoveryNotices.publish(notice),
-    onFilesBindingsDelta: delta => filesBindingsMirror.apply(delta),
+    // A thread that closed or went takes the downloads still asking in it with it (ADR-0222).
+    onFilesBindingsDelta: delta => { const ended = filesBindingsMirror.apply(delta); if (ended.length) browserService?.threadsEnded(ended) },
     relaunchApp: () => { app.relaunch(); app.quit() },
     downloadsFolder: () => e2eConfiguration !== null ? join(userDataPath, 'downloads') : app.getPath('downloads'),
     log: code => logOperational(code),
@@ -1963,6 +1981,24 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         openExternal: url => shell.openExternal(url),
         byDefault: () => workingCopySettings.browserWithoutAsking,
         pointAtSomething: owlFeatures['quiet-browser'],
+        // A secret request's reference is typed from the engine that holds its value (ADR-0219).
+        ...(owlFeatures['secret-requests'] && engine.takeSecret ? { secret: (threadId: string, ref: string) => engine.takeSecret!(threadId, ref) } : {}),
+        ...(owlFeatures['secret-requests'] && engine.secretSite ? { secretSite: (threadId: string, ref: string) => engine.secretSite!(threadId, ref) } : {}),
+        ...(browserParity ? { parity: true, importScratch } : {}), ...(browserFiles ? { browserFiles } : {}), ...(browserProfiles ? { profiles: browserProfiles } : {}), ...(browserImport ? { browserImport } : {}),
+        // A page's download waits in Sotto's own folder until the user says where it goes (ADR-0222). Under test, nothing
+        // reaches the tester's Downloads, the Save dialog answers with the test's folder, and Open and Show are recorded.
+        ...(browserParity ? { downloads: {
+          pendingFolder: join(userDataPath, 'browser-downloads'),
+          downloadsFolder: () => e2eConfiguration !== null ? join(userDataPath, 'e2e-downloads') : app.getPath('downloads'),
+          chooseSavePath: async (suggested: string) => {
+            if (e2eConfiguration !== null) return join(!app.isPackaged && process.env.SOTTO_E2E_SAVE_AS_DIR ? process.env.SOTTO_E2E_SAVE_AS_DIR : join(userDataPath, 'e2e-saved'), basename(suggested))
+            const parent = BrowserWindow.getAllWindows().find(window => window.webContents === windows.getMainWebContents())
+            const result = parent ? await dialog.showSaveDialog(parent, { defaultPath: suggested }) : await dialog.showSaveDialog({ defaultPath: suggested })
+            return result.canceled || !result.filePath ? null : result.filePath
+          },
+          openPath: async (path: string) => { if (e2eConfiguration !== null) { e2eFiles.opened.push(path); return '' } return shell.openPath(path) },
+          showItemInFolder: (path: string) => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) },
+        } } : {}),
       })
       cloudIphoneService = new CloudIphoneService({
         files: shellFiles, credentials,
@@ -2253,13 +2289,8 @@ protocol.registerSchemesAsPrivileged([VISUAL_SCHEME_PRIVILEGES, THREAD_MEDIA_SCH
 enableWasmThreadSupport(app.commandLine)
 disableDnsPrefetching(app.commandLine)
 configurePasswordStore(platform, app.commandLine, process.env.XDG_CURRENT_DESKTOP)
-// Hidden browser captures need a native surface on Windows (ADR-0020).
-// Preserve any caller-supplied feature switches; background throttling remains per-view.
-if (process.platform === 'win32') {
-  const disabled = new Set(app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean))
-  disabled.add('CalculateNativeWinOcclusion')
-  app.commandLine.appendSwitch('disable-features', [...disabled].join(','))
-}
+// Background throttling remains per-view.
+disableChromiumFeatures(app.commandLine, process.platform)
 
 app.setAppUserModelId(APP_ID)
 // Sotto lives in the tray/menu bar, so losing every window must not quit it —

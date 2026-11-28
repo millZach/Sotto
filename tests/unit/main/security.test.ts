@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   enableWasmThreadSupport,
+  disableChromiumFeatures,
   disableDnsPrefetching,
   blockSpellcheckDictionaryDownloads,
   selectRendererSource,
@@ -102,5 +103,21 @@ describe('DNS prefetching', () => {
     disableDnsPrefetching({ appendSwitch, getSwitchValue })
     expect(getSwitchValue).toHaveBeenCalledWith('blink-settings')
     expect(appendSwitch).toHaveBeenCalledWith('blink-settings', expected)
+  })
+})
+
+describe('Chromium features turned off', () => {
+  // The desktop browser takes every document did-navigate reports as new, which a typed secret's rules hold only while
+  // no back-forward cache gives an old one back (ADR-0222, decision 12).
+  it.each([
+    ['linux', '', 'BackForwardCache'],
+    ['darwin', 'Translate', 'Translate,BackForwardCache'],
+    ['win32', '', 'CalculateNativeWinOcclusion,BackForwardCache'],
+    ['win32', 'BackForwardCache,Translate', 'BackForwardCache,Translate,CalculateNativeWinOcclusion'],
+  ] as const)('turns off the back-forward cache on %s, keeping what was off already: %s', (platform, existing, expected) => {
+    const appendSwitch = vi.fn()
+    disableChromiumFeatures({ appendSwitch, getSwitchValue: () => existing }, platform)
+    // One switch only: Chromium takes the last --disable-features it is given.
+    expect(appendSwitch.mock.calls).toEqual([['disable-features', expected]])
   })
 })

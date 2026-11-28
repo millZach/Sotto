@@ -6,11 +6,15 @@ export type BrowserToolResult = ThreadToolResult
 /** The one name every client addresses this server by. A rename that misses a client is silent; the transcript reads it too. */
 export const BROWSER_MCP_SERVER = SOTTO_BROWSER_SERVER
 export interface BrowserMcpServer extends ThreadMcpServer { name: typeof BROWSER_MCP_SERVER }
+/** `compact`: the thread's client takes only the stable catalog, as Antigravity's does for its tool budget (ADR-0220). */
+export interface BrowserServerOptions { readonly compact?: boolean }
 export interface BrowserAgentTools {
   readonly definitions: readonly BrowserToolDefinition[]
   call(threadId: string, name: string, args: unknown, context?: ThreadToolCallContext): Promise<BrowserToolResult>
-  mcpServer(threadId: string): Promise<BrowserMcpServer>
+  mcpServer(threadId: string, options?: BrowserServerOptions): Promise<BrowserMcpServer>
 }
+/** A call as the server makes it, told whether the thread takes the stable catalog alone (ADR-0220, decision 3). */
+export type BrowserToolInvoke = (threadId: string, name: string, args: unknown, context: ThreadToolCallContext, compact: boolean) => Promise<BrowserToolResult>
 const BROWSER_INSTRUCTIONS = 'Use these tools for the browser the user sees in Sotto. A pending action needs the user in Tools; never approve it yourself. Browser calls wait for that answer. If a call is interrupted or times out, read the task status before requesting the action again. To check a web or Expo-web build on a phone, use iphone_open: the test iPhone is a phone-sized page in this browser, not iOS.'
 
 /** A paired host's threads (ADR-0198): the browser runs on the host, and there is no test iPhone there yet. */
@@ -18,12 +22,32 @@ export const HOST_BROWSER_INSTRUCTIONS = 'Use these tools for Sotto\'s browser, 
 
 /** Thread-bound local MCP transport. Admission is never permission to read or operate a page. */
 export class BrowserAgentServer extends ThreadToolServer implements BrowserAgentTools {
-  constructor(definitions: readonly BrowserToolDefinition[], invoke: BrowserAgentTools['call'], instructions = BROWSER_INSTRUCTIONS) {
-    super({ name: BROWSER_MCP_SERVER, serverName: 'sotto-browser', instructions, unavailable: 'This browser tool is unavailable.',
-      failed: 'The browser action could not be completed. Check the browser in Tools before retrying.' }, definitions, invoke)
+  /** Threads whose client asked for the stable catalog alone (ADR-0220, decision 3). */
+  private readonly compactThreads: Set<string>
+  /**
+   * `compact` is the stable catalog a thread asking for it is listed instead of `definitions`. It is also all that
+   * thread may call: a full-catalog tool is unavailable to it, and its arguments are read as the stable catalog's, so a
+   * full-catalog action is refused even under a tool name both catalogs share.
+   */
+  constructor(definitions: readonly BrowserToolDefinition[], invoke: BrowserToolInvoke, instructions = BROWSER_INSTRUCTIONS, compact: readonly BrowserToolDefinition[] = definitions) {
+    const compactThreads = new Set<string>()
+    const unavailable = 'This browser tool is unavailable.'
+    super({ name: BROWSER_MCP_SERVER, serverName: 'sotto-browser', instructions, unavailable,
+      failed: 'The browser action could not be completed. Check the browser in Tools before retrying.' }, definitions,
+    // A compact thread may call only what it is listed: a full-catalog tool is as unavailable to it as one that does
+    // not exist. Other servers keep their own answer for a tool a thread is not listed, so this stays here.
+    (threadId, name, args, context) => {
+      const stable = compactThreads.has(threadId)
+      if (stable && !compact.some(tool => tool.name === name)) return Promise.resolve({ isError: true, content: [{ type: 'text', text: unavailable }] })
+      return invoke(threadId, name, args, context, stable)
+    },
+    threadId => compactThreads.has(threadId) ? compact : definitions)
+    this.compactThreads = compactThreads
   }
-  override async mcpServer(threadId: string): Promise<BrowserMcpServer> {
+  override async mcpServer(threadId: string, options?: BrowserServerOptions): Promise<BrowserMcpServer> {
     if (!threadId) throw new Error('Browser tools are unavailable.')
+    if (options?.compact) this.compactThreads.add(threadId)
+    else this.compactThreads.delete(threadId)
     try { return { ...await super.mcpServer(threadId), name: BROWSER_MCP_SERVER } }
     catch { throw new Error('Browser tools are unavailable.') }
   }

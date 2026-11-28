@@ -28,8 +28,12 @@ export const DOWNLOAD_BLOCKED = 'Downloads are blocked here. Open this page exte
 /** The permissions a page might ask for, all refused (ADR-0198, as the desktop's browser refuses them). */
 /** Every name the Permissions API knows; a name an older Chromium doesn't know is skipped. */
 const REFUSED_PERMISSIONS = ['accelerometer', 'ambient-light-sensor', 'background-fetch', 'background-sync', 'camera', 'captured-surface-control', 'clipboard-read', 'clipboard-write', 'display-capture', 'fullscreen', 'geolocation', 'gyroscope', 'idle-detection', 'keyboard-lock', 'local-fonts', 'magnetometer', 'microphone', 'midi', 'nfc', 'notifications', 'payment-handler', 'periodic-background-sync', 'persistent-storage', 'pointer-lock', 'protected-media-identifier', 'screen-wake-lock', 'speaker-selection', 'storage-access', 'system-wake-lock', 'top-level-storage-access', 'web-app-installation', 'window-management']
-/** Asks Chromium itself not to call home: no updates, sync, reports or field trials while a host drives it. */
-const QUIET_FLAGS = ['--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-default-apps', '--disable-extensions', '--disable-domain-reliability', '--disable-breakpad', '--metrics-recording-only', '--no-pings', '--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication', '--password-store=basic', '--use-mock-keychain', '--mute-audio']
+/**
+ * Asks Chromium itself not to call home: no updates, sync, reports or field trials while a host drives it. It keeps no
+ * back-forward cache either, as the desktop's browser keeps none: a document the cache gives back keeps its script and
+ * its fields, which a typed secret's rules must not take for a new one (ADR-0222, November 27 amendment).
+ */
+const QUIET_FLAGS = ['--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--disable-component-update', '--disable-sync', '--disable-default-apps', '--disable-extensions', '--disable-domain-reliability', '--disable-breakpad', '--metrics-recording-only', '--no-pings', '--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication,BackForwardCache', '--password-store=basic', '--use-mock-keychain', '--mute-audio']
 /** The size a page starts at, as on the desktop, until a pane or the agent sets another. */
 export const HOST_PAGE_SIZE = { width: 1280, height: 800 } as const
 
@@ -473,6 +477,10 @@ export class HostBrowserPage {
       if (!frame) return
       if (frame.parentId) { this.blankUnsafeFrame(frame.id, frame.url ?? ''); return }
       this.mainFrame = frame.id ?? this.mainFrame
+      // A new document committed, shared or not: one that held a typed secret, or the agent's script, is gone (ADR-0220,
+      // decision 6). One the back-forward cache gives back is the document that was, with its script and its fields.
+      if (params.type === 'BackForwardCacheRestore') this.automation.documentRestored()
+      else this.automation.documentCommitted()
       const url = safeBrowserUrl(`${frame.url ?? ''}${frame.urlFragment ?? ''}`)
       if (url && url !== this.current.url) this.update({ url })
       this.refresh()
@@ -532,8 +540,8 @@ export class HostBrowserPage {
 export class HostPageAutomation extends PageAutomation {
   constructor(debuggerFor: PageDebugger, private readonly host: HostBrowserPage) { super(debuggerFor) }
   /** An agent's click, typing or scroll can change the title with no event for it, so the page reads it again. */
-  override async input(action: PageInput, guard: () => void): Promise<void> {
-    try { await super.input(action, guard) } finally { this.host.refresh() }
+  override async input(action: PageInput, guard: () => void): Promise<string | undefined> {
+    try { return await super.input(action, guard) } finally { this.host.refresh() }
   }
   protected picture(frame: PageFrame): PagePicture {
     return { empty: frame.data.length === 0 || frame.width === 0 || frame.height === 0, width: frame.width, height: frame.height, dataUrl: `data:image/${frame.format};base64,${frame.data}` }

@@ -1910,10 +1910,6 @@ msgstr ""
 msgid "Add to reply"
 msgstr ""
 
-#: src/renderer/src/agents/MarkupEditor.tsx
-msgid "Add to reply ({modKey}+Enter)"
-msgstr ""
-
 #. Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Add Ultrathink to prompt"
@@ -3003,6 +2999,11 @@ msgstr ""
 msgid "Closed"
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "closed a page"
+msgstr ""
+
 #: src/renderer/src/agents/requests/CloudIphoneRequest.tsx
 msgid "Cloud iPhone problem"
 msgstr ""
@@ -3509,6 +3510,11 @@ msgstr ""
 msgid "could not click in the page"
 msgstr ""
 
+#. A step in the browser line; starts lowercase.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not close a page"
+msgstr ""
+
 #: src/renderer/src/agents/addProject.ts
 msgid "Could not confirm the new project. Choose the folder again to check; it will not be added twice."
 msgstr ""
@@ -3586,6 +3592,11 @@ msgstr ""
 #. {place} is "this computer" or a saved host's name.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Could not list the folders on {place}. Nothing was changed. Try again."
+msgstr ""
+
+#. A step in the browser line; starts lowercase. Servers are web servers running on this computer.
+#: src/renderer/src/agents/browserLine.ts
+msgid "could not list the local servers"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -3922,6 +3933,11 @@ msgstr ""
 #. Sotto passed on only the first {kib} KiB of a check's reply.
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "cut at {kib} KiB"
+msgstr ""
+
+#. Refuses a secret request; the agent is told and goes on without it.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Decline"
 msgstr ""
 
 #: src/renderer/src/agents/permissionPresentation.tsx
@@ -4416,6 +4432,12 @@ msgstr ""
 
 #: src/renderer/src/agents/babysitting.ts
 msgid "Ended. Sotto could not read #{number} from GitHub for about 16 minutes."
+msgstr ""
+
+#. {0} is what the agent asked for, such as API key.
+#. placeholder {0}: missing[0]!.label
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Enter {0}, or decline the card."
 msgstr ""
 
 #: src/renderer/src/agents/MessageScrubber.tsx
@@ -5605,6 +5627,11 @@ msgstr ""
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
 msgid "listed its pages"
+msgstr ""
+
+#. A step in the browser line; starts lowercase. Servers are web servers running on this computer.
+#: src/renderer/src/agents/browserLine.ts
+msgid "listed the local servers"
 msgstr ""
 
 #: src/renderer/src/agents/FilePicker.tsx
@@ -6868,8 +6895,10 @@ msgstr ""
 msgid "Open Settings at APIs and your own model servers"
 msgstr ""
 
+#. Opens the page the agent named for getting a secret, in the user’s browser.
 #: src/renderer/src/agents/AntigravityConnection.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
 msgid "Open sign-in page"
 msgstr ""
 
@@ -7404,7 +7433,9 @@ msgstr ""
 msgid "Price not given"
 msgstr ""
 
+#. Tags a card whose values the agent never sees.
 #: src/renderer/src/agents/GitActionButton.tsx
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
 msgid "Private"
 msgstr ""
 
@@ -8199,6 +8230,11 @@ msgstr ""
 msgid "Save choices"
 msgstr ""
 
+#. Sends the values a secret request asked for to Sotto, not to the agent.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Save securely"
+msgstr ""
+
 #. {keyName} is the kind of key, such as Gemini API key.
 #: src/renderer/src/agents/AntigravityConnection.tsx
 msgid "Save this {keyName} and connect Antigravity"
@@ -8227,6 +8263,7 @@ msgstr ""
 #. The Use this folder button while the chosen folder is saved.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Saving…"
 msgstr ""
@@ -9183,6 +9220,10 @@ msgstr ""
 msgid "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
 msgstr ""
 
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto did not answer. Nothing was saved; try again."
+msgstr ""
+
 #. {provider} is a provider's name or "The provider"; {wanted} is the chosen model, effort or permission mode.
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."
@@ -9212,6 +9253,24 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto is starting it and sending the brief."
+msgstr ""
+
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps it for the agent’s own Sotto tools to use once, and asks you before typing it on any page. The agent and its provider never see it."
+msgstr ""
+
+#. {site} is the site of the sign-in page, such as dashboard.stripe.com.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps it for the agent’s own Sotto tools to use once, and types it only on {site}. The agent and its provider never see it."
+msgstr ""
+
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps them for the agent’s own Sotto tools to use once each, and asks you before typing them on any page. The agent and its provider never see them."
+msgstr ""
+
+#. {site} is the site of the sign-in page, such as dashboard.stripe.com.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto keeps them for the agent’s own Sotto tools to use once each, and types them only on {site}. The agent and its provider never see them."
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
@@ -9298,6 +9357,14 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Sotto will not send your last prompt twice. Reconnect to check it."
+msgstr ""
+
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto writes each to a file only you can read, for the agent’s commands, and deletes them within an hour. They stay out of the chat, but anything those commands print reaches the agent and its provider."
+msgstr ""
+
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Sotto writes it to a file only you can read, for the agent’s commands, and deletes it within an hour. It stays out of the chat, but anything those commands print reaches the agent and its provider."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
@@ -11152,6 +11219,11 @@ msgstr ""
 msgid "Using the cloud iPhone"
 msgstr ""
 
+#. Labels the one field of a secret request whose title already names it.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Value"
+msgstr ""
+
 #. A kind of suggested next prompt: check the work.
 #: src/renderer/src/agents/NextList.tsx
 msgid "Verify"
@@ -11306,6 +11378,11 @@ msgstr ""
 #. {prompt} is your last message to the thread.
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Waiting to start on “{prompt}”."
+msgstr ""
+
+#. {until} is a time of day, such as 14:32, when the card closes unanswered.
+#: src/renderer/src/agents/requests/SecretRequestCard.tsx
+msgid "Waiting until {until}"
 msgstr ""
 
 #. In the speed card of a thread on the user’s own model server: no token yet, and how long it has waited, such as 42s.

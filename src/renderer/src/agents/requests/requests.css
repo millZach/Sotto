@@ -160,3 +160,12 @@
 .agent-request[data-placement='composer'] .screenshot-input { gap: 12px; }
 .agent-request .screenshot-input__tools { margin-top: 0; }
 .agent-request .screenshot-previews { margin-top: 0; }
+
+/* A secret request (ADR-0219): values the agent never sees, typed on a card of their own. */
+.secret-request__tag { display: inline-flex; align-items: center; gap: 4px; }
+.secret-request__form { display: grid; gap: 12px; }
+.secret-request__field { display: grid; gap: 6px; min-width: 0; }
+.secret-request__field label { font-size: var(--tt-type-body); font-weight: 500; color: var(--tt-text); overflow-wrap: anywhere; }
+.secret-request__field .tt-input { width: 100%; min-width: 0; font-family: var(--tt-font-mono); }
+.secret-request__privacy { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.45; }
+.secret-request .agent-request__actions .tt-button svg { margin-left: 4px; }

@@ -39,6 +39,7 @@ import {
   MODS_ALL_OFF, MODS_CHANGED, MODS_LIST, MODS_MAKE, MODS_OPEN_FOLDER, MODS_RENDERER_ARGUMENT, MODS_REMOVE, MODS_REVEAL, modIdRequestSchema,
   modMakeRequestSchema, modMakeResultSchema, modRemoveResultSchema, modsAllOffSchema, modsListSchema, type ModsBridge,
 } from '../shared/mods'
+import { SECRET_REQUESTS_ANSWER, SECRET_REQUESTS_RENDERER_ARGUMENT, secretRequestAnswerResultSchema, secretRequestAnswerSchema, type SecretRequestsBridge } from '../shared/secretRequests'
 import { COORDINATION_CHANGED, COORDINATION_READ, COORDINATION_RENDERER_ARGUMENT, COORDINATION_REPLY_READ, coordinationChangedSchema, coordinationReadRequestSchema,
   coordinationReadSchema, coordinationReplyRequestSchema, coordinationReplySchema, type CoordinationBridge } from '../shared/threadCoordination'
 import {
@@ -202,7 +203,7 @@ import {
 import { settingsSchema } from '../shared/settings'
 import { pastePermissionNoticeCodeSchema, recoveryNoticeEventSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
 import {
-  E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema, E2E_HOST_SETUP_TOOL_CHANNEL, e2eHostSetupToolSchema, E2E_VISUAL_TOOL_CHANNEL, e2eVisualToolSchema, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eDelegationToolSchema, E2E_PLUGIN_TOOL_CHANNEL, e2ePluginToolSchema,
+  E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema, E2E_HOST_SETUP_TOOL_CHANNEL, e2eHostSetupToolSchema, E2E_VISUAL_TOOL_CHANNEL, e2eVisualToolSchema, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eDelegationToolSchema, E2E_PLUGIN_TOOL_CHANNEL, e2ePluginToolSchema, E2E_SECRET_TOOL_CHANNEL, e2eSecretToolSchema,
   E2E_SNAPSHOT_CHANNEL,
   E2E_TRIGGER_SHORTCUT_CHANNEL,
   e2eScenarioSchema,
@@ -524,6 +525,8 @@ export function createSottoBridge(
   modsEnabled = false,
   /** Scheduled tasks and playbooks (ADR-0218): only while the `scheduled-tasks` Owl feature is on. */
   scheduledTasksEnabled = false,
+  /** Secret requests' card (ADR-0219): only while the `secret-requests` Owl feature is on and this computer runs threads. */
+  secretRequestsEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -602,6 +605,10 @@ export function createSottoBridge(
       read: async request => invokeParsed(renderer, COORDINATION_READ, coordinationReadSchema, coordinationReadRequestSchema.parse(request)),
       reply: async request => invokeParsed(renderer, COORDINATION_REPLY_READ, coordinationReplySchema, coordinationReplyRequestSchema.parse(request)),
       onChanged: listener => subscribe(renderer, COORDINATION_CHANGED, coordinationChangedSchema, listener),
+    }) } : {}),
+    // A secret request's values go to main once, on their own channel, and nothing returned carries one (ADR-0219).
+    ...(secretRequestsEnabled ? { secretRequests: Object.freeze<SecretRequestsBridge>({
+      answer: async request => invokeParsed(renderer, SECRET_REQUESTS_ANSWER, secretRequestAnswerResultSchema, secretRequestAnswerSchema.parse(request)),
     }) } : {}),
     // Mods (ADR-0217): only while its Owl feature is on, so stable's window has no such bridge.
     ...(modsEnabled ? { mods: Object.freeze<ModsBridge>({
@@ -1095,7 +1102,8 @@ export function exposeRendererBridge(
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
       parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT),
       arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT), arguments_.includes(COORDINATION_RENDERER_ARGUMENT), arguments_.includes(MODS_RENDERER_ARGUMENT),
-      arguments_.includes(SCHEDULED_TASKS_RENDERER_ARGUMENT)))
+      arguments_.includes(SCHEDULED_TASKS_RENDERER_ARGUMENT),
+      arguments_.includes(SECRET_REQUESTS_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {
@@ -1128,6 +1136,7 @@ export function exposeE2EBridge(
     mediaTool: async (request: Parameters<NonNullable<SottoE2EBridge['mediaTool']>>[0]) => invokeParsed(renderer, E2E_MEDIA_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
     delegationTool: async (request: Parameters<NonNullable<SottoE2EBridge['delegationTool']>>[0]) => invokeParsed(renderer, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eDelegationToolSchema.parse(request)),
     pluginTool: async (request: Parameters<NonNullable<SottoE2EBridge['pluginTool']>>[0]) => invokeParsed(renderer, E2E_PLUGIN_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2ePluginToolSchema.parse(request)),
+    secretTool: async (request: Parameters<NonNullable<SottoE2EBridge['secretTool']>>[0]) => invokeParsed(renderer, E2E_SECRET_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eSecretToolSchema.parse(request)),
     agentEvent: async (event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]) => {
       const key = parseHostEntityKey(event.threadId)
       if (key === null) return invokeParsed(renderer, AGENT_E2E, voidSchema, event)

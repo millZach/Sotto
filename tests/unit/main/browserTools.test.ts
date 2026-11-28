@@ -1,15 +1,20 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { EventEmitter } from 'node:events'
-import { BaseWindow, WebContentsView, type BrowserWindow } from 'electron'
-import { BrowserService } from '../../../src/main/tools/browser'
+import { BaseWindow, session, WebContentsView, type BrowserWindow } from 'electron'
+import { BrowserService, type BrowserDependencies } from '../../../src/main/tools/browser'
+import { BrowserProfiles, ProfileProblem } from '../../../src/main/tools/browserProfiles'
+import { BrowserFiles } from '../../../src/main/tools/browserFiles'
+import { AGENT_DOWNLOAD_MS } from '../../../src/main/tools/browserTasks'
 import { BROWSER_COMMAND_DEADLINE_MS } from '../../../src/main/tools/browserAutomation'
+import { PageAutomation } from '../../../src/main/tools/pageAutomation'
 import { FilesService } from '../../../src/main/files/service'
 import type { ToolsResult } from '../../../src/shared/tools'
+import { browserEventSchema, type BrowserEvent } from '../../../src/shared/browser'
 import { deferred } from '../../fixtures/deferred'
 
 vi.mock('electron', async () => {
@@ -21,10 +26,13 @@ vi.mock('electron', async () => {
     capturePage = vi.fn(async () => ({ isEmpty: () => false, getSize: () => ({ width: 1280, height: 800 }), toDataURL: () => 'data:image/png;base64,YQ==', resize: () => ({ toJPEG: () => Buffer.from('thumbnail') }) }))
     getBackgroundThrottling = vi.fn(() => true)
     setBackgroundThrottling = vi.fn()
+    zoomFactor = 1
+    getZoomFactor() { return this.zoomFactor }
+    setZoomFactor(zoom: number) { this.zoomFactor = zoom }
     getURL() { return this.url }
     isDestroyed() { return this.destroyed }
     loadURL(url: string) { this.url = url; return Promise.resolve() }
-    setWindowOpenHandler = vi.fn(); focus = vi.fn()
+    setWindowOpenHandler = vi.fn(); focus = vi.fn(); openDevTools = vi.fn()
     close() { this.destroyed = true; this.emit('destroyed') }
   }
   class IsolatedSession extends EventEmitter {
@@ -33,6 +41,9 @@ vi.mock('electron', async () => {
     setPermissionRequestHandler = vi.fn(); setPermissionCheckHandler = vi.fn(); setDevicePermissionHandler = vi.fn()
     webRequest = { onBeforeRequest: vi.fn() }
     closeAllConnections = vi.fn().mockResolvedValue(undefined)
+    cookies = { set: vi.fn(async () => undefined) }
+    clearData = vi.fn(async () => undefined); clearStorageData = vi.fn(async () => undefined)
+    constructor(readonly partition = '') { super() }
   }
   const makeImage = (buffer: Buffer, width = 1280, height = 800) => ({
     isEmpty: () => false, getSize: () => ({ width, height }), toDataURL: () => `data:image/png;base64,${buffer.toString('base64')}`,
@@ -48,7 +59,7 @@ vi.mock('electron', async () => {
     showInactive = vi.fn()
     destroy = () => { this.destroyed = true; this.children.clear() }
   }
-  return { BaseWindow: vi.fn(CaptureWindow), screen: { getAllDisplays: () => [{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }] }, nativeImage: { createFromDataURL: vi.fn((data: string) => makeImage(Buffer.from(data.split(',')[1]!, 'base64'))), createFromBuffer: vi.fn((buffer: Buffer) => makeImage(buffer)) }, WebContentsView: vi.fn(class { webContents = new Contents(); bounds = { x: 0, y: 0, width: 1280, height: 800 }; setBounds = vi.fn((bounds: typeof this.bounds) => { this.bounds = bounds }); getBounds = () => this.bounds }), session: { fromPartition: () => new IsolatedSession() } }
+  return { BaseWindow: vi.fn(CaptureWindow), screen: { getAllDisplays: () => [{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }] }, nativeImage: { createFromDataURL: vi.fn((data: string) => makeImage(Buffer.from(data.split(',')[1]!, 'base64'))), createFromBuffer: vi.fn((buffer: Buffer) => makeImage(buffer)) }, WebContentsView: vi.fn(class { webContents = new Contents(); bounds = { x: 0, y: 0, width: 1280, height: 800 }; setBounds = vi.fn((bounds: typeof this.bounds) => { this.bounds = bounds }); getBounds = () => this.bounds }), session: { fromPartition: vi.fn((partition: string) => new IsolatedSession(partition)) } }
 })
 const unwrap = <T>(result: ToolsResult<T>): T => { if (!result.ok) throw new Error(JSON.stringify(result)); return result.value }
 const cleanup: (() => Promise<void>)[] = []
@@ -111,19 +122,19 @@ describe('browser service lifecycle', () => {
   })
 })
 
-async function browserFixture(withWindow = false, gone: ReadonlySet<string> = new Set(), byDefault: () => boolean = () => false) {
+async function browserFixture(withWindow = false, gone: ReadonlySet<string> = new Set(), byDefault: () => boolean = () => false, parity = false, extra: Partial<BrowserDependencies> = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-browser-actions-'))
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const files = new FilesService({ resolveBinding: threadId => gone.has(threadId) ? null : ({ threadId, projectId: 'p', workingDirectory: directory }), copyPath: vi.fn(), reveal: vi.fn() })
   const emit = vi.fn(), attached = new Set<WebContentsView>()
   const window = Object.assign(new EventEmitter(), { isDestroyed: () => false, isVisible: vi.fn(() => true), isMinimized: vi.fn(() => false), getContentSize: () => [1200, 800], webContents: Object.assign(new EventEmitter(), { getZoomFactor: () => 1, focus: vi.fn() }), contentView: { addChildView: (view: WebContentsView) => attached.add(view), removeChildView: (view: WebContentsView) => attached.delete(view) } }) as unknown as BrowserWindow
-  const service = new BrowserService({ files, getWindow: () => withWindow ? window : null, emit, openExternal: vi.fn(), destination: async () => 'embedded', byDefault, pointAtSomething: true })
+  const service = new BrowserService({ files, getWindow: () => withWindow ? window : null, emit, openExternal: vi.fn(), destination: async () => 'embedded', byDefault, pointAtSomething: true, ...parity ? { parity: true } : {}, ...extra })
   cleanup.push(async () => service.dispose())
   const owner = unwrap(await service.list({ threadId: 'a' })).workspace
   const target = { threadId: 'a', workspaceId: owner.workspaceId }
   const page = unwrap(await service.create({ ...target, url: 'http://localhost:4321/' }))
   const view = vi.mocked(WebContentsView).mock.results.at(-1)!.value as WebContentsView
-  return { service, target: { ...target, pageId: page.id }, view, emit, attached, window, files }
+  return { service, target: { ...target, pageId: page.id }, view, emit, attached, window, files, directory }
 }
 
 describe('browser agent boundaries', () => {
@@ -284,8 +295,8 @@ describe('browser agent boundaries', () => {
     const capture = unwrap(await service.capture(target))
     const original = vi.mocked(view.webContents.debugger.sendCommand).getMockImplementation()!
     const lookups = [
-      { element: { tag: 'button', role: '', name: 'Save', text: 'Save', selector: '#save' }, bounds: { x: 0, y: 0, width: 100, height: 40 } },
-      { element: { tag: 'button', role: '', name: 'Save anyway', text: 'Save anyway', selector: '#save-anyway' }, bounds: { x: 0, y: 0, width: 100, height: 40 } },
+      { element: { tag: 'button', role: '', name: 'Save', text: 'Save', id: 'save' }, bounds: { x: 0, y: 0, width: 100, height: 40 } },
+      { element: { tag: 'button', role: '', name: 'Save anyway', text: 'Save anyway', id: 'save-anyway' }, bounds: { x: 0, y: 0, width: 100, height: 40 } },
     ]
     vi.mocked(view.webContents.debugger.sendCommand).mockImplementation(async (...args) => args[0] === 'Runtime.evaluate' ? { result: { value: lookups.shift() ?? lookups[0] } } : original(...args))
     expect(await service.capture({ ...target, captureId: capture.captureId, point: { x: 10, y: 10 } })).toMatchObject({ ok: false, error: { code: 'blocked' } })
@@ -306,7 +317,7 @@ describe('browser agent boundaries', () => {
     const capture = unwrap(await service.capture(target))
     const command = vi.mocked(view.webContents.debugger.sendCommand)
     const original = command.getMockImplementation()!
-    command.mockImplementation(async (...args) => args[0] === 'Runtime.evaluate' ? { result: { value: { element: { tag: 'button', role: '', name: 'Save', text: 'Save', selector: '#save' }, bounds: { x: 10, y: 20, width: 100, height: 40 } } } } : original(...args))
+    command.mockImplementation(async (...args) => args[0] === 'Runtime.evaluate' ? { result: { value: { element: { tag: 'button', role: '', name: 'Save', text: 'Save', id: 'save' }, bounds: { x: 10, y: 20, width: 100, height: 40 } } } } : original(...args))
     command.mockClear()
     const selected = unwrap(await service.capture({ ...target, captureId: capture.captureId, point: { x: 30, y: 30 } }))
     expect(selected).toMatchObject({ image: capture.image, url: capture.url, element: { name: 'Save', selector: '#save' } })
@@ -322,6 +333,18 @@ describe('browser agent boundaries', () => {
     expect(result.image?.split(',')[1]).toBe(result.task.evidence?.[0]?.image.split(',')[1])
     expect(result.image?.split(',')[1]).toBe(result.task.thumbnail?.split(',')[1])
     expect(vi.mocked(view.webContents.debugger.sendCommand).mock.calls.filter(call => call[0] === 'Page.captureScreenshot')).toHaveLength(1)
+  })
+
+  it('names the read each catalog has when it pictures no page that holds a secret', async () => {
+    // The stable catalog reads a page with inspect, the full one with snapshot (ADR-0220).
+    for (const [parity, read] of [[false, 'inspect'], [true, 'snapshot']] as const) {
+      const { service, target } = await browserFixture(false, new Set(), () => false, parity)
+      unwrap(await service.share({ ...target, enabled: true }))
+      const task = unwrap(await service.startTask({ ...target, description: 'Check screenshot' }))
+      const shows = vi.spyOn(PageAutomation.prototype, 'showsSecret').mockResolvedValue(true)
+      const refused = await service.action({ ...target, taskId: task.id, action: { type: 'screenshot' } }).finally(() => shows.mockRestore())
+      expect(refused).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining(`no picture of it goes to you while it holds one. Use ${read}, whose words are masked.`) } })
+    }
   })
 
   it.each([
@@ -1074,5 +1097,753 @@ describe('a thread file page (ADR-0085, October 27 amendment)', () => {
     expect(scheme).toMatchObject({ ok: false, error: { code: 'invalid-request', message: expect.stringContaining('or an HTML file in this thread\'s folder') } })
     expect(JSON.stringify([away, data, scheme])).not.toContain('Use the tool\'s documented arguments')
     expect(unwrap(await service.list({ threadId: 'a' })).pages.length).toBe(before)
+  })
+})
+
+describe('the pane\'s full-browser requests (ADR-0220, decision 1)', () => {
+  it('are refused in main while the feature is off, whatever the window sends', async () => {
+    const { service, target } = await browserFixture()
+    for (const result of [
+      await service.answerDialog({ ...target, accept: true }),
+      await service.emulate({ ...target, appearance: 'dark' }),
+      await service.stopRecording(target),
+      await service.localServers({ threadId: target.threadId, workspaceId: target.workspaceId }),
+      await service.devtools(target),
+    ]) expect(result).toMatchObject({ ok: false, error: { code: 'unavailable', message: expect.stringContaining('not on') } })
+  })
+})
+
+describe('developer tools for the user (ADR-0220)', () => {
+  it('opens Chromium\'s own in a window of their own only with the full catalog on', async () => {
+    const off = await browserFixture()
+    expect(await off.service.devtools(off.target)).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    expect(vi.mocked(off.view.webContents.openDevTools)).not.toHaveBeenCalled()
+    const on = await browserFixture(false, new Set(), () => false, true)
+    expect(unwrap(await on.service.devtools(on.target))).toBeUndefined()
+    expect(vi.mocked(on.view.webContents.openDevTools)).toHaveBeenCalledWith({ mode: 'detach', activate: true })
+    expect(await on.service.devtools({ ...on.target, threadId: 'b' })).toMatchObject({ ok: false })
+  })
+})
+
+describe('browser profiles in the service (ADR-0221)', () => {
+  const found = { id: '0123456789abcdef', browser: 'Firefox' as const, name: 'default-release', folder: 'C:/Users/rez/AppData/Roaming/Mozilla/Firefox/Profiles/x.default-release' }
+  async function withProfiles(byDefault = () => false, copy = vi.fn(async () => ({ imported: 12, skipped: 3 }))) {
+    const folder = await mkdtemp(join(tmpdir(), 'sotto-profiles-'))
+    cleanup.push(() => rm(folder, { recursive: true, force: true }))
+    const profiles = new BrowserProfiles(join(folder, 'browser-profiles.json'))
+    const fixture = await browserFixture(false, new Set(), byDefault, true, { profiles, browserImport: { sources: async () => [found], copy } })
+    return { ...fixture, profiles, copy }
+  }
+
+  it('is refused in words with the full catalog off, and lists other browsers by name only', async () => {
+    const off = await browserFixture()
+    expect(await off.service.profiles({})).toMatchObject({ ok: false, error: { code: 'unavailable', message: expect.stringContaining('not on') } })
+    expect(await off.service.create({ threadId: off.target.threadId, workspaceId: off.target.workspaceId, url: 'http://localhost:1/', profileId: '6f1c1d0e-6a2b-4d39-9c43-1b0b9e1f4a11' })).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    const { service } = await withProfiles()
+    expect(unwrap(await service.profiles({}))).toEqual({ profiles: [], sources: [{ id: found.id, browser: 'Firefox', name: 'default-release' }] })
+  })
+
+  it('copies the chosen browser\'s sign-ins into the new profile\'s own session, once', async () => {
+    const { service, copy } = await withProfiles()
+    const added = unwrap(await service.addProfile({ name: 'Work', importFrom: found.id }))
+    expect(added).toMatchObject({ profile: { name: 'Work' }, imported: 12, skipped: 3 })
+    const [folder, target] = copy.mock.calls[0]! as unknown as [string, unknown]
+    expect(folder).toBe(found.folder)
+    const partitionOf = vi.mocked(session.fromPartition).mock.results.at(-1)!.value as { partition: string; cookies: unknown }
+    expect(partitionOf.partition).toBe(`persist:sotto-profile-${added.profile.id}`)
+    expect(target).toBe(partitionOf.cookies)
+    expect(await service.addProfile({ name: 'work' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('already has that name') } })
+    expect(await service.addProfile({ name: 'Other', importFrom: 'ffffffffffffffff' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('no longer on this computer') } })
+  })
+
+  it('leaves no profile behind when the copy fails', async () => {
+    const { service, profiles } = await withProfiles(() => false, vi.fn(async () => { throw new Error('database is locked') }))
+    const result = await service.addProfile({ name: 'Work', importFrom: found.id })
+    expect(result).toMatchObject({ ok: false, error: { code: 'unavailable', message: expect.stringContaining('Close Firefox') } })
+    expect(JSON.stringify(result)).not.toContain('locked')
+    expect(await profiles.list()).toEqual([])
+  })
+
+  it('opens a page in a profile on its persistent session, private even under the grant', async () => {
+    const { service, target } = await withProfiles(() => true)
+    const { profile } = unwrap(await service.addProfile({ name: 'Work' }))
+    const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: profile.id }))
+    expect(page.profile).toEqual(profile)
+    expect(page.sharedOrigin).toBeNull()
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { partition: string }
+    expect(used.partition).toBe(`persist:sotto-profile-${profile.id}`)
+    // The page opened without a profile is shared by the grant as before.
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.find(other => other.id === target.pageId)?.sharedOrigin).toBe('http://localhost:4321')
+    expect(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://a.example/', profileId: profile.id, device: 'iphone' })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+  })
+
+  it('never lets an agent open a page in a profile', async () => {
+    const { service, target } = await withProfiles()
+    const { profile } = unwrap(await service.addProfile({ name: 'Work' }))
+    const before = vi.mocked(WebContentsView).mock.calls.length
+    const asked = await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', description: 'Read mail', profileId: profile.id })
+    expect(asked).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    expect(vi.mocked(WebContentsView).mock.calls.length).toBe(before)
+    const opened = unwrap(await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', description: 'Read mail' }))
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.find(page => page.id === opened.task.pageId)?.profile ?? null).toBeNull()
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { partition: string }
+    expect(used.partition).not.toContain('sotto-profile-')
+  })
+
+  it('refuses to remove a profile while its list cannot be read, before closing a page or deleting anything', async () => {
+    const folder = await mkdtemp(join(tmpdir(), 'sotto-profiles-'))
+    cleanup.push(() => rm(folder, { recursive: true, force: true }))
+    const work = { id: '6f1c1d0e-6a2b-4d39-9c43-1b0b9e1f4a11', name: 'Work' }
+    const file = join(folder, 'browser-profiles.json')
+    await writeFile(file, JSON.stringify({ version: 1, profiles: [work, { id: 'broken' }] }))
+    const profiles = new BrowserProfiles(file)
+    const { service, target } = await browserFixture(false, new Set(), () => false, true, { profiles, browserImport: { sources: async () => [], copy: vi.fn() } })
+    const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: work.id }))
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { clearData: ReturnType<typeof vi.fn> }
+    expect(await service.removeProfile({ id: work.id })).toMatchObject({ ok: false, error: { message: expect.stringContaining('could not read its list of browser profiles') } })
+    expect(used.clearData).not.toHaveBeenCalled()
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.map(other => other.id)).toContain(page.id)
+    expect(await service.addProfile({ name: 'Personal' })).toMatchObject({ ok: false, error: { message: expect.stringContaining('could not read') } })
+    expect(await readFile(file, 'utf8')).toContain('"broken"')
+  })
+
+  it('takes a profile off its list before deleting its data, so a list that fails to change keeps the sign-ins', async () => {
+    const work = { id: '6f1c1d0e-6a2b-4d39-9c43-1b0b9e1f4a11', name: 'Work' }
+    // The list reads, and fails as it is written: another Sotto changed it meanwhile.
+    const profiles = { list: async () => [work], find: async (id: string) => id === work.id ? work : undefined, writable: async () => undefined,
+      remove: async () => { throw new ProfileProblem('Sotto could not read its list of browser profiles, so it changes nothing there and every profile keeps its sign-ins. Restart Sotto to try again.') },
+      add: vi.fn(), sweepPartitions: vi.fn() } as unknown as BrowserProfiles
+    const { service, target } = await browserFixture(false, new Set(), () => false, true, { profiles, browserImport: { sources: async () => [], copy: vi.fn() } })
+    unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: work.id }))
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { clearData: ReturnType<typeof vi.fn> }
+    expect(await service.removeProfile({ id: work.id })).toMatchObject({ ok: false, error: { message: expect.stringContaining('keeps its sign-ins') } })
+    expect(used.clearData).not.toHaveBeenCalled()
+  })
+
+  it('closes a removed profile\'s pages and deletes its data', async () => {
+    const { service, target, emit } = await withProfiles()
+    const { profile } = unwrap(await service.addProfile({ name: 'Work' }))
+    const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: profile.id }))
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { clearData: ReturnType<typeof vi.fn> }
+    expect(unwrap(await service.removeProfile({ id: profile.id })).profiles).toEqual([])
+    expect(emit).toHaveBeenCalledWith({ type: 'closed', threadId: target.threadId, workspaceId: target.workspaceId, pageId: page.id })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.map(other => other.id)).toEqual([target.pageId])
+    expect(used.clearData).toHaveBeenCalled()
+    expect(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: profile.id })).toMatchObject({ ok: false, error: { message: expect.stringContaining('was removed') } })
+  })
+})
+
+describe('the full browser catalog in the service (ADR-0220)', () => {
+  it('refuses a full-catalog action while the catalog is off, and says what there is', async () => {
+    const { service, target } = await browserFixture()
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Check the menu' }))
+    expect(await service.action({ ...target, taskId: task.id, action: { type: 'hover', selector: '#menu' } })).toMatchObject({ ok: false, error: { code: 'invalid-request', message: expect.stringContaining('no hover action') } })
+    expect(await service.action({ ...target, taskId: task.id, action: { type: 'click', ref: 'e1' } })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+  })
+
+  it('closes a page the agent opened in the background, and never one the user opened', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => false, true)
+    expect(await service.agentClose(target)).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('opened by the user') } })
+    const opened = unwrap(await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, port: 4555, path: '/', description: 'Open the second tab', background: true }))
+    expect(opened.task.background).toBe(true)
+    expect(opened.task.pendingAction?.action).toEqual({ type: 'navigate', url: 'http://localhost:4555/' })
+    const listed = unwrap(await service.list({ threadId: target.threadId })).pages.find(page => page.id === opened.task.pageId)
+    expect(listed).toMatchObject({ agentOpened: true, background: true })
+    expect(unwrap(await service.agentClose({ threadId: target.threadId, workspaceId: target.workspaceId, pageId: opened.task.pageId }))).toEqual({ closed: opened.task.pageId })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages.map(page => page.id)).toEqual([target.pageId])
+  })
+
+  // Uploads give the page private copies made when the agent asked (ADR-0220, decision 5, as amended by ADR-0222).
+  const uploadFixture = async () => {
+    const store = await mkdtemp(join(tmpdir(), 'sotto-browser-files-'))
+    cleanup.push(() => rm(store, { recursive: true, force: true }))
+    const browserFiles = new BrowserFiles(join(store, 'browser-files'))
+    const fixture = await browserFixture(false, new Set(), () => true, true, { browserFiles })
+    // The page's #file is a file input.
+    const send = vi.mocked(fixture.view.webContents.debugger.sendCommand)
+    const plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => method === 'DOM.describeNode' ? { node: { backendNodeId: 7, nodeName: 'INPUT', attributes: ['id', 'file', 'type', 'file'] } } : plain(method, params))
+    unwrap(await fixture.service.share({ ...fixture.target, enabled: true }))
+    const task = unwrap(await fixture.service.startTask({ ...fixture.target, description: 'Attach the report' }))
+    const given = (): string[] | undefined => (send.mock.calls.find(([method]) => method === 'DOM.setFileInputFiles')?.[1] as { files?: string[] } | undefined)?.files
+    return { ...fixture, store, browserFiles, task, given }
+  }
+
+  it('asks before every upload even under the grant, naming the files, and refuses one outside the thread before asking', async () => {
+    const { service, target, directory, task, given, store } = await uploadFixture()
+    await writeFile(join(directory, 'report.pdf'), 'pdf')
+    const outside = await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: [join(directory, '..', 'elsewhere.txt')] } })
+    expect(outside).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    expect(unwrap(await service.tasks({ threadId: target.threadId }))[0]?.pendingAction).toBeNull()
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: ['report.pdf'] } }))
+    expect(asked.approvalRequired).toBe(true)
+    expect(asked.task.pendingAction?.description).toContain('a copy of this file, made when the agent asked: report.pdf')
+    // The approval is only ever once: the thread's grant never covers an upload.
+    const request = { ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true }
+    expect(await service.answerAction({ ...request, forThread: true })).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('asks every time') } })
+    unwrap(await service.answerAction(request))
+    const files = given()!
+    expect(files).toHaveLength(1)
+    // The page gets Sotto's copy in its private folder, never the thread's own file.
+    expect(files[0]!.startsWith(store)).toBe(true)
+    expect(files[0]!.endsWith('report.pdf')).toBe(true)
+    expect(await readFile(files[0]!, 'utf8')).toBe('pdf')
+  })
+
+  it('gives the copy made when the agent asked, whatever the thread\'s file became before Allow', async () => {
+    const { service, target, directory, task, given } = await uploadFixture()
+    await writeFile(join(directory, 'report.pdf'), 'the report')
+    await writeFile(join(directory, '..', `secret-${task.id}.txt`), 'not the thread\'s')
+    cleanup.push(() => rm(join(directory, '..', `secret-${task.id}.txt`), { force: true }))
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: ['report.pdf'] } }))
+    // Between asking and Allow the file is swapped for a link to a file outside the thread's folder.
+    await rm(join(directory, 'report.pdf'))
+    let linked = true
+    await symlink(join(directory, '..', `secret-${task.id}.txt`), join(directory, 'report.pdf'), 'file').catch(() => { linked = false })
+    if (!linked) await writeFile(join(directory, 'report.pdf'), 'not the thread\'s')
+    unwrap(await service.answerAction({ ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true }))
+    expect(await readFile(given()![0]!, 'utf8')).toBe('the report')
+  })
+
+  it('refuses at request time a file that is a link out of the thread\'s folder', async () => {
+    const { service, target, directory, task } = await uploadFixture()
+    const outside = join(directory, '..', `outside-${task.id}`)
+    await mkdir(outside)
+    await writeFile(join(outside, 'secret.txt'), 'elsewhere')
+    cleanup.push(() => rm(outside, { recursive: true, force: true }))
+    // A file link needs a privilege on Windows; a folder junction does not, and leads out the same way.
+    const file = await symlink(join(outside, 'secret.txt'), join(directory, 'link.txt'), 'file').then(() => true, () => false)
+    await symlink(outside, join(directory, 'linked'), 'junction')
+    for (const path of [...file ? ['link.txt'] : [], join('linked', 'secret.txt')]) {
+      expect(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: [path] } })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+      expect(unwrap(await service.tasks({ threadId: target.threadId }))[0]?.pendingAction).toBeNull()
+    }
+  })
+
+  it('gives the copy made when the agent asked after its folder is swapped for a junction out', async () => {
+    const { service, target, directory, task, given } = await uploadFixture()
+    await mkdir(join(directory, 'docs'))
+    await writeFile(join(directory, 'docs', 'report.pdf'), 'the report')
+    const outside = join(directory, '..', `swap-${task.id}`)
+    await mkdir(outside)
+    await writeFile(join(outside, 'report.pdf'), 'not the thread\'s')
+    cleanup.push(() => rm(outside, { recursive: true, force: true }))
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: [join('docs', 'report.pdf')] } }))
+    await rm(join(directory, 'docs'), { recursive: true })
+    await symlink(outside, join(directory, 'docs'), 'junction')
+    unwrap(await service.answerAction({ ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true }))
+    expect(await readFile(given()![0]!, 'utf8')).toBe('the report')
+  })
+
+  it('refuses at Allow when the private copy no longer matches what was shown', async () => {
+    const { service, target, directory, task, given, store } = await uploadFixture()
+    await writeFile(join(directory, 'report.pdf'), 'the report')
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: ['report.pdf'] } }))
+    // Something changes Sotto's own copy before Allow.
+    const copies: string[] = []
+    const walk = async (folder: string): Promise<void> => { for (const entry of await readdir(folder, { withFileTypes: true })) { const path = join(folder, entry.name); if (entry.isDirectory()) await walk(path); else copies.push(path) } }
+    await walk(store)
+    const copy = copies.find(path => path.endsWith('report.pdf'))!
+    await writeFile(copy, 'changed')
+    expect(await service.answerAction({ ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true })).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('changed after you were asked') } })
+    expect(given()).toBeUndefined()
+  })
+
+  it('deletes the private copies when the user declines', async () => {
+    const { service, target, directory, task, store } = await uploadFixture()
+    await writeFile(join(directory, 'report.pdf'), 'the report')
+    const asked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'upload', selector: '#file', paths: ['report.pdf'] } }))
+    unwrap(await service.answerAction({ ...target, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: false }))
+    const copies: string[] = []
+    const walk = async (folder: string): Promise<void> => { for (const entry of await readdir(folder, { withFileTypes: true }).catch(() => [])) { const path = join(folder, entry.name); if (entry.isDirectory()) await walk(path); else copies.push(path) } }
+    await vi.waitFor(async () => { copies.length = 0; await walk(store); expect(copies).toEqual([]) })
+  })
+
+  it('holds the agent back for a moment after the user’s own input, and lets it read meanwhile', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Press Enter' }))
+    view.webContents.emit('input-event', {}, { type: 'mouseDown' })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.userActive).toBe(true)
+    expect(await service.action({ ...target, taskId: task.id, action: { type: 'key', key: 'Enter' } })).toMatchObject({ ok: false, error: { code: 'busy', message: expect.stringContaining('The user is using this page') } })
+    expect((await service.action({ ...target, taskId: task.id, action: { type: 'inspect' } })).ok).toBe(true)
+    // A pointer only passing over the page is not taking it over.
+    await new Promise(done => setTimeout(done, 800))
+    view.webContents.emit('input-event', {}, { type: 'mouseMove' })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.userActive).toBe(false)
+  })
+})
+
+describe('page zoom in the service (ADR-0222)', () => {
+  it('zooms a page in steps, puts it back at 100%, and is refused with the full catalog off', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => false, true)
+    expect(unwrap(await service.zoom({ ...target, zoom: 'in' })).zoom).toBe(1.1)
+    expect(view.webContents.getZoomFactor()).toBe(1.1)
+    expect(unwrap(await service.zoom({ ...target, zoom: 'in' })).zoom).toBe(1.25)
+    expect(unwrap(await service.zoom({ ...target, zoom: 'reset' })).zoom).toBe(1)
+    expect(unwrap(await service.zoom({ ...target, zoom: 'out' })).zoom).toBe(0.9)
+    const off = await browserFixture()
+    expect(await off.service.zoom({ ...off.target, zoom: 'in' })).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+
+  it('zooms on Ctrl with =, - and 0 and on Ctrl with the wheel, and keeps those keys from the page', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => false, true)
+    const key = (input: Partial<Electron.Input>): ReturnType<typeof vi.fn> => {
+      const preventDefault = vi.fn()
+      view.webContents.emit('before-input-event', { preventDefault }, { type: 'keyDown', control: false, meta: false, alt: false, shift: false, key: '', code: '', ...input })
+      return preventDefault
+    }
+    expect(key({ control: true, key: '=' })).toHaveBeenCalled()
+    expect(view.webContents.getZoomFactor()).toBe(1.1)
+    expect(key({ meta: true, key: '-' })).toHaveBeenCalled()
+    expect(view.webContents.getZoomFactor()).toBe(1)
+    key({ control: true, code: 'NumpadAdd', key: '+' }); key({ control: true, key: '+' })
+    expect(view.webContents.getZoomFactor()).toBe(1.25)
+    expect(key({ control: true, key: '0' })).toHaveBeenCalled()
+    expect(view.webContents.getZoomFactor()).toBe(1)
+    // Alt with them, or a plain key, is the page's.
+    expect(key({ control: true, alt: true, key: '=' })).not.toHaveBeenCalled()
+    expect(key({ key: '=' })).not.toHaveBeenCalled()
+    expect(view.webContents.getZoomFactor()).toBe(1)
+    view.webContents.emit('zoom-changed', {}, 'out')
+    expect(view.webContents.getZoomFactor()).toBe(0.9)
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.zoom).toBe(0.9)
+  })
+
+  it('lapses an action waiting for the user when the page zooms, since its point moved', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => false, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Press Save' }))
+    const pending = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    expect(await service.answerAction({ ...target, taskId: task.id, actionId: pending.task.pendingAction!.id, allow: true })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+  })
+
+  it('takes a zoom as the site\'s by its host name, as Chromium does, so another port on it lapses too', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => false, true)
+    const waiting = async (url: string) => {
+      const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url }))
+      const at = { ...target, pageId: page.id }
+      unwrap(await service.share({ ...at, enabled: true }))
+      const task = unwrap(await service.startTask({ ...at, description: 'Press Save' }))
+      const pending = unwrap(await service.action({ ...at, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+      return { ...at, taskId: task.id, actionId: pending.task.pendingAction!.id }
+    }
+    // The fixture's page is on localhost:4321. Chromium zooms localhost:5173 with it, and 127.0.0.1 not.
+    const otherPort = await waiting('http://localhost:5173/'), otherHost = await waiting('http://127.0.0.1:4321/')
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    expect(await service.answerAction({ ...otherPort, allow: true })).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    expect((await service.answerAction({ ...otherHost, allow: true })).ok).toBe(true)
+  })
+
+  it('makes the snapshot refs of every page on the zoomed host stale, another port\'s included, and leaves another host\'s', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    const open = async (url: string) => {
+      const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url }))
+      return { at: { ...target, pageId: page.id }, view: vi.mocked(WebContentsView).mock.results.at(-1)!.value as WebContentsView }
+    }
+    const pages = [{ at: target, view }, await open('http://localhost:5173/'), await open('http://127.0.0.1:4321/')]
+    const clickRef = async (at: typeof target): Promise<string> => {
+      const task = unwrap(await service.startTask({ ...at, description: 'Press Save' }))
+      const result = await service.action({ ...at, taskId: task.id, action: { type: 'click', ref: 'e1' } })
+      unwrap(await service.finishTask({ ...at, taskId: task.id, status: 'failed', summary: 'Checked the ref.', unchecked: [] }))
+      return result.ok ? 'ok' : result.error.message
+    }
+    for (const page of pages) {
+      const send = vi.mocked(page.view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+      send.mockImplementation(async (method: string, params?: object) => method === 'Accessibility.getFullAXTree' ? { nodes: [{ nodeId: '1', role: { value: 'button' }, name: { value: 'Save' }, backendDOMNodeId: 7 }] } : plain(method, params))
+      unwrap(await service.share({ ...page.at, enabled: true }))
+      const task = unwrap(await service.startTask({ ...page.at, description: 'Read the page' }))
+      expect(unwrap(await service.action({ ...page.at, taskId: task.id, action: { type: 'snapshot' } })).output).toContain('[ref=e1]')
+      unwrap(await service.finishTask({ ...page.at, taskId: task.id, status: 'completed', summary: 'Read it.', unchecked: [] }))
+    }
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    for (const page of pages.slice(0, 2)) expect(await clickRef(page.at)).toContain('not in your latest snapshot')
+    expect(await clickRef(pages[2]!.at)).not.toContain('not in your latest snapshot')
+  })
+
+  it('keeps an agent\'s viewport in CSS pixels at the page\'s zoom', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Check the layout' }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    unwrap(await service.zoom({ ...target, zoom: 'in' }))
+    expect(view.webContents.getZoomFactor()).toBe(1.75)
+    const override = () => vi.mocked(view.webContents.debugger.sendCommand).mock.calls.filter(([method]) => method === 'Emulation.setDeviceMetricsOverride').at(-1)?.[1]
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'viewport', width: 1280, height: 800 } }))
+    expect(override()).toEqual({ width: 2240, height: 1400, deviceScaleFactor: 1, mobile: false })
+    // The user zooms back: the override follows, so the page still lays out at 1280 by 800.
+    unwrap(await service.zoom({ ...target, zoom: 'reset' }))
+    expect(override()).toEqual({ width: 1280, height: 800, deviceScaleFactor: 1, mobile: false })
+  })
+})
+
+/** Electron's DownloadItem as the service is handed one in `will-download`. */
+class ServiceDownloadItem extends EventEmitter {
+  savePath = ''; paused = false; cancelled = false
+  constructor(private readonly name: string, private readonly address = 'https://files.example/report.pdf') { super() }
+  getURL(): string { return this.address }
+  getFilename(): string { return this.name }
+  getTotalBytes(): number { return 4 }
+  getReceivedBytes(): number { return 0 }
+  setSavePath(path: string): void { this.savePath = path }
+  pause(): void { this.paused = true }
+  resume(): void { this.paused = false }
+  cancel(): void { this.cancelled = true }
+}
+
+describe('downloads in the service (ADR-0222)', () => {
+  const withDownloads = async (byDefault: () => boolean = () => false, gone: ReadonlySet<string> = new Set(), extra: Partial<BrowserDependencies> = {}) => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-service-downloads-'))
+    cleanup.push(() => rm(root, { recursive: true, force: true }))
+    const downloads = { pendingFolder: join(root, 'pending'), downloadsFolder: () => join(root, 'Downloads'), chooseSavePath: vi.fn(async () => null), openPath: vi.fn(async () => ''), showItemInFolder: vi.fn() }
+    const fixture = await browserFixture(false, gone, byDefault, true, { downloads, ...extra })
+    const isolated = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as EventEmitter
+    const started = (name: string): { item: ServiceDownloadItem; preventDefault: ReturnType<typeof vi.fn> } => {
+      const item = new ServiceDownloadItem(name), preventDefault = vi.fn()
+      isolated.emit('will-download', { preventDefault }, item, fixture.view.webContents)
+      return { item, preventDefault }
+    }
+    return { ...fixture, root, downloads, isolated, started }
+  }
+
+  it('holds a page\'s download for the user to place, lists it for the pane and tells the window', async () => {
+    const { service, target, started, root, emit } = await withDownloads()
+    const { item, preventDefault } = started('report.pdf')
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(item.paused).toBe(true)
+    expect(item.savePath.startsWith(join(root, 'pending'))).toBe(true)
+    const [listed] = unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))
+    expect(listed).toMatchObject({ file: 'report.pdf', state: 'asking', host: 'files.example', byAgent: false, pageId: target.pageId })
+    expect(emit).toHaveBeenCalledWith({ type: 'download', download: expect.objectContaining({ id: listed!.id, state: 'asking' }) })
+    expect(unwrap(await service.download({ threadId: target.threadId, workspaceId: target.workspaceId, downloadId: listed!.id, action: 'cancel' }))).toMatchObject({ state: 'cancelled' })
+    expect(item.cancelled).toBe(true)
+  })
+
+  it('shows the page it stayed on after a link that downloads, not the download\'s address', async () => {
+    const { service, target, view, started } = await withDownloads()
+    const before = view.webContents.getURL()
+    view.webContents.emit('did-start-navigation', {}, 'https://files.example/report.pdf', false, true)
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]).toMatchObject({ url: 'https://files.example/report.pdf', status: 'loading' })
+    started('report.pdf')
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]).toMatchObject({ url: before, status: 'ready' })
+  })
+
+  it('keeps one thread\'s downloads from another', async () => {
+    const { service, target, started } = await withDownloads()
+    started('report.pdf')
+    const [listed] = unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))
+    expect(await service.download({ threadId: 'b', workspaceId: target.workspaceId, downloadId: listed!.id, action: 'save' })).toMatchObject({ ok: false })
+  })
+
+  it('marks a download an agent\'s click started, tells the agent its name, and never where it is', async () => {
+    const { service, target, view, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Download the report' }))
+    const send = vi.mocked(view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => {
+      if (method === 'Input.dispatchMouseEvent' && (params as { type?: string }).type === 'mousePressed') started('report.pdf')
+      return plain(method, params)
+    })
+    const clicked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    expect(clicked.output).toContain('The page started downloading "report.pdf". Sotto asks the user where to save it')
+    expect(unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))[0]).toMatchObject({ byAgent: true, state: 'asking' })
+    expect(await service.agentDownloads(target.threadId)).toEqual([{ file: 'report.pdf', state: 'asking', byAgent: true }])
+    // A download a moment after the agent's action is still the agent's; one long after is the user's.
+    started('later.zip')
+    const now = Date.now()
+    const later = vi.spyOn(Date, 'now').mockReturnValue(now + AGENT_DOWNLOAD_MS + 1)
+    started('mine.zip')
+    later.mockRestore()
+    const listed = unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))
+    expect(listed.find(download => download.file === 'later.zip')?.byAgent).toBe(true)
+    expect(listed.find(download => download.file === 'mine.zip')?.byAgent).toBe(false)
+  })
+
+  it('tells the agent nothing of a download from a page the user keeps private', async () => {
+    const { service, target, started } = await withDownloads()
+    // The user's own page, never shared: its download is the user's business, and stays so once the page is shared.
+    started('mine.pdf')
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+    unwrap(await service.share({ ...target, enabled: true }))
+    started('shared.pdf')
+    expect(await service.agentDownloads(target.threadId)).toEqual([{ file: 'shared.pdf', state: 'asking', byAgent: false }])
+    // Stop sharing takes the page's downloads out of what the agent is told.
+    unwrap(await service.share({ ...target, enabled: false }))
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+  })
+
+  it('tells the agent nothing of a download from a page the user made private a moment after the agent read it', async () => {
+    const { service, target, started } = await withDownloads()
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Read the page' }))
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'snapshot' } }))
+    // Stop sharing within the moment a download would count as the agent's: what the page downloads now is the user's.
+    unwrap(await service.share({ ...target, enabled: false }))
+    started('statement-acct-4417-nov.pdf')
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+    expect(unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId }))[0]).toMatchObject({ byAgent: false })
+  })
+
+  it('masks a secret typed into the page in the name of a download it gives the agent, as in anything else the page says', async () => {
+    const { service, target, started } = await withDownloads()
+    unwrap(await service.share({ ...target, enabled: true }))
+    // The page's mask stands for a secret typed into it; the site names its file with that secret.
+    const mask = vi.spyOn(PageAutomation.prototype, 'masked').mockImplementation(text => text.split('hunter2-secret').join('••••••••'))
+    try {
+      started('export-hunter2-secret.csv')
+      expect(await service.agentDownloads(target.threadId)).toEqual([expect.objectContaining({ file: 'export-••••••••.csv' })])
+    } finally { mask.mockRestore() }
+  })
+
+  it('marks a download that starts after the user stopped sharing the page during the agent\'s click as the user\'s (the fourth review, P-N4.2)', async () => {
+    const { service, target, view, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Download the statement' }))
+    const send = vi.mocked(view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => {
+      if (method === 'Input.dispatchMouseEvent' && (params as { type?: string }).type === 'mousePressed') {
+        // The user stops sharing while the click is still going, and only then does the page start its download.
+        unwrap(await service.share({ ...target, enabled: false }))
+        started('statement.pdf')
+      }
+      return plain(method, params)
+    })
+    await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } })
+    expect(unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId })).find(download => download.file === 'statement.pdf')).toMatchObject({ byAgent: false })
+  })
+
+  it('tells the window of a task whose output, with the note of a download, is longer than the window takes (the fourth review, P-L1)', async () => {
+    const { service, target, emit, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Read the page' }))
+    // A read as long as one is said, during which the page starts a download.
+    const inspect = vi.spyOn(PageAutomation.prototype, 'inspect').mockImplementation(async () => { started('report.pdf'); return 'x'.repeat(200_000) })
+    try {
+      const read = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'inspect' } }))
+      expect(read.output).toContain('The page started downloading "report.pdf"')
+    } finally { inspect.mockRestore() }
+    const told = emit.mock.calls.map(([event]) => event as BrowserEvent).filter(event => event.type === 'task' && event.task.id === task.id).at(-1)
+    const parsed = browserEventSchema.safeParse(told)
+    expect(parsed.success).toBe(true)
+    expect((parsed.data as Extract<BrowserEvent, { type: 'task' }>).task.output).toHaveLength(200_000)
+  })
+
+  it('tells the agent nothing of a download from a page that left the site it was shared on, however lately the agent acted', async () => {
+    const { service, target, view, started } = await withDownloads()
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Press Save' }))
+    const pending = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    unwrap(await service.answerAction({ ...target, taskId: task.id, actionId: pending.task.pendingAction!.id, allow: true }))
+    // The page goes to another site; without a grant its sharing ends there, and so does what the agent may know of it.
+    view.webContents.emit('did-start-navigation', {}, 'https://bank.example/statements', false, true)
+    started('statement-acct-4417-nov.pdf')
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+    // Shared again, the download that started while it was private stays the user's.
+    unwrap(await service.share({ ...target, enabled: true }))
+    expect(await service.agentDownloads(target.threadId)).toEqual([])
+  })
+
+  it('names a download in an action\'s answer only when its page was shared as it started', async () => {
+    const { service, target, view, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Download the report' }))
+    const send = vi.mocked(view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => {
+      // The user stops sharing while the agent's click runs, the page downloads, and the user shares it again.
+      if (method === 'Input.dispatchMouseEvent' && (params as { type?: string }).type === 'mousePressed') {
+        unwrap(await service.share({ ...target, enabled: false })); started('private.pdf'); unwrap(await service.share({ ...target, enabled: true }))
+        // Stop sharing paused the task; the user resumes it, and the click then downloads again, shared this time.
+        unwrap(await service.controlTask({ ...target, taskId: task.id, control: 'resume' }))
+        started('shared.pdf')
+      }
+      return plain(method, params)
+    })
+    const clicked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    // The action finished, so its answer was written, and it names only the download that started while shared.
+    expect(clicked.output).toContain('"shared.pdf"')
+    expect(JSON.stringify(clicked)).not.toContain('private.pdf')
+    expect(await service.agentDownloads(target.threadId)).toEqual([expect.objectContaining({ file: 'shared.pdf' })])
+  })
+
+  it('counts no download as the agent\'s that starts while it only reads the page, or after Stop sharing ended its action', async () => {
+    const { service, target, view, started } = await withDownloads(() => true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Read the page, then press Save' }))
+    const send = vi.mocked(view.webContents.debugger.sendCommand), plain = send.getMockImplementation()!
+    send.mockImplementation(async (method: string, params?: object) => {
+      // The user's own download, while the agent reads the page.
+      if (method === 'Accessibility.getFullAXTree') started('mine.pdf')
+      // The user stops sharing while the agent's click runs.
+      if (method === 'Input.dispatchMouseEvent' && (params as { type?: string }).type === 'mousePressed') unwrap(await service.share({ ...target, enabled: false }))
+      return plain(method, params)
+    })
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'snapshot' } }))
+    const byName = async (file: string) => unwrap(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId })).find(download => download.file === file)
+    expect(await byName('mine.pdf')).toMatchObject({ byAgent: false })
+    await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } })
+    // The page is the user's again: what it downloads a moment later is the user's too.
+    started('after.pdf')
+    expect(await byName('after.pdf')).toMatchObject({ byAgent: false })
+  })
+
+  it('cancels a download still asking when its thread closes or goes, and only then', async () => {
+    const { service, target, started } = await withDownloads()
+    const { item } = started('report.pdf')
+    service.threadsEnded(['another-thread'])
+    expect(item.cancelled).toBe(false)
+    service.threadsEnded([target.threadId])
+    expect(item.cancelled).toBe(true)
+    // One started after its thread closed, a settled thread the user opened again, waits for the next time it ends.
+    const later = started('later.pdf')
+    service.threadsEnded(['another-thread'])
+    expect(later.item.cancelled).toBe(false)
+  })
+
+  it('blocks a download with the full catalog on but no downloads, as before', async () => {
+    const { view } = await browserFixture(false, new Set(), () => false, true)
+    const isolated = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as EventEmitter
+    const preventDefault = vi.fn()
+    isolated.emit('will-download', { preventDefault }, new ServiceDownloadItem('a.txt'), view.webContents)
+    expect(preventDefault).toHaveBeenCalled()
+  })
+
+  it('refuses the pane\'s download requests with the full catalog off', async () => {
+    const { service, target } = await browserFixture()
+    expect(await service.downloads({ threadId: target.threadId, workspaceId: target.workspaceId })).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+})
+
+describe('the agent\'s cursor in the service (ADR-0222)', () => {
+  it('draws the cursor in the window\'s accent once the window says it, and refuses a malformed style', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Press Save' }))
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    expect(view.webContents.debugger.sendCommand).not.toHaveBeenCalledWith('Overlay.highlightQuad', expect.anything())
+    unwrap(await service.cursorStyle({ color: { r: 1, g: 2, b: 3 }, reducedMotion: true }))
+    unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    expect(view.webContents.debugger.sendCommand).toHaveBeenCalledWith('Overlay.highlightQuad', expect.objectContaining({ color: { r: 1, g: 2, b: 3, a: 0.95 } }))
+    expect(await service.cursorStyle({ color: { r: 300, g: 2, b: 3 }, reducedMotion: true })).toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+  })
+})
+
+describe('a page in a browser profile keeps its sharing on the site the user shared (ADR-0221, November 27)', () => {
+  const withProfile = async (byDefault: () => boolean) => {
+    const folder = await mkdtemp(join(tmpdir(), 'sotto-profile-pin-'))
+    cleanup.push(() => rm(folder, { recursive: true, force: true }))
+    const fixture = await browserFixture(false, new Set(), byDefault, true, { profiles: new BrowserProfiles(join(folder, 'browser-profiles.json')) })
+    const { service, target } = fixture
+    const { profile } = unwrap(await service.addProfile({ name: 'Work' }))
+    const page = unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: profile.id }))
+    const pageTarget = { threadId: target.threadId, workspaceId: target.workspaceId, pageId: page.id }
+    unwrap(await service.share({ ...pageTarget, enabled: true }))
+    return { ...fixture, pageTarget }
+  }
+  const sharedOrigin = async (service: BrowserService, pageTarget: { threadId: string; pageId: string }) => unwrap(await service.list({ threadId: pageTarget.threadId })).pages.find(page => page.id === pageTarget.pageId)?.sharedOrigin
+
+  it('makes the page private when it goes to another site, even under the grant', async () => {
+    const { service, pageTarget } = await withProfile(() => true)
+    expect(await sharedOrigin(service, pageTarget)).toBe('https://mail.example.com')
+    unwrap(await service.navigate({ ...pageTarget, url: 'https://evil.example/' }))
+    expect(await sharedOrigin(service, pageTarget)).toBeNull()
+  })
+
+  it('asks every time before an agent takes it to another site, and shares only the site the user allowed', async () => {
+    const { service, pageTarget } = await withProfile(() => true)
+    const task = unwrap(await service.startTask({ ...pageTarget, description: 'Check the calendar' }))
+    // The same site runs under the grant.
+    expect(unwrap(await service.action({ ...pageTarget, taskId: task.id, action: { type: 'navigate', url: 'https://mail.example.com/inbox', waitUntil: 'none' } })).approvalRequired).toBe(false)
+    const asked = unwrap(await service.action({ ...pageTarget, taskId: task.id, action: { type: 'navigate', url: 'https://calendar.example.com/', waitUntil: 'none' } }))
+    expect(asked.approvalRequired).toBe(true)
+    expect(asked.task.pendingAction).toMatchObject({ everyTime: true, description: expect.stringContaining('signed in with your Work profile, to another site') })
+    const answer = { ...pageTarget, taskId: task.id, actionId: asked.task.pendingAction!.id, allow: true }
+    expect(await service.answerAction({ ...answer, forThread: true })).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('asks every time') } })
+    unwrap(await service.answerAction(answer))
+    expect(await sharedOrigin(service, pageTarget)).toBe('https://calendar.example.com')
+    // And the next site asks again.
+    expect(unwrap(await service.action({ ...pageTarget, taskId: task.id, action: { type: 'navigate', url: 'https://mail.example.com/', waitUntil: 'none' } })).approvalRequired).toBe(true)
+  })
+
+  it('leaves a page without a profile following the grant as before', async () => {
+    const { service, target } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    unwrap(await service.navigate({ ...target, url: 'https://other.example/' }))
+    expect(await sharedOrigin(service, target)).toBe('https://other.example')
+  })
+})
+
+describe('an agent closing its page while the user holds it (Gemini\'s review)', () => {
+  const opened = async () => {
+    const fixture = await browserFixture(false, new Set(), () => false, true)
+    const { service, target } = fixture
+    const result = unwrap(await service.agentOpen({ threadId: target.threadId, workspaceId: target.workspaceId, port: 4555, path: '/', description: 'Open the second tab', background: true }))
+    const page = { threadId: target.threadId, workspaceId: target.workspaceId, pageId: result.task.pageId }
+    const view = vi.mocked(WebContentsView).mock.results.at(-1)!.value as WebContentsView
+    const answered = service.answerAction({ ...page, taskId: result.task.id, actionId: result.task.pendingAction!.id, allow: true })
+    // The page finishes loading, as Chromium would say.
+    await vi.waitFor(() => expect(view.webContents.getURL()).toBe('http://localhost:4555/'))
+    view.webContents.emit('did-finish-load')
+    unwrap(await answered)
+    return { ...fixture, page, task: result.task, agentView: view }
+  }
+
+  it('stays open while the user has taken it over', async () => {
+    const { service, page, task } = await opened()
+    unwrap(await service.controlTask({ ...page, taskId: task.id, control: 'pause' }))
+    expect(await service.agentClose(page)).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('took this page over') } })
+    unwrap(await service.controlTask({ ...page, taskId: task.id, control: 'resume' }))
+    expect(unwrap(await service.agentClose(page))).toEqual({ closed: page.pageId })
+  })
+
+  it('stays open once the user stops sharing it', async () => {
+    const { service, page, task } = await opened()
+    // Stop sharing pauses a working task, which keeps the page open by itself; with the task finished, sharing still does.
+    unwrap(await service.share({ ...page, enabled: false }))
+    expect(await service.agentClose(page)).toMatchObject({ ok: false, error: { code: 'blocked' } })
+    unwrap(await service.share({ ...page, enabled: true }))
+    unwrap(await service.controlTask({ ...page, taskId: task.id, control: 'resume' }))
+    unwrap(await service.finishTask({ ...page, taskId: task.id, status: 'completed', summary: 'Opened.', unchecked: [] }))
+    unwrap(await service.share({ ...page, enabled: false }))
+    expect(await service.agentClose(page)).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining('stopped sharing') } })
+  })
+
+  it('stays open while the user is using it', async () => {
+    const { service, page, agentView } = await opened()
+    agentView.webContents.emit('input-event', {}, { type: 'keyDown' })
+    expect(await service.agentClose(page)).toMatchObject({ ok: false, error: { code: 'busy', message: expect.stringContaining('using this page') } })
+  })
+
+  it('is refused with the full catalog off', async () => {
+    const { service, target } = await browserFixture()
+    expect(await service.agentClose(target)).toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+
+  it('holds an agent\'s navigate too while the user is using the page', async () => {
+    const { service, target, view } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const task = unwrap(await service.startTask({ ...target, description: 'Go to settings' }))
+    view.webContents.emit('input-event', {}, { type: 'mouseDown' })
+    expect(await service.action({ ...target, taskId: task.id, action: { type: 'navigate', url: 'http://localhost:4321/settings', waitUntil: 'none' } })).toMatchObject({ ok: false, error: { code: 'busy' } })
+  })
+})
+
+describe('the user\'s hold on a page (Gemini\'s review)', () => {
+  it('lasts until the user has stopped, however long they keep using the page', async () => {
+    const { service, target, view, emit } = await browserFixture(false, new Set(), () => true, true)
+    unwrap(await service.share({ ...target, enabled: true }))
+    const active = () => emit.mock.calls.filter(([event]) => event.type === 'page' && event.page.id === target.pageId).map(([event]) => event.page.userActive)
+    view.webContents.emit('input-event', {}, { type: 'mouseDown' })
+    await new Promise(done => setTimeout(done, 500))
+    view.webContents.emit('input-event', {}, { type: 'keyDown' })
+    await new Promise(done => setTimeout(done, 500))
+    // 1000 ms after the first input, 500 after the last: still held, and the page was never told it was free.
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.userActive).toBe(true)
+    expect(active().at(-1)).toBe(true)
+    await vi.waitFor(() => expect(active().at(-1)).toBe(false), { timeout: 1500, interval: 50 })
+    expect(unwrap(await service.list({ threadId: target.threadId })).pages[0]?.userActive).toBe(false)
   })
 })

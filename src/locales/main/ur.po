@@ -428,6 +428,18 @@ msgid "A new-window request was blocked. Use a link destination action or open t
 msgstr ""
 
 #: src/main/tools/ipc.ts
+msgid "A page on the host machine does not download here yet. Nothing was changed."
+msgstr ""
+
+#: src/main/tools/ipc.ts
+msgid "A page on the host machine does not record. Nothing was changed."
+msgstr ""
+
+#: src/main/tools/ipc.ts
+msgid "A page on the host machine is drawn at the pane's size, so it does not zoom yet. Nothing was changed."
+msgstr ""
+
+#: src/main/tools/ipc.ts
 msgid "A page on the host machine keeps the size of the pane that shows it. Nothing was changed."
 msgstr ""
 
@@ -653,6 +665,10 @@ msgstr ""
 
 #: src/main/agents/ipcCore.ts
 msgid "Branches are unavailable."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "Browser profiles are not on in this version of Sotto."
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
@@ -945,6 +961,10 @@ msgstr ""
 msgid "Desktop permissions could not be set up on the host. Nothing was saved. Nothing was replaced. Check its data folder, then add the host again."
 msgstr ""
 
+#: src/main/tools/ipc.ts
+msgid "Developer tools open only for a page on this computer. Nothing was opened."
+msgstr ""
+
 #: src/main/hosts/hostSetup.ts
 msgid "Don’t add"
 msgstr ""
@@ -975,6 +995,10 @@ msgstr ""
 
 #: src/main/tools/browser.ts
 msgid "Downloads are blocked here. Open this page externally to download."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "Downloads are not on in this version of Sotto."
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -1801,6 +1825,10 @@ msgstr ""
 msgid "Sends Meshy these words: “{words}”"
 msgstr ""
 
+#: src/main/tools/ipc.ts
+msgid "Servers on the host machine are not listed here yet. Ask the agent for the address."
+msgstr ""
+
 #: src/main/omarchy/setup.ts
 msgid "Set up by hand. Sotto leaves these files alone."
 msgstr ""
@@ -1965,6 +1993,11 @@ msgstr ""
 
 #: src/main/hosts/sshLauncher.ts
 msgid "Sotto could not read the key fingerprint. Check the key on the host before you trust it."
+msgstr ""
+
+#. {browser} is Firefox or Zen.
+#: src/main/tools/browser.ts
+msgid "Sotto could not read the sign-ins from {browser}. Close {browser}, then try again. Nothing was added."
 msgstr ""
 
 #: src/main/ownModelServers/ipc.ts
@@ -2339,6 +2372,14 @@ msgstr ""
 
 #: src/main/themes/openVsx.ts
 msgid "That address is not an Open VSX address."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "That browser profile was removed. Choose another, or open the page without one."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "That browser's profile is no longer on this computer. Nothing was added."
 msgstr ""
 
 #: src/main/council/climbService.ts
@@ -3310,6 +3351,10 @@ msgstr ""
 msgid "The test iPhone keeps its own size."
 msgstr ""
 
+#: src/main/tools/browser.ts
+msgid "The test iPhone keeps its own storage, so it opens without a profile."
+msgstr ""
+
 #: src/main/themes/ipc.ts
 msgid "The theme file could not be written there. Choose another folder."
 msgstr ""
@@ -3381,6 +3426,10 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "These keys were changed by hand. Sotto left them alone."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "This action didn't finish, and the secret it was given can't be used again. If the agent still needs it, it will ask you for it again."
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -3816,6 +3865,10 @@ msgstr ""
 
 #: src/main/tools/browser.ts
 msgid "This page closed."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "This page has closed."
 msgstr ""
 
 #: src/main/tools/ipc.ts

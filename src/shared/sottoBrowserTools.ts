@@ -5,7 +5,7 @@
 export const SOTTO_BROWSER_SERVER = 'sotto_browser'
 
 export const SOTTO_BROWSER_TOOLS = [
-  'browser_pages', 'browser_open', 'iphone_open', 'browser_start', 'browser_action', 'browser_status', 'browser_finish',
+  'browser_pages', 'browser_open', 'iphone_open', 'browser_start', 'browser_action', 'browser_status', 'browser_finish', 'browser_close', 'browser_servers',
   'iphone_cloud_open', 'iphone_cloud_action', 'iphone_cloud_status', 'iphone_cloud_finish',
 ] as const
 export type SottoBrowserTool = typeof SOTTO_BROWSER_TOOLS[number]

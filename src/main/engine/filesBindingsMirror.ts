@@ -1,4 +1,5 @@
 import type { AgentHostSnapshot, AgentProject, AgentThread } from '../../shared/agents'
+import { isThreadClosed } from '../../shared/threadActivity'
 import { resolveFilesBinding } from '../files/binding'
 import type { FilesBinding } from '../files/service'
 import type { HostThreadFolders } from '../hosts/hostedTerminals'
@@ -29,8 +30,9 @@ function sameTerminalHost(a: SshTerminalHost | undefined, b: SshTerminalHost): b
 }
 
 /**
- * Shell-side cache of thread folder bindings, project folders, thread titles and hosted terminal targets (ADR-0210).
- * Keeps BrowserService, CloudIphoneService and TerminalService local and non-blocking with zero synchronous IPC.
+ * Shell-side cache of thread folder bindings, project folders, thread titles, hosted terminal targets (ADR-0210) and
+ * which threads are closed. Keeps BrowserService, CloudIphoneService and TerminalService local and non-blocking with
+ * zero synchronous IPC.
  */
 export class FilesBindingsMirror {
   private readonly bindings = new Map<string, FilesBinding>()
@@ -38,14 +40,28 @@ export class FilesBindingsMirror {
   private readonly threadTitles = new Map<string, string>()
   private readonly hostedFolders = new Map<string, HostThreadFolders>()
   private readonly terminalHosts = new Map<string, SshTerminalHost>()
+  private readonly closedThreads = new Set<string>()
 
-  apply(delta: FilesBindingsDelta): void {
+  /**
+   * Takes in what changed, and answers the local threads that ended with it: those their provider closed, archived or
+   * settled there, and those that went. The user's Settle closes none, as Undo brings a settled thread straight back.
+   * A thread that was closed already, or a whole list sent again, ends none.
+   */
+  apply(delta: FilesBindingsDelta): string[] {
+    const titledBefore = new Set(this.threadTitles.keys()), closedBefore = new Set(this.closedThreads)
     if (delta.reset) {
       this.bindings.clear()
       this.projectFolders.clear()
       this.threadTitles.clear()
       this.hostedFolders.clear()
       this.terminalHosts.clear()
+      this.closedThreads.clear()
+    }
+    if (delta.closedThreads) {
+      for (const [id, value] of Object.entries(delta.closedThreads)) {
+        if (value === null) this.closedThreads.delete(id)
+        else this.closedThreads.add(id)
+      }
     }
     if (delta.bindings) {
       for (const [id, value] of Object.entries(delta.bindings)) {
@@ -77,6 +93,10 @@ export class FilesBindingsMirror {
         else this.terminalHosts.set(id, value)
       }
     }
+    // A thread goes with its title, which every local thread has; its folder can come and go while it lives.
+    const gone = [...titledBefore].filter(id => !this.threadTitles.has(id))
+    const closed = [...this.closedThreads].filter(id => !closedBefore.has(id) && this.threadTitles.has(id))
+    return [...gone, ...closed]
   }
 
   resolveBinding(threadId: string): FilesBinding | null {
@@ -114,6 +134,7 @@ export class FilesBindingsTracker {
   private readonly threadTitles = new Map<string, string>()
   private readonly hostedFolders = new Map<string, HostThreadFolders>()
   private readonly terminalHosts = new Map<string, SshTerminalHost>()
+  private readonly closedThreads = new Set<string>()
 
   syncLocal(host: AgentHostSnapshot): FilesBindingsDelta | null {
     if (host.threads === this.lastLocalThreads && host.projects === this.lastLocalProjects) return null
@@ -141,6 +162,7 @@ export class FilesBindingsTracker {
 
     let bindingPatch: Record<string, FilesBinding | null> | undefined
     let titlePatch: Record<string, string | null> | undefined
+    let closedPatch: Record<string, true | null> | undefined
     const seenThreads = new Set<string>()
     for (const thread of host.threads) {
       seenThreads.add(thread.id)
@@ -162,6 +184,14 @@ export class FilesBindingsTracker {
         this.threadTitles.set(thread.id, thread.title)
         ;(titlePatch ??= {})[thread.id] = thread.title
       }
+      // The provider's close, not the user's Settle, which keeps running work and is undone in a press: a download
+      // waiting in a settled thread keeps asking (ADR-0222, November 27 amendment).
+      const closed = isThreadClosed(thread)
+      if (closed !== this.closedThreads.has(thread.id)) {
+        if (closed) this.closedThreads.add(thread.id)
+        else this.closedThreads.delete(thread.id)
+        ;(closedPatch ??= {})[thread.id] = closed ? true : null
+      }
     }
     if (seenThreads.size < this.threadRefs.size) {
       for (const id of [...this.threadRefs.keys()]) {
@@ -169,15 +199,17 @@ export class FilesBindingsTracker {
           this.threadRefs.delete(id)
           if (this.bindings.delete(id)) (bindingPatch ??= {})[id] = null
           if (this.threadTitles.delete(id)) (titlePatch ??= {})[id] = null
+          if (this.closedThreads.delete(id)) (closedPatch ??= {})[id] = null
         }
       }
     }
 
-    if (!bindingPatch && !projectPatch && !titlePatch) return null
+    if (!bindingPatch && !projectPatch && !titlePatch && !closedPatch) return null
     return {
       ...(bindingPatch ? { bindings: bindingPatch } : {}),
       ...(projectPatch ? { projectFolders: projectPatch } : {}),
       ...(titlePatch ? { threadTitles: titlePatch } : {}),
+      ...(closedPatch ? { closedThreads: closedPatch } : {}),
     }
   }
 
@@ -240,6 +272,7 @@ export class FilesBindingsTracker {
       threadTitles: Object.fromEntries(this.threadTitles),
       hostedFolders: Object.fromEntries(this.hostedFolders),
       terminalHosts: Object.fromEntries(this.terminalHosts),
+      closedThreads: Object.fromEntries([...this.closedThreads].map(id => [id, true as const])),
     }
   }
 }

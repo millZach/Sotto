@@ -10,6 +10,7 @@ import { appendBrowserFeedback, BrowserFeedback } from './BrowserFeedback'
 import { browserPages, useThreadBrowserTasks, normalizeAddress, pageLabel, useThreadBrowser, type BrowserStore } from './browserStore'
 import { changePage, listProblem, PageViewport } from './browserPageView'
 import { BrowserPane } from './BrowserPane'
+import { DialogStrip, RecordingLine, useBrowserParity } from './BrowserParity'
 import type { ThreadHost } from './HostPageView'
 import { useOwlFeature } from '../state/owlFeature'
 import { ToolsChrome } from './ToolsChrome'
@@ -44,6 +45,8 @@ function ClassicBrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
   const browser = useThreadBrowser(store, threadId)
   const tasks = useThreadBrowserTasks(store, threadId)
   const agents = useOptionalAgents()
+  // The full browser (ADR-0220; Owl): the page's dialog and recording show here too.
+  const parity = useBrowserParity()
   const owningThread = agents?.state?.host.threads.find(item => item.id === threadId)
   const agentToolsUnavailable = !threadTakesSottoTools(owningThread)
   const [feedback, setFeedback] = useState<BrowserCapture | null>(null)
@@ -222,6 +225,7 @@ function ClassicBrowserSurface({ threadId, store, bridge, onStatus, onFloat }: B
     {problem ? <p className="browser-problem" id="browser-address-problem" role="alert">{problem}</p> : null}
     {active?.error && active.status !== 'unavailable' && !task?.pendingAction ? <p className="browser-problem" role="status">{active.error}</p> : null}
     {browser.notice ? <p className="terminal-notice tt-paragraph" role="alert">{shownNotice(browser.notice)}</p> : null}
+    {parity && active && !newPage ? <><DialogStrip page={active} threadId={threadId} store={store} bridge={bridge} /><RecordingLine page={active} threadId={threadId} store={store} bridge={bridge} /></> : null}
 
     {feedback && active && bridge ? <BrowserFeedback key={active.id} page={active} initial={feedback} bridge={bridge} onClose={() => { setFeedback(null); requestAnimationFrame(() => address.current?.focus()) }} onAdd={async (capture, comment, signal) => {
       if (!agents) return t`The draft for this thread is not available.`

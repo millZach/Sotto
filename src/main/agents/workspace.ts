@@ -1781,6 +1781,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const thread = this.threadById(threadId)
     return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
+  /**
+   * Whether an agent in this thread is offered `sotto_secrets` (ADR-0219): as `sotto_plugins`, except on Antigravity,
+   * whose `agy` silently drops a tool once a session's tools pass about 58 KB (`antigravityToolBudget.test.ts`).
+   */
+  admitsSecretRequests(threadId: string): boolean {
+    const thread = this.threadById(threadId)
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread) && thread.providerId !== 'antigravity'
+  }
   admitsShownMedia(threadId: string): boolean {
     if (!this.shownMediaStore) return false
     const thread = this.threadById(threadId)

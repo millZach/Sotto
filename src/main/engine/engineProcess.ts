@@ -4,7 +4,7 @@ import type { HostBrowserThreadRequest } from '../../shared/hostBrowser'
 import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'
 import type { QuestionPageOpen } from '../../shared/questionPageOpen'
 import type { AppSettings } from '../../shared/settings'
-import type { BrowserAgentTools, BrowserMcpServer, BrowserToolDefinition, BrowserToolResult } from '../agents/browserAgentServer'
+import type { BrowserAgentTools, BrowserMcpServer, BrowserServerOptions, BrowserToolDefinition, BrowserToolResult } from '../agents/browserAgentServer'
 import type { CredentialSnapshot } from '../agents/credentials'
 import type { ClientIdentity } from '../agents/hostService'
 import type { ThreadToolCallContext } from '../agents/threadToolServer'
@@ -199,8 +199,8 @@ export function attachEngineProcessServer(
         definitions: payload.browserToolDefinitions,
         call: (threadId: string, name: string, toolArgs: unknown, context?: ThreadToolCallContext) =>
           connection.request<BrowserToolResult>('shell:browserCall', [threadId, name, toolArgs, context]),
-        mcpServer: (threadId: string) =>
-          connection.request<BrowserMcpServer>('shell:browserMcpServer', [threadId]),
+        mcpServer: (threadId: string, serverOptions?: BrowserServerOptions) =>
+          connection.request<BrowserMcpServer>('shell:browserMcpServer', [threadId, serverOptions]),
       }
       const shellBridge: EngineShellBridge = {
         openExternal: url => connection.request<void>('shell:openExternal', [url]),
@@ -318,6 +318,10 @@ export function attachEngineProcessServer(
         return engine.hostedBrowserCall(args[0] as HostBrowserThreadRequest)
       case 'engine:hostedBrowserAddress':
         return engine.hostedBrowserAddress(args[0] as string)
+      case 'engine:takeSecret':
+        return engine.takeSecret ? engine.takeSecret(args[0] as string, args[1] as string) : null
+      case 'engine:secretSite':
+        return engine.secretSite ? engine.secretSite(args[0] as string, args[1] as string) : null
       case 'engine:turnRecordsInfo':
         return engine.turnRecordsInfo()
       case 'engine:e2eCertifiedDetailObservation':

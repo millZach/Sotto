@@ -17,7 +17,7 @@ export type BrowserRunKind = 'browser' | 'cloud'
 /** What one call did, in a word the line and its steps put into plain English. */
 export type BrowserVerb =
   | 'open' | 'phone-open' | 'start' | 'navigate' | 'click' | 'type' | 'key' | 'scroll' | 'tap' | 'swipe' | 'inspect' | 'screenshot'
-  | 'viewport' | 'work' | 'status' | 'pages' | 'finish'
+  | 'viewport' | 'work' | 'status' | 'pages' | 'finish' | 'close' | 'servers'
   | 'cloud-open' | 'cloud-tap' | 'cloud-swipe' | 'cloud-type' | 'cloud-key' | 'cloud-button' | 'cloud-url' | 'cloud-inspect'
   | 'cloud-screenshot' | 'cloud-work' | 'cloud-status' | 'cloud-finish'
 
@@ -61,7 +61,8 @@ const CLOUD_ACTIONS: Readonly<Record<string, BrowserVerb>> = {
 }
 const TOOL_VERBS: Readonly<Partial<Record<SottoBrowserTool, BrowserVerb>>> = {
   browser_open: 'open', iphone_open: 'phone-open', browser_start: 'start', browser_status: 'status', browser_pages: 'pages',
-  browser_finish: 'finish', iphone_cloud_open: 'cloud-open', iphone_cloud_status: 'cloud-status', iphone_cloud_finish: 'cloud-finish',
+  browser_finish: 'finish', browser_close: 'close', browser_servers: 'servers',
+  iphone_cloud_open: 'cloud-open', iphone_cloud_status: 'cloud-status', iphone_cloud_finish: 'cloud-finish',
 }
 
 /**
@@ -96,7 +97,8 @@ function stepOf(record: AgentActivity): BrowserStep | null {
       ...(opens ? { url: text(action.url) ?? text(reported?.url) } : {}),
       ...(verb === 'key' || verb === 'cloud-key' || verb === 'cloud-button' ? { key: text(action.key) ?? text(action.button) } : {}) }
   }
-  return { record, tool, kind, verb: TOOL_VERBS[tool]!, failed, outcome,
+  // A tool this line has no word for yet still reads as work, never as nothing: a step without a verb broke the pane.
+  return { record, tool, kind, verb: TOOL_VERBS[tool] ?? (kind === 'cloud' ? 'cloud-work' : 'work'), failed, outcome,
     ...(tool === 'browser_open' || tool === 'iphone_open' ? { url: text(input?.url) ?? text(reported?.url) } : {}) }
 }
 
@@ -400,6 +402,8 @@ function actionWords(step: BrowserStep): BrowserWords {
     case 'status': return placed(failed ? t({ message: 'could not check the browser task', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'checked the browser task', comment: 'A step in the browser line; starts lowercase.' }))
     case 'pages': return placed(failed ? t({ message: 'could not list its pages', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'listed its pages', comment: 'A step in the browser line; starts lowercase.' }))
     case 'finish': return placed(failed ? t({ message: 'could not finish the browser task', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'finished the browser task', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'close': return placed(failed ? t({ message: 'could not close a page', comment: 'A step in the browser line; starts lowercase.' }) : t({ message: 'closed a page', comment: 'A step in the browser line; starts lowercase.' }))
+    case 'servers': return placed(failed ? t({ message: 'could not list the local servers', comment: 'A step in the browser line; starts lowercase. Servers are web servers running on this computer.' }) : t({ message: 'listed the local servers', comment: 'A step in the browser line; starts lowercase. Servers are web servers running on this computer.' }))
     case 'cloud-open': return placed(failed ? t({ message: 'could not start a cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'started a cloud iPhone', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
     case 'cloud-tap': return placed(failed ? t({ message: 'could not tap the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'tapped the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
     case 'cloud-swipe': return placed(failed ? t({ message: 'could not swipe the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }) : t({ message: 'swiped the screen', comment: 'A step in the cloud iPhone line; starts lowercase.' }))
