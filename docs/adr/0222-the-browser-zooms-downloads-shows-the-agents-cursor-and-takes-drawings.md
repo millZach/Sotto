@@ -51,3 +51,25 @@ A review of this branch by its owner found places where the decisions above let 
 - **Decision 3, a closed thread.** A download still asking when its thread is deleted, or closed by its provider (archived or settled there), is cancelled at that moment and its waiting file deleted, since nobody is left to answer it. The user's **Settle** is not a close: it keeps the thread's running work and its cards, and **Undo** brings it straight back, while a cancelled download cannot be brought back, so a download waiting in a thread or project the user settled keeps asking. The engine tells the shell which threads are closed with each change to the thread list, beside their folders (ADR-0210), and the shell acts on a thread's change to closed or gone, not on every change: a thread opened again that downloads waits as any other. One the user already placed goes on to where they said.
 - **Decision 5.** `browser_pages` and an action's answer name a download only when its page was shared with the agent when the download started and is shared with it still, the agent's own action's downloads included. A download from a page the user kept private then, never shared or made private with **Stop sharing**, is the user's alone even once the page is shared, and so is one from a page that has closed. Only an action that can start a download counts as the agent's: a read does not, and **Stop sharing**, or a profile page leaving its shared site, forgets the agent's last action on the page. A name the agent is told is masked as the page's other words are, since a site names its own file.
 - **Decision 1.** A site, for zoom, is its host name, as Chromium keeps zoom: `localhost:5173` and `localhost:3000` zoom together, so a zoom forgets the snapshot refs of every page on that host and lapses what waits for the user on any of them, not only those on the same port.
+
+## November 28 amendment: what the third review tightened
+
+A third, independent review found where the second round still let a typed secret or a private download slip. Each is now held as follows.
+
+- **Decision 12, how long each rule lasts.** A secret typed into a page sets two kinds of rule. Some last while that document is open, until the page loads another: no picture of the page goes to the agent, what its fields hold is left out, and the agent cannot select, copy, cut or drag text there. The others last as long as the page is open: `evaluate` is off, `wait_for` and selectors cannot test the value a piece at a time, and no key or typing edits a field that holds the value. A new page has none of them.
+- **Decision 12, text that stays.** While the document holds the secret, Sotto refuses each action that could select, copy, cut or carry text:
+  - Control or Command with A, C or X;
+  - Control+Insert and Shift+Delete;
+  - Shift with a key that moves the caret;
+  - a double or triple click, or a Shift-click;
+  - a middle click, which pastes Linux's selection;
+  - a drag;
+  - a second tap within half a second, which selects a word.
+
+  A site's "show password" button makes the field plain text, and these would have put the value on the clipboard, where the agent's shell or another page could read it.
+- **Decision 12, a field that holds the secret.** No key that edits, and no typing, reaches a field whose text holds the value, for the page's life: what was left could be part of it, which no mask finds. Enter, Tab, Escape and the keys that move the caret still work, and a `secretRef` typed with `clear: true` replaces the value. One typed without `clear` into a password field that already holds a secret is refused, since it could split that one where the caret is. Whether a field holds the value is read in the page and compared only in Sotto.
+- **Decision 12, what a wait reads.** On such a page, `wait_for` looks for words in the visible text a snapshot carries, not in the whole page every 100 ms.
+- **Decision 12, a field's controls.** A combobox's own button and options are read while its text is hidden. Only the text beneath a field is left out.
+- **Decision 12, going back.** A test holds the desktop's back-forward cache off on every platform, since its `did-navigate` cannot tell a page given back from a new one.
+- **Decision 5.** An action counts as the agent's only while it runs, and only if it can start a download; one that ends after **Stop sharing** does not count again. A download's name is masked before it is made safe to save, so a secret with a character a file name cannot hold is still found.
+- **Decision 3, a Cancel that comes too late.** A **Cancel** that comes once the file has started to move into place leaves the download on the page, shown saved, as it is.
