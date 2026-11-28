@@ -1568,9 +1568,7 @@ impl GitPullRequests {
                 GitPullRequestError::refusal("GitHub answered in a form Sotto could not read. Refresh to try again.")
             })?;
             if parse_pull_request_address(url).is_none() {
-                return Err(GitPullRequestError::refusal(
-                    "GitHub answered in a form Sotto could not read. Refresh to try again.",
-                ));
+                continue;
             }
             let review_decision = obj.get("reviewDecision").and_then(Value::as_str).and_then(|s| {
                 match s.to_ascii_uppercase().as_str() {
@@ -2877,5 +2875,64 @@ mod tests {
             "matchHeadCommit": "not-a-sha"
         });
         assert!(!valid_pull_request_command_shape(bad_spoof.as_object().unwrap()));
+    }
+
+    #[test]
+    fn list_skips_non_github_com_urls_without_failing() {
+        let (_dir, repo, _) = make_repo();
+        let cwd = repo.to_string_lossy().into_owned();
+        git(&cwd, &["remote", "set-url", "origin", "https://github.com/org/app.git"], VIEW_TIMEOUT).unwrap();
+        let gh = ScriptedGh::new(move |_, _| {
+            Ok(json!({
+                "data": {
+                    "rateLimit": { "limit": 5000, "remaining": 4999, "resetAt": "2027-01-01T00:00:00Z" },
+                    "viewer": { "login": "alice" },
+                    "repository": {
+                        "pullRequests": {
+                            "totalCount": 2,
+                            "nodes": [
+                                {
+                                    "number": 99,
+                                    "title": "Enterprise PR",
+                                    "url": "https://ghe.example.com/org/app/pull/99",
+                                    "isDraft": false,
+                                    "updatedAt": "2026-11-27T00:00:00Z",
+                                    "additions": 1,
+                                    "deletions": 0,
+                                    "changedFiles": 1,
+                                    "reviewDecision": null,
+                                    "headRefName": "ent",
+                                    "author": { "login": "alice" },
+                                    "commits": { "nodes": [] }
+                                },
+                                {
+                                    "number": 12,
+                                    "title": "Public PR",
+                                    "url": "https://github.com/org/app/pull/12",
+                                    "isDraft": false,
+                                    "updatedAt": "2026-11-27T00:00:00Z",
+                                    "additions": 3,
+                                    "deletions": 1,
+                                    "changedFiles": 1,
+                                    "reviewDecision": "APPROVED",
+                                    "headRefName": "feat",
+                                    "author": { "login": "alice" },
+                                    "commits": { "nodes": [] }
+                                }
+                            ]
+                        }
+                    }
+                }
+            })
+            .to_string())
+        });
+        let hosts = Arc::new(GitHubHosts::new(gh.clone()));
+        let svc = GitPullRequests::with_parts(gh, hosts, Arc::new(GitHubRateLimit::new()), Arc::new(now_ms_i64));
+        let listed = svc.list(&cwd).unwrap().unwrap();
+        assert_eq!(listed["total"], 2);
+        let items = listed["pullRequests"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["number"], 12);
+        assert_eq!(items[0]["title"], "Public PR");
     }
 }

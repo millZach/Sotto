@@ -5425,6 +5425,11 @@ impl CoordinatorActor {
                     })
                 })
                 .and_then(|item| {
+                    // Merged is final: a racing stale read returning `open` or `closed` must never revert a merged link
+                    // (matching `followPullRequestState` / `notePullRequestState` in `workspace.ts:2096-2124`).
+                    if item.get("state").and_then(Value::as_str) == Some("merged") {
+                        return None;
+                    }
                     let changed = item.get("title").and_then(Value::as_str) != Some(clipped_title)
                         || item.get("state").and_then(Value::as_str) != Some(view.state.as_str())
                         || item.get("draft").and_then(Value::as_bool) != Some(view.draft);
@@ -5457,7 +5462,11 @@ impl CoordinatorActor {
                         .and_then(crate::pull_requests::pull_request_key)
                         .as_deref()
                         == Some(key.as_str());
-                    if matches_branch_pr && pr_obj.get("state").and_then(Value::as_str) != Some(view.state.as_str()) {
+                    let current_state = pr_obj.get("state").and_then(Value::as_str);
+                    if matches_branch_pr
+                        && current_state != Some("merged")
+                        && current_state != Some(view.state.as_str())
+                    {
                         pr_obj.insert("state".into(), Value::String(view.state.clone()));
                         dirty = true;
                     }
@@ -11494,6 +11503,113 @@ mod tests {
         assert_eq!(wt.branch.as_deref(), Some("pr-head"));
         assert_eq!(wt.temporary_branch, Some(false));
         assert_eq!(wt.extra.get("checkoutBranch").and_then(Value::as_bool), Some(true));
+
+        coord.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn observe_pull_request_keeps_merged_links_and_branch_prs_final() {
+        let dir = tempdir().unwrap();
+        let (coord, _client, _project_id, thread_id) = organized_workspace(dir.path()).await;
+        coord.shutdown().await;
+
+        let url = "https://github.com/org/repo/pull/77";
+        let path = dir.path().join("workspace.json");
+        let mut workspace: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        let thread = workspace["snapshot"]["threads"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|t| t["id"] == thread_id.as_str())
+            .unwrap();
+        thread["pullRequests"] = json!([{
+            "number": 77,
+            "url": url,
+            "title": "Merged PR",
+            "state": "merged",
+            "draft": false,
+            "source": "linked",
+            "linkedAt": "2026-11-28T00:00:00Z"
+        }]);
+        thread["worktree"] = json!({
+            "mode": "shared",
+            "status": "ready",
+            "path": dir.path().join("project").to_string_lossy(),
+            "git": {
+                "pullRequest": {
+                    "number": 77,
+                    "url": url,
+                    "state": "merged"
+                }
+            }
+        });
+        std::fs::write(&path, serde_json::to_string(&workspace).unwrap()).unwrap();
+
+        let coord = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000001".into(),
+            false,
+            mock_providers(),
+        )
+        .unwrap();
+
+        let make_view = |state: &str, title: &str| crate::pull_requests::PullRequestView {
+            number: 77,
+            url: url.into(),
+            title: title.into(),
+            body: String::new(),
+            state: state.into(),
+            draft: false,
+            base_branch: "main".into(),
+            head_branch: "feat".into(),
+            cross_repository: false,
+            review_decision: None,
+            reviews: Vec::new(),
+            mergeable: "unknown".into(),
+            checks: Vec::new(),
+            checks_unknown: false,
+            merge_methods: Vec::new(),
+            auto_merge_allowed: false,
+            auto_merge: None,
+            merged_at: None,
+            behind_by: None,
+            can_update_branch: false,
+            files: None,
+            changed_files: None,
+            additions: None,
+            deletions: None,
+            author: None,
+            head_id: None,
+            created_at: None,
+            observed_at: "2026-11-28T01:00:00Z".into(),
+        };
+
+        // Stale OPEN read and stale CLOSED read must never revert a merged link or merged branch PR.
+        for (stale_state, stale_title) in [("open", "Old title"), ("closed", "Closed title")] {
+            let (reply_tx, reply_rx) = oneshot::channel();
+            coord
+                .tx
+                .send(ActorMessage::SyncPullRequestLink {
+                    thread_id: thread_id.clone(),
+                    view: Box::new(make_view(stale_state, stale_title)),
+                    reply: reply_tx,
+                })
+                .unwrap();
+            let (linked, branch) = reply_rx.await.unwrap();
+            assert_eq!(linked.as_deref(), Some("linked"));
+            assert!(branch);
+        }
+
+        let shell = coord.shell(true).await.unwrap();
+        let t = shell["host"]["threads"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == thread_id.as_str())
+            .unwrap();
+        assert_eq!(t["pullRequests"][0]["state"], "merged");
+        assert_eq!(t["pullRequests"][0]["title"], "Merged PR");
+        assert_eq!(t["worktree"]["git"]["pullRequest"]["state"], "merged");
 
         coord.shutdown().await;
     }
