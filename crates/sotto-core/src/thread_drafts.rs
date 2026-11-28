@@ -16,8 +16,20 @@ use crate::workspace::DeliveredDraft;
 pub const DRAFTS_KEY: &str = "threadDrafts";
 pub const OBSOLETE_KEY: &str = "obsoleteDrafts";
 pub const DELIVERED_KEY: &str = "deliveredDrafts";
+pub const DELIVERED_DIGESTS_KEY: &str = "deliveredPromptDigests";
 /// The receipts kept, the newest, as Node's `MAX_DELIVERED_DRAFTS`.
 pub const RECEIPTS_KEPT: usize = 128;
+
+/// One delivered prompt's content digest (`deliveredPromptDigests` in `src/main/agents/control.ts`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveredPromptDigest {
+    pub thread_id: String,
+    pub draft_id: String,
+    pub digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub atomic_digest: Option<String>,
+}
 
 const CHANGED_ON_HOST: &str = "This thread draft changed on the host. Your edit is kept on this computer. Review the host draft before saving again.";
 const OTHER_CONTENT: &str = "This revision already belongs to different draft content. Use a new draft revision for your edit.";
@@ -117,6 +129,8 @@ pub struct ThreadDrafts {
     obsolete: Vec<DeliveredDraft>,
     /// The revisions delivered as prompts, as Node's `deliveredDrafts`.
     delivered: Vec<DeliveredDraft>,
+    /// Content digests of delivered prompts, persisted under `deliveredPromptDigests` as Node keeps them.
+    delivered_digests: Vec<DeliveredPromptDigest>,
 }
 
 /// One list `agents.json` keeps, with whatever of it reads.
@@ -126,15 +140,23 @@ fn read_saved<T: serde::de::DeserializeOwned>(agents_json: &mut Map<String, Valu
 }
 
 impl ThreadDrafts {
-    /// Takes the drafts, the obsolete revisions and the delivered ones out of `agents.json`, keeping whatever of
-    /// each reads.
+    /// Takes the drafts, the obsolete revisions, the delivered ones, and their prompt digests out of `agents.json`,
+    /// keeping whatever of each reads.
     pub fn take_saved(agents_json: &mut Map<String, Value>) -> Self {
         let mut obsolete = read_saved(agents_json, OBSOLETE_KEY);
         let mut delivered = read_saved(agents_json, DELIVERED_KEY);
+        let mut delivered_digests = read_saved(agents_json, DELIVERED_DIGESTS_KEY);
         // Node's file may hold twice the limit; a client is sent no more than it (`MAX_DELIVERED_DRAFTS`).
         keep_newest(&mut obsolete);
         keep_newest(&mut delivered);
-        Self { drafts: read_saved(agents_json, DRAFTS_KEY), empty: HashMap::new(), obsolete, delivered }
+        keep_newest_digests(&mut delivered_digests);
+        Self {
+            drafts: read_saved(agents_json, DRAFTS_KEY),
+            empty: HashMap::new(),
+            obsolete,
+            delivered,
+            delivered_digests,
+        }
     }
 
     /// Each thread's draft revision and whether it is saved, as Node's `draftPersistence` says it. This host saves a
@@ -149,6 +171,77 @@ impl ThreadDrafts {
     /// Whether a thread's draft answers a question, which a queued prompt may not go past (`followupCommand`).
     pub fn answers(&self, thread_id: &str) -> bool {
         self.drafts.iter().any(|d| d.thread_id == thread_id && d.request_id.is_some())
+    }
+
+    /// Reads one thread's saved draft, if any.
+    pub fn get(&self, thread_id: &str) -> Option<&ThreadDraft> {
+        self.drafts.iter().find(|d| d.thread_id == thread_id)
+    }
+
+    /// Whether `draft_id` was already replaced or cleared on `thread_id` (`obsoleteDrafts`).
+    pub fn is_obsolete(&self, thread_id: &str, draft_id: &str) -> bool {
+        self.obsolete.iter().any(|d| d.thread_id == thread_id && d.draft_id == draft_id)
+    }
+
+    /// Whether `draft_id` belongs to a different thread across saved, empty, obsolete, delivered, or prompt digests.
+    pub fn owns_elsewhere(&self, thread_id: &str, draft_id: &str) -> bool {
+        self.drafts.iter().any(|d| d.draft_id == draft_id && d.thread_id != thread_id)
+            || self.empty.iter().any(|(owner, e)| e.draft_id == draft_id && owner != thread_id)
+            || self.obsolete.iter().any(|d| d.draft_id == draft_id && d.thread_id != thread_id)
+            || self.delivered.iter().any(|d| d.draft_id == draft_id && d.thread_id != thread_id)
+            || self.delivered_digests.iter().any(|d| d.draft_id == draft_id && d.thread_id != thread_id)
+    }
+
+    /// Clears an empty draft revision's question binding without removing the revision itself
+    /// (`clearEmptyDraftBinding` in `src/main/agents/control.ts:5226-5229`).
+    pub fn clear_empty_binding(&mut self, thread_id: &str, draft_id: Option<&str>) {
+        if let Some(empty) = self.empty.get_mut(thread_id) {
+            if draft_id.is_none() || draft_id == Some(empty.draft_id.as_str()) {
+                empty.request_id = None;
+            }
+        }
+    }
+
+    /// Records the content digest of a delivered prompt (`deliveredPromptDigests`).
+    pub fn record_delivered_digest(&mut self, thread_id: &str, draft_id: &str, digest: String) {
+        if uuid::Uuid::parse_str(draft_id).is_err() {
+            return;
+        }
+        self.delivered_digests
+            .retain(|d| d.thread_id != thread_id || d.draft_id != draft_id);
+        self.delivered_digests.push(DeliveredPromptDigest {
+            thread_id: thread_id.to_string(),
+            draft_id: draft_id.to_string(),
+            digest: digest.clone(),
+            atomic_digest: Some(digest),
+        });
+        keep_newest_digests(&mut self.delivered_digests);
+    }
+
+    /// Returns the recorded digest for a delivered `(thread_id, draft_id)`, if known.
+    pub fn delivered_digest(&self, thread_id: &str, draft_id: &str) -> Option<&str> {
+        self.delivered_digests
+            .iter()
+            .find(|d| d.thread_id == thread_id && d.draft_id == draft_id)
+            .map(|d| d.atomic_digest.as_deref().unwrap_or(d.digest.as_str()))
+    }
+
+    /// Discards a thread's draft (`discardThreadDraft`), recording its revision as obsolete so late saves do not revive it.
+    pub fn discard(&mut self, thread_id: &str) -> bool {
+        let mut changed = false;
+        if let Some(previous) = self.current_id(thread_id).map(ToString::to_string) {
+            self.make_obsolete(thread_id, &previous);
+            changed = true;
+        }
+        let before = self.drafts.len();
+        self.drafts.retain(|d| d.thread_id != thread_id);
+        if self.drafts.len() != before {
+            changed = true;
+        }
+        if self.empty.remove(thread_id).is_some() {
+            changed = true;
+        }
+        changed
     }
 
     /// Lets go of every draft whose revision went as a prompt by another store's record, as Node's start reconciles a
@@ -166,6 +259,7 @@ impl ThreadDrafts {
         self.empty.retain(|thread, _| !gone.contains(thread));
         self.obsolete.retain(|d| !gone.contains(&d.thread_id));
         self.delivered.retain(|d| !gone.contains(&d.thread_id));
+        self.delivered_digests.retain(|d| !gone.contains(&d.thread_id));
     }
 
     /// Writes them back into `agents.json`, as Node's `savedSchema` keeps them.
@@ -174,6 +268,10 @@ impl ThreadDrafts {
         agents_json.insert(DRAFTS_KEY.into(), serde_json::to_value(&self.drafts).unwrap_or(Value::Array(Vec::new())));
         agents_json.insert(OBSOLETE_KEY.into(), list(&self.obsolete));
         agents_json.insert(DELIVERED_KEY.into(), list(&self.delivered));
+        agents_json.insert(
+            DELIVERED_DIGESTS_KEY.into(),
+            serde_json::to_value(&self.delivered_digests).unwrap_or(Value::Array(Vec::new())),
+        );
     }
 
     /// The revisions delivered as prompts, as a client is shown them.
@@ -316,6 +414,12 @@ impl ThreadDrafts {
 fn keep_newest(receipts: &mut Vec<DeliveredDraft>) {
     if receipts.len() > RECEIPTS_KEPT {
         receipts.drain(..receipts.len() - RECEIPTS_KEPT);
+    }
+}
+
+fn keep_newest_digests(digests: &mut Vec<DeliveredPromptDigest>) {
+    if digests.len() > RECEIPTS_KEPT {
+        digests.drain(..digests.len() - RECEIPTS_KEPT);
     }
 }
 

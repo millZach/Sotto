@@ -82,6 +82,7 @@ pub fn advertised_features() -> Vec<String> {
         "reply-thread-records".into(),
         "command-changed-thread-records".into(),
         "kept-parts".into(),
+        "atomic-send".into(),
         "draft-revisions".into(),
         // `refresh-thread-worktree` takes `background`, the window's own refresh, as Node offers it to every client.
         "background-refresh".into(),
@@ -2006,6 +2007,7 @@ impl<'a> CommandReceipt<'a> {
         client: ClientContext,
         command: serde_json::Map<String, Value>,
         confirm_redeem: Option<PullRequestConfirmRedeem>,
+        answering_draft: bool,
         wire: &mut ClientWireState,
     ) -> HostResponseEnvelope {
         let CommandReceipt { state, client_id, request_id, digest } = self;
@@ -2032,10 +2034,26 @@ impl<'a> CommandReceipt<'a> {
             };
             receipts.record(client_id, &request_id, digest);
         }
-        let is_answer = command.get("type").and_then(Value::as_str) == Some("answer");
-        // An answer is given under this client's own decision ID, so its receipt can say whether it was taken.
-        let decision_id = is_answer.then(|| answer_decision_id(client_id, &request_id));
-        let queued = state.coordinator.enqueue_command_with_meta(client, command, decision_id, match_head_commit);
+        let cmd_kind = command.get("type").and_then(Value::as_str).unwrap_or_default().to_string();
+        let is_answer = cmd_kind == "answer" || (cmd_kind == "send" && answering_draft);
+        // Always supply the deterministic decision ID for both `answer` and `send` so a question arriving between the
+        // socket pre-check and coordinator execution still records the client's exact decision ID (no TOCTOU).
+        let decision_id = matches!(cmd_kind.as_str(), "answer" | "send")
+            .then(|| answer_decision_id(client_id, &request_id));
+        let selected_thread_id = wire.selected_thread_id.clone();
+        // Set `editing_thread_id` BEFORE awaiting a queued `compose` and revert on error so pushes during a
+        // queued `compose` reflect the active composer (matching `src/host/socketServer.ts:1737-1748`).
+        let previous_editor = wire.editing_thread_id.clone();
+        if cmd_kind == "compose" {
+            wire.editing_thread_id = wire.selected_thread_id.clone();
+        }
+        let queued = state.coordinator.enqueue_command_with_context(
+            client,
+            command,
+            decision_id,
+            match_head_commit,
+            selected_thread_id,
+        );
         let receipts = Arc::clone(&state.receipts);
         let (client_key, request_key) = (client_id.to_string(), request_id.clone());
         let (ended_tx, ended_rx) = tokio::sync::oneshot::channel();
@@ -2048,9 +2066,30 @@ impl<'a> CommandReceipt<'a> {
             let _ = ended_tx.send(outcome);
         });
         match ended_rx.await {
-            Ok(Ok(raw_shell)) => HostResponseEnvelope::ok(request_id, wire.encode_command_shell(raw_shell)),
-            Ok(Err(err)) => HostResponseEnvelope::err(request_id, err.code, err.message),
-            Err(_) => HostResponseEnvelope::err(request_id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
+            Ok(Ok(raw_shell)) => {
+                let has_err = raw_shell
+                    .get("error")
+                    .and_then(Value::as_str)
+                    .is_some_and(|e| !e.is_empty());
+                if cmd_kind == "compose" && has_err {
+                    wire.editing_thread_id = previous_editor;
+                } else if !has_err && matches!(cmd_kind.as_str(), "cancel-draft" | "send") {
+                    wire.editing_thread_id = None;
+                }
+                HostResponseEnvelope::ok(request_id, wire.encode_command_shell(raw_shell))
+            }
+            Ok(Err(err)) => {
+                if cmd_kind == "compose" {
+                    wire.editing_thread_id = previous_editor;
+                }
+                HostResponseEnvelope::err(request_id, err.code, err.message)
+            }
+            Err(_) => {
+                if cmd_kind == "compose" {
+                    wire.editing_thread_id = previous_editor;
+                }
+                HostResponseEnvelope::err(request_id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message())
+            }
         }
     }
 }
@@ -2316,6 +2355,13 @@ async fn handle_ws_request(
                 .unwrap_or_default();
             wire.apply_hello(accepts);
             watcher_peer.reset();
+            // Clear a previously selected thread if a narrower re-hello now hides its provider (`socketServer.ts:2129`).
+            if let Some(selected_tid) = wire.selected_thread_id.clone() {
+                if hides_thread(state, wire, &selected_tid).await {
+                    wire.selected_thread_id = None;
+                    wire.editing_thread_id = None;
+                }
+            }
 
             let after_seq = req
                 .fields
@@ -2698,9 +2744,35 @@ async fn handle_ws_request(
             if pr_cmd && !valid_pull_request_command_shape(cmd) {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
+            // And so are composer draft, skill, title, restart, babysit, session, and detached-run commands.
+            let kind = cmd.get("type").and_then(Value::as_str).unwrap_or_default();
+            let lifecycle_shape_ok = match kind {
+                "compose" => sotto_core::remote_commands::valid_compose_shape(cmd),
+                "send" => sotto_core::remote_commands::valid_send_shape(cmd),
+                "cancel-draft" => sotto_core::remote_commands::valid_cancel_draft_shape(cmd),
+                "refresh-thread-skills" => sotto_core::remote_commands::valid_refresh_skills_shape(cmd),
+                "stop-detached-run" => sotto_core::remote_commands::valid_stop_detached_run_shape(cmd),
+                "babysit-pull-request" | "stop-babysitting" => sotto_core::remote_commands::valid_babysit_shape(cmd),
+                "start-thread-session" | "regenerate-thread-title" | "cancel-restart" => {
+                    sotto_core::remote_commands::valid_thread_id_only_shape(cmd, kind)
+                }
+                _ => true,
+            };
+            if !lifecycle_shape_ok {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
-            // socket server refuses it.
-            if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {
+            // socket server refuses it (`socketServer.ts:1670-1671`).
+            let explicit_owner = cmd
+                .get("threadId")
+                .and_then(Value::as_str)
+                .or_else(|| {
+                    (kind == "send")
+                        .then(|| cmd.get("draft").and_then(|d| d.get("threadId")).and_then(Value::as_str))
+                        .flatten()
+                })
+                .or(wire.selected_thread_id.as_deref());
+            if let Some(thread_id) = explicit_owner {
                 if hides_thread(state, wire, thread_id).await {
                     return HostResponseEnvelope::err(
                         req.id,
@@ -2709,13 +2781,67 @@ async fn handle_ws_request(
                     );
                 }
             }
-            // A save naming the revision it saw is a `draft-revisions` client's, as Node's socket server allows it.
-            if cmd.get("type").and_then(Value::as_str) == Some("save-thread-draft") && cmd.contains_key("expectedDraftId") && !wire.has("draft-revisions") {
+            let offered = offered_features(state, mode, client_id);
+            if ((kind == "send" && cmd.contains_key("draft")) || (kind == "compose" && cmd.contains_key("threadId")))
+                && !offered.iter().any(|f| f == "atomic-send")
+            {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
+            if ((kind == "compose" && cmd.contains_key("draftId"))
+                || (kind == "send" && cmd.get("draft").and_then(|d| d.get("draftId")).is_some()))
+                && !offered.iter().any(|f| f == "draft-revisions")
+            {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
+            // A save naming the revision it saw is a `draft-revisions` client's, as Node's socket server allows it.
+            if kind == "save-thread-draft" && cmd.contains_key("expectedDraftId") && !wire.has("draft-revisions") {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
+            // Per-socket thread/project selection (`socketServer.ts:1728-1733`).
+            if kind == "select-thread" {
+                let Some(tid) = protocol_id(cmd.get("threadId")) else {
+                    return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+                };
+                if cmd.len() != 2 {
+                    return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+                }
+                match state.coordinator.thread_project_id(tid.clone()).await {
+                    Ok(Some(project_id)) => {
+                        wire.selected_thread_id = Some(tid);
+                        wire.selected_project_id = Some(project_id);
+                    }
+                    Ok(None) => {
+                        return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+                    }
+                    Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+                }
+                return match state.coordinator.shell(may_answer).await {
+                    Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
+                    Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+                };
+            }
+            if kind == "select-project" {
+                let Some(pid) = cmd
+                    .get("projectId")
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty() && s.encode_utf16().count() <= 6_144)
+                    .map(ToString::to_string)
+                else {
+                    return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+                };
+                if cmd.len() != 2 {
+                    return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+                }
+                wire.selected_project_id = Some(pid);
+                wire.selected_thread_id = None;
+                return match state.coordinator.shell(may_answer).await {
+                    Ok(raw_shell) => HostResponseEnvelope::ok(req.id, wire.encode_command_shell(raw_shell)),
+                    Err(err) => HostResponseEnvelope::err(req.id, err.code, err.message),
+                };
             }
             // A socket client's own `observe-threads` is what its connection observes, as an `observe` is, and goes with
             // the connection (`src/host/socketServer.ts`).
-            if cmd.get("type").and_then(Value::as_str) == Some("observe-threads") {
+            if kind == "observe-threads" {
                 let Some(thread_ids) = observed_thread_ids(cmd) else {
                     return HostResponseEnvelope::err(
                         req.id,
@@ -2737,12 +2863,42 @@ async fn handle_ws_request(
                 user: client_name.to_string(),
                 may_answer,
             };
-            let kind = cmd.get("type").and_then(Value::as_str).unwrap_or_default();
+            // `compose` and atomic `send` must target this socket's selected thread (`remoteCommands.ts:196-199`).
+            if kind == "compose" {
+                if let Some(tid) = cmd.get("threadId").and_then(Value::as_str) {
+                    if wire.selected_thread_id.as_deref() != Some(tid) {
+                        return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+                    }
+                }
+            }
+            if kind == "send" {
+                if let Some(tid) = cmd.get("draft").and_then(|d| d.get("threadId")).and_then(Value::as_str) {
+                    if wire.selected_thread_id.as_deref() != Some(tid) {
+                        return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+                    }
+                }
+            }
+            // Drafts answering a pending question require remote-answer policy (`remoteCommands.ts:152`, `socketServer.ts:1680-1693`).
+            let mut answering_draft = false;
+            if kind == "send" || (kind == "compose" && !cmd.contains_key("threadId")) {
+                if let Some(ref tid) = wire.selected_thread_id {
+                    let draft_req = match state.coordinator.draft_request_id(tid.clone()).await {
+                        Ok(r) => r,
+                        Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+                    };
+                    if draft_req.is_some() {
+                        if !may_answer {
+                            return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+                        }
+                        answering_draft = kind == "send";
+                    }
+                }
+            }
             // Then Node's `remoteCommandRefusal`: deleting is only for a listener that offers `thread-delete` (ADR-0140),
             // and a delete takes the remote-answer policy. Both are turned down before the preview answers and before a
             // delete's receipt is kept.
             if deleting {
-                if !offered_features(state, mode, client_id).iter().any(|f| f == "thread-delete") {
+                if !offered.iter().any(|f| f == "thread-delete") {
                     return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
                 }
                 if let Err(refusal) = validate_remote_command(cmd, may_answer) {
@@ -2801,7 +2957,7 @@ async fn handle_ws_request(
                     });
                 }
             }
-            receipt.run(client, dispatched_cmd, confirm_redeem, wire).await
+            receipt.run(client, dispatched_cmd, confirm_redeem, answering_draft, wire).await
         }
         "receipt" => {
             // What became of one of this client's commands, as Node's socket server answers it. With an answer named,
@@ -4801,5 +4957,227 @@ mod tests {
         tokio::time::timeout(Duration::from_secs(5), server.close())
             .await
             .expect("RunningServer::close stalled waiting on in-flight project-setup");
+    }
+
+    #[test]
+    fn atomic_send_feature_is_offered_to_every_client() {
+        let all = advertised_features();
+        for (desktop, on_listener) in [(true, true), (false, true), (false, false)] {
+            let offered = features_for_client(&all, desktop, on_listener);
+            assert!(
+                offered.iter().any(|f| f == "atomic-send"),
+                "expected atomic-send for desktop={desktop} on_listener={on_listener}"
+            );
+        }
+    }
+
+    /// `compose`, `send` (plain and atomic), and `cancel-draft` follow Node's per-socket selection,
+    /// cross-thread ownership refusal, and remote-answer policy for question-bound drafts.
+    #[tokio::test]
+    async fn compose_send_and_cancel_draft_enforce_selection_and_answer_policy() {
+        let host = AskingHost::start().await;
+        let mut connection = host.connect(&[]).await;
+        let cmd = |id: &str, command: Value| json!({ "v": 1, "id": id, "op": "command", "command": command });
+
+        // Without selecting a thread on this socket, compose/send/cancel-draft refuse with NO_THREAD.
+        for (id, body) in [
+            ("c-none", json!({ "type": "compose", "text": "draft" })),
+            ("s-none", json!({ "type": "send" })),
+            ("x-none", json!({ "type": "cancel-draft" })),
+        ] {
+            let reply = host.ask(&mut connection, cmd(id, body)).await;
+            assert_eq!(reply["ok"], true, "{id}: {reply}");
+            assert_eq!(reply["result"]["error"], "Select an available thread first.", "{id}: {reply}");
+        }
+
+        // Targeted compose / atomic send for a thread this socket has not selected is Forbidden.
+        let wrong_owner = host
+            .ask(
+                &mut connection,
+                cmd("c-wrong", json!({ "type": "compose", "threadId": ASKING_THREAD, "text": "x" })),
+            )
+            .await;
+        assert_eq!(wrong_owner["error"]["code"], "forbidden", "{wrong_owner}");
+
+        // Select ASKING_THREAD (which has pending question `req-1`).
+        let sel = host
+            .ask(&mut connection, cmd("sel-1", json!({ "type": "select-thread", "threadId": ASKING_THREAD })))
+            .await;
+        assert_eq!(sel["ok"], true, "{sel}");
+        assert_eq!(connection.wire.selected_thread_id.as_deref(), Some(ASKING_THREAD));
+
+        // Revoking remote-answer policy refuses question-bound compose and send with Forbidden.
+        host.server
+            .state
+            .memory
+            .lock()
+            .unwrap()
+            .set_remote_answers(&host.client_id, false, "test")
+            .unwrap();
+        let no_grant_compose = host
+            .ask(&mut connection, cmd("c-denied", json!({ "type": "compose", "text": "Blue" })))
+            .await;
+        assert_eq!(no_grant_compose["error"]["code"], "forbidden", "{no_grant_compose}");
+        let no_grant_send = host
+            .ask(
+                &mut connection,
+                cmd("s-denied", json!({ "type": "send", "draft": { "threadId": ASKING_THREAD, "text": "Blue" } })),
+            )
+            .await;
+        assert_eq!(no_grant_send["error"]["code"], "forbidden", "{no_grant_send}");
+
+        // Re-granting remote answers lets compose save the draft and cancel-draft clear it.
+        host.server
+            .state
+            .memory
+            .lock()
+            .unwrap()
+            .set_remote_answers(&host.client_id, true, "test")
+            .unwrap();
+        let composed = host
+            .ask(&mut connection, cmd("c-ok", json!({ "type": "compose", "text": "Blue" })))
+            .await;
+        assert_eq!(composed["ok"], true, "{composed}");
+        assert_eq!(composed["result"]["error"], Value::Null, "{composed}");
+        assert_eq!(composed["result"]["composing"], true, "{composed}");
+        assert_eq!(composed["result"]["draft"], "Blue", "{composed}");
+
+        let cleared = host
+            .ask(&mut connection, cmd("x-ok", json!({ "type": "cancel-draft" })))
+            .await;
+        assert_eq!(cleared["ok"], true, "{cleared}");
+        assert_eq!(cleared["result"]["error"], Value::Null, "{cleared}");
+        assert_eq!(cleared["result"]["composing"], false, "{cleared}");
+
+        host.server.close().await;
+    }
+
+    /// Re-hello with narrower `accepts` that hides the selected thread's provider clears both
+    /// `selected_thread_id` and `editing_thread_id` (`socketServer.ts:2129`).
+    #[tokio::test]
+    async fn rehello_hiding_selected_provider_clears_selection_and_editor() {
+        let dir = tempfile::tempdir().unwrap();
+        let cursor = Arc::new(sotto_core::MockProviderAdapter::new("cursor"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("cursor".into(), cursor);
+        let server = RunningServer::start(ServerConfig {
+            data_directory: dir.path().to_path_buf(),
+            host_id: "00000000-0000-4000-8000-000000000001".into(),
+            port: 0,
+            sotto_version: "0.1.0".into(),
+            started_by: None,
+            credentials: HostCredentials::open(dir.path(), None).unwrap(),
+            providers,
+            tailscale: None,
+            phone_retry_interval: None,
+        })
+        .await
+        .unwrap();
+        let state = &server.state;
+        let code = state.pairing.lock().unwrap().issue_pairing_code().code;
+        let client_id = state.pairing.lock().unwrap().redeem_pairing_code(&code, "Test Desktop").unwrap().client_id;
+        let session = state.pairing.lock().unwrap().issue_session(&client_id).unwrap().session;
+        let client = ClientContext { client_id: client_id.clone(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| state.coordinator.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({
+            "type": "create-project",
+            "provider": "cursor",
+            "title": "P",
+            "path": dir.path().to_string_lossy(),
+            "useExisting": true
+        }))
+        .await
+        .unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let cursor_tid = "00000000-0000-4000-8000-00000000c001";
+        run(json!({
+            "type": "create-thread",
+            "threadId": cursor_tid,
+            "projectId": project_id,
+            "title": "Cursor Thread",
+            "titleSource": "user",
+            "modelId": "native:cursor:model:fixture-model",
+            "workingCopy": "shared",
+            "managed": false
+        }))
+        .await
+        .unwrap();
+
+        #[allow(clippy::too_many_arguments)]
+        async fn ask_req(
+            state: &Arc<HostState>,
+            client_id: &str,
+            session: &str,
+            out_tx: &mpsc::UnboundedSender<OutboundFrame>,
+            wire: &mut ClientWireState,
+            watcher_peer: &mut WatcherPeerState,
+            out_rx: &mut mpsc::UnboundedReceiver<OutboundFrame>,
+            req: Value,
+        ) -> Value {
+            match dispatch_ws_request(
+                state,
+                &ListenerMode::Admin,
+                client_id,
+                "Test Desktop",
+                session,
+                wire,
+                watcher_peer,
+                out_tx,
+                &req.to_string(),
+            )
+            .await
+            {
+                Some(reply) => serde_json::to_value(reply).unwrap(),
+                None => {
+                    let Some(OutboundFrame::Text(raw)) = out_rx.recv().await else {
+                        panic!("deferred request sent no reply frame");
+                    };
+                    serde_json::from_str(&raw).unwrap()
+                }
+            }
+        }
+
+        let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+        let mut wire = ClientWireState::default();
+        let mut watcher_peer = WatcherPeerState::default();
+
+        // Initial hello accepts `provider-cursor`; select and compose on the cursor thread.
+        let h1 = ask_req(state, &client_id, &session, &out_tx, &mut wire, &mut watcher_peer, &mut out_rx, json!({ "v": 1, "id": "h1", "op": "hello", "accepts": ["provider-cursor"] })).await;
+        assert_eq!(h1["ok"], true, "{h1}");
+        let sel = ask_req(
+            state,
+            &client_id,
+            &session,
+            &out_tx,
+            &mut wire,
+            &mut watcher_peer,
+            &mut out_rx,
+            json!({ "v": 1, "id": "sel", "op": "command", "command": { "type": "select-thread", "threadId": cursor_tid } }),
+        )
+        .await;
+        assert_eq!(sel["ok"], true, "{sel}");
+        let comp = ask_req(
+            state,
+            &client_id,
+            &session,
+            &out_tx,
+            &mut wire,
+            &mut watcher_peer,
+            &mut out_rx,
+            json!({ "v": 1, "id": "comp", "op": "command", "command": { "type": "compose", "text": "hi" } }),
+        )
+        .await;
+        assert_eq!(comp["ok"], true, "{comp}");
+        assert_eq!(wire.selected_thread_id.as_deref(), Some(cursor_tid));
+        assert_eq!(wire.editing_thread_id.as_deref(), Some(cursor_tid));
+
+        // Re-hello dropping `provider-cursor` hides the selected thread and clears both pointers.
+        let h2 = ask_req(state, &client_id, &session, &out_tx, &mut wire, &mut watcher_peer, &mut out_rx, json!({ "v": 1, "id": "h2", "op": "hello", "accepts": [] })).await;
+        assert_eq!(h2["ok"], true, "{h2}");
+        assert_eq!(wire.selected_thread_id, None);
+        assert_eq!(wire.editing_thread_id, None);
+        while out_rx.try_recv().is_ok() {}
+
+        server.close().await;
     }
 }
