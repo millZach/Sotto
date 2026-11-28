@@ -105,18 +105,10 @@ impl ThreadFolder {
     }
 }
 
-/// Runs `command` on a thread's working copy, as Node's workspace does in the thread's Git lane once its checkout is held.
-/// First the folder, as Node's `threadWorkingDirectory` finds it: a started thread with no record has one made for its
-/// folder; a worktree that was deleted is put back on its recorded branch and read, and a branch switched inside it is
-/// adopted (ADR-0014); a record that is not ready refuses. Then Git, and then the record follows what Git did
-/// (`followGitChange`): read again, and for a switch the branch of the last send moves with it, so the branch notice never
-/// shows for a switch made here. Initialize Git finds a shared folder again, since it is now a repository.
-///
-/// Answered with the record to keep, `None` when it stays as it was, which a refusal after the folder was read keeps too,
-/// and the notice to say, or why not in Node's words.
-pub fn run(data_directory: &Path, thread: &ThreadFolder, command: &LocalGitCommand) -> (Option<AgentThreadWorktree>, Result<String, String>) {
+/// Restores and resolves a thread's working folder as Node's `threadWorkingDirectory` does, returning the updated
+/// worktree record alongside the resolved folder path or a refusal in Node's words.
+pub(crate) fn prepare_folder(data_directory: &Path, thread: &ThreadFolder) -> (Option<AgentThreadWorktree>, Result<String, String>) {
     let mut current = thread.worktree.clone();
-    let kept = |current: Option<AgentThreadWorktree>| current.filter(|record| Some(record) != thread.worktree.as_ref());
     if current.is_none() && thread.started {
         if thread.directory().is_empty() {
             return (None, Err("This thread’s working folder is unavailable.".into()));
@@ -130,10 +122,42 @@ pub fn run(data_directory: &Path, thread: &ThreadFolder, command: &LocalGitComma
         let filled = with_repository(worktree, &thread.project_path);
         match thread_working_directory(data_directory, &filled) {
             Ok(read) => current = Some(read.unwrap_or(filled)),
-            Err(words) => return (kept(current), Err(words)),
+            Err(words) => return (current, Err(words)),
         }
     }
-    let cwd = match working_folder(current.as_ref(), thread) {
+    let cwd = working_folder(current.as_ref(), thread);
+    (current, cwd)
+}
+
+/// Inspects an existing ready worktree after a Git change, mirroring Node's `followGitChange`.
+pub(crate) fn inspect_after_change(current: Option<AgentThreadWorktree>, follow_sent_branch: bool) -> Option<AgentThreadWorktree> {
+    let mut current = current;
+    if let Some(worktree) = current.as_ref().filter(|worktree| worktree.status == "ready" && worktree.path.is_some()) {
+        // A folder that stopped being the thread's is reported by the next send.
+        if let Ok(mut inspected) = inspect(worktree) {
+            let sent = worktree.extra.contains_key("sentBranch");
+            if let (true, true, Some(branch)) = (follow_sent_branch, sent, inspected.branch.clone()) {
+                inspected.extra.insert("sentBranch".into(), Value::String(branch));
+            }
+            current = Some(inspected);
+        }
+    }
+    current
+}
+
+/// Runs `command` on a thread's working copy, as Node's workspace does in the thread's Git lane once its checkout is held.
+/// First the folder, as Node's `threadWorkingDirectory` finds it: a started thread with no record has one made for its
+/// folder; a worktree that was deleted is put back on its recorded branch and read, and a branch switched inside it is
+/// adopted (ADR-0014); a record that is not ready refuses. Then Git, and then the record follows what Git did
+/// (`followGitChange`): read again, and for a switch the branch of the last send moves with it, so the branch notice never
+/// shows for a switch made here. Initialize Git finds a shared folder again, since it is now a repository.
+///
+/// Answered with the record to keep, `None` when it stays as it was, which a refusal after the folder was read keeps too,
+/// and the notice to say, or why not in Node's words.
+pub fn run(data_directory: &Path, thread: &ThreadFolder, command: &LocalGitCommand) -> (Option<AgentThreadWorktree>, Result<String, String>) {
+    let kept = |current: Option<AgentThreadWorktree>| current.filter(|record| Some(record) != thread.worktree.as_ref());
+    let (mut current, cwd) = prepare_folder(data_directory, thread);
+    let cwd = match cwd {
         Ok(cwd) => cwd,
         Err(words) => return (kept(current), Err(words)),
     };
@@ -160,16 +184,7 @@ pub fn run(data_directory: &Path, thread: &ThreadFolder, command: &LocalGitComma
         }
     }
     let follow_sent_branch = matches!(command, LocalGitCommand::SwitchBranch { .. });
-    if let Some(worktree) = current.as_ref().filter(|worktree| worktree.status == "ready" && worktree.path.is_some()) {
-        // A folder that stopped being the thread's is reported by the next send.
-        if let Ok(mut inspected) = inspect(worktree) {
-            let sent = worktree.extra.contains_key("sentBranch");
-            if let (true, true, Some(branch)) = (follow_sent_branch, sent, inspected.branch.clone()) {
-                inspected.extra.insert("sentBranch".into(), Value::String(branch));
-            }
-            current = Some(inspected);
-        }
-    }
+    current = inspect_after_change(current, follow_sent_branch);
     (kept(current), done)
 }
 

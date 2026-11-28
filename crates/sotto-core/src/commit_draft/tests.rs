@@ -27,7 +27,7 @@ fn material() -> CommitMaterial {
 }
 
 fn settings(style: GitWritingStyle, instructions: &str) -> WritingSettings {
-    WritingSettings { commit_messages: true, git_writing_style: style, git_writing_instructions: instructions.into() }
+    WritingSettings { git_writing_style: style, git_writing_instructions: instructions.into(), ..WritingSettings::default() }
 }
 
 #[test]
@@ -65,8 +65,17 @@ fn reads_the_writing_settings_as_nodes_parse_settings_does() {
     }
     fs::write(&file, json!({ "commitMessages": "no", "gitWritingStyle": "loud", "gitWritingInstructions": "x".repeat(2_001) }).to_string()).unwrap();
     assert_eq!(WritingSettings::read(dir.path()), Some(WritingSettings::default()));
-    fs::write(&file, json!({ "commitMessages": false, "gitWritingStyle": "custom", "gitWritingInstructions": "y".repeat(2_000) }).to_string()).unwrap();
-    assert_eq!(WritingSettings::read(dir.path()), Some(WritingSettings { commit_messages: false, git_writing_style: GitWritingStyle::Custom, git_writing_instructions: "y".repeat(2_000) }));
+    fs::write(&file, json!({ "commitMessages": false, "pullRequestText": false, "followPullRequestTemplates": false, "gitWritingStyle": "custom", "gitWritingInstructions": "y".repeat(2_000) }).to_string()).unwrap();
+    assert_eq!(
+        WritingSettings::read(dir.path()),
+        Some(WritingSettings {
+            commit_messages: false,
+            pull_request_text: false,
+            follow_pull_request_templates: false,
+            git_writing_style: GitWritingStyle::Custom,
+            git_writing_instructions: "y".repeat(2_000),
+        })
+    );
     // A file that is there and cannot be read, as a folder in its place cannot, is not taken for the defaults.
     fs::remove_file(&file).unwrap();
     fs::create_dir(&file).unwrap();

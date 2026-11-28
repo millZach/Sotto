@@ -66,7 +66,12 @@ const sessionFile = id => path(`sessions/${id}.json`)
 const sessions = new Map()
 const resident = new Set()
 const loadSession = id => { if (sessions.has(id)) return sessions.get(id); try { const session = JSON.parse(readFileSync(sessionFile(id), 'utf8')); sessions.set(id, session); return session } catch { return undefined } }
-const save = id => writeFileSync(sessionFile(id), JSON.stringify(sessions.get(id)))
+let saveSerial = 0
+const save = id => {
+  const staged = path(`sessions/${id}.${process.pid}.${++saveSerial}.tmp`)
+  writeFileSync(staged, JSON.stringify(sessions.get(id)))
+  renameSync(staged, sessionFile(id))
+}
 const configOptions = session => {
   const model = modelOf(session.model), option = effortOf(model)
   return [{ id: 'mode', category: 'mode', type: 'select', currentValue: session.mode, options: ['agent', 'plan', 'ask'].map(value => ({ value, name: value })) },

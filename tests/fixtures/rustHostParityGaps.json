@@ -144,10 +144,6 @@
       "node": "refused",
       "rust": "invalid_request"
     },
-    "git-action": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
     "git-checkout-pull-request": {
       "node": "refused",
       "rust": "invalid_request"

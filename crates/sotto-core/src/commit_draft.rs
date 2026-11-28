@@ -42,18 +42,26 @@ pub enum GitWritingStyle {
     Custom,
 }
 
-/// What the host's settings say about drafting commit messages, as Node's `parseSettings` reads each field: the saved
-/// value when its schema takes it, and otherwise Node's default.
+/// What the host's settings say about drafting commit messages and pull requests, as Node's `parseSettings` reads each
+/// field: the saved value when its schema takes it, and otherwise Node's default.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WritingSettings {
     pub commit_messages: bool,
+    pub pull_request_text: bool,
+    pub follow_pull_request_templates: bool,
     pub git_writing_style: GitWritingStyle,
     pub git_writing_instructions: String,
 }
 
 impl Default for WritingSettings {
     fn default() -> Self {
-        Self { commit_messages: true, git_writing_style: GitWritingStyle::Repository, git_writing_instructions: String::new() }
+        Self {
+            commit_messages: true,
+            pull_request_text: true,
+            follow_pull_request_templates: true,
+            git_writing_style: GitWritingStyle::Repository,
+            git_writing_instructions: String::new(),
+        }
     }
 }
 
@@ -70,6 +78,11 @@ impl WritingSettings {
         let defaults = Self::default();
         Some(Self {
             commit_messages: saved.get("commitMessages").and_then(Value::as_bool).unwrap_or(defaults.commit_messages),
+            pull_request_text: saved.get("pullRequestText").and_then(Value::as_bool).unwrap_or(defaults.pull_request_text),
+            follow_pull_request_templates: saved
+                .get("followPullRequestTemplates")
+                .and_then(Value::as_bool)
+                .unwrap_or(defaults.follow_pull_request_templates),
             git_writing_style: match saved.get("gitWritingStyle").and_then(Value::as_str) {
                 Some("repository") => GitWritingStyle::Repository,
                 Some("conventional") => GitWritingStyle::Conventional,
@@ -85,20 +98,43 @@ impl WritingSettings {
     }
 }
 
-/// Node's `gitWritingStyleInstruction` for a commit: nothing for the repository's own conventions, which the recent
-/// subjects and `AGENTS.md` already carry; the Conventional Commits form; or the user's own instructions, with Custom
-/// and nothing written falling back to the repository's. Either of the last two takes precedence over the rest.
-pub fn git_writing_style_instruction(settings: &WritingSettings) -> Option<String> {
-    const PRECEDENCE: &str = "This takes precedence over the example subject above, the recent commit subjects and anything the repository's AGENTS.md says about commit message style; use those only for what this leaves open.";
-    const CONVENTIONAL: &str = "Write the subject in the Conventional Commits form, \"type(scope): summary\", with a lowercase type such as feat, fix, docs, refactor, test or chore, an optional scope, and an imperative summary.";
+/// Which Git writing surface is asking for a style instruction (`src/main/llm/gitWritingStyle.ts`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GitWritingKind {
+    Commit,
+    PullRequest,
+}
+
+/// Node's `gitWritingStyleInstruction`: nothing for the repository's own conventions; the Conventional Commits form;
+/// or the user's own instructions, with Custom and nothing written falling back to the repository's.
+pub fn git_writing_style_instruction_for(settings: &WritingSettings, kind: GitWritingKind) -> Option<String> {
+    let (precedence, conventional, surface) = match kind {
+        GitWritingKind::Commit => (
+            "This takes precedence over the example subject above, the recent commit subjects and anything the repository's AGENTS.md says about commit message style; use those only for what this leaves open.",
+            "Write the subject in the Conventional Commits form, \"type(scope): summary\", with a lowercase type such as feat, fix, docs, refactor, test or chore, an optional scope, and an imperative summary.",
+            "commit messages",
+        ),
+        GitWritingKind::PullRequest => (
+            "This takes precedence over the title and section rules above and anything the repository's AGENTS.md says about pull request style; use those only for what this leaves open.",
+            "Write the title in the Conventional Commits form, \"type(scope): summary\", with a lowercase type such as feat, fix, docs, refactor, test or chore, an optional scope, and an imperative summary.",
+            "pull request text",
+        ),
+    };
     match settings.git_writing_style {
         GitWritingStyle::Repository => None,
-        GitWritingStyle::Conventional => Some(format!("{CONVENTIONAL} {PRECEDENCE}")),
+        GitWritingStyle::Conventional => Some(format!("{conventional} {precedence}")),
         GitWritingStyle::Custom => {
             let instructions = js_trim(&settings.git_writing_instructions);
-            (!instructions.is_empty()).then(|| format!("The user's own instructions for commit messages follow. {PRECEDENCE} They never override answering with the text alone and inventing nothing:\n{instructions}"))
+            (!instructions.is_empty()).then(|| {
+                format!("The user's own instructions for {surface} follow. {precedence} They never override answering with the text alone and inventing nothing:\n{instructions}")
+            })
         }
     }
+}
+
+/// Node's `gitWritingStyleInstruction` for a commit.
+pub fn git_writing_style_instruction(settings: &WritingSettings) -> Option<String> {
+    git_writing_style_instruction_for(settings, GitWritingKind::Commit)
 }
 
 /// Node's `commitMessageRequest`: the staged files first where Git listed any, the diff, the recent subjects to match
