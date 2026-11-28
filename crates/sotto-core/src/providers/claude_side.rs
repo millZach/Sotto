@@ -13,6 +13,7 @@ use serde_json::Value;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 
 use super::claude::ClaudeLaunch;
+use super::side_process::valid_effort;
 use crate::side_writing::ShortTextPrompt;
 
 /// Node's `outputLimitBytes` default: what the run may print, standard output and error together.
@@ -36,14 +37,6 @@ fn valid_model(model: &str) -> bool {
         && base.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
         && base.chars().all(|c| c.is_ascii_alphanumeric() || "._:/-".contains(c))
         && tag_ok
-}
-
-/// Node's effort check: a lowercase letter, then up to 31 lowercase letters, digits, `_` or `-`.
-fn valid_effort(effort: &str) -> bool {
-    let mut chars = effort.chars();
-    chars.next().is_some_and(|c| c.is_ascii_lowercase())
-        && effort.len() <= 32
-        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
 }
 
 /// The run's arguments after the client's own, in Node's order.
@@ -209,8 +202,6 @@ mod tests {
         for model in ["", "-opus", "opus[]", "opus[1m", "opus 5", "opus[1m]x", &"a".repeat(161)] {
             assert!(!valid_model(model), "{model}");
         }
-        assert!(valid_effort("low") && valid_effort("x_high-2"));
-        assert!(!valid_effort("Low") && !valid_effort("") && !valid_effort("1low") && !valid_effort(&"a".repeat(33)));
     }
 
     #[test]

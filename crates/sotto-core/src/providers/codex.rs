@@ -30,10 +30,16 @@ pub const CODEX_THREADS_FILE: &str = "codex-threads.json";
 pub struct CodexAdapterConfig {
     pub data_directory: PathBuf,
     pub executable: String,
+    /// Node's `options.args`: what a test launch puts before everything else, a session's arguments and a side call's
+    /// `exec` alike. A native launch has none.
+    pub prefix_args: Vec<String>,
+    /// A session's own arguments, after `prefix_args`.
     pub args: Vec<String>,
     pub codex_home: Option<PathBuf>,
     pub request_timeout_ms: u64,
     pub use_cli_lookup: bool,
+    /// How long a side call has (Node's `SIDE_WRITING_TIMEOUT_MS`); a test shortens it.
+    pub side_writing_deadline: Duration,
 }
 
 impl CodexAdapterConfig {
@@ -41,10 +47,12 @@ impl CodexAdapterConfig {
         Self {
             data_directory,
             executable: "codex".into(),
+            prefix_args: Vec::new(),
             args: vec!["app-server".into(), "--stdio".into()],
             codex_home: None,
             request_timeout_ms: 30_000,
             use_cli_lookup: true,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
     }
 
@@ -53,14 +61,67 @@ impl CodexAdapterConfig {
         Self {
             data_directory: data_directory.clone(),
             executable: std::env::var("SOTTO_NODE_BIN").unwrap_or_else(|_| "node".into()),
-            args: vec![
+            prefix_args: vec![
                 fake_script.to_string_lossy().into_owned(),
                 data_directory.to_string_lossy().into_owned(),
             ],
+            args: Vec::new(),
             codex_home: Some(codex_home),
             request_timeout_ms: 2_000,
             use_cli_lookup: false,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
+    }
+
+    /// The user's Codex as the CLI lookup finds it, or the configured client when no lookup is made; `None` when the
+    /// lookup finds none. The configured leading arguments are the caller's to add.
+    fn launch(&self) -> Option<CodexLaunch> {
+        let cli = if self.use_cli_lookup {
+            let options = crate::cli_lookup::CliLookupOptions::from_process_env();
+            crate::cli_lookup::resolve_provider_cli("codex", &self.data_directory, &options)?
+        } else {
+            crate::cli_lookup::ResolvedCli { executable: PathBuf::from(&self.executable), prefix_args: Vec::new(), augmented_path: String::new() }
+        };
+        Some(CodexLaunch { cli, codex_home: self.codex_home() })
+    }
+
+    /// Node's `codexHome()`: the configured folder, else `CODEX_HOME` as the host was given it, else `~/.codex`.
+    fn codex_home(&self) -> Option<std::ffi::OsString> {
+        if let Some(home) = &self.codex_home {
+            return Some(home.clone().into_os_string());
+        }
+        std::env::var_os("CODEX_HOME").or_else(|| Some(crate::cli_lookup::CliLookupOptions::from_process_env().home?.join(".codex").into_os_string()))
+    }
+}
+
+/// Node's `nativeEnvironment` (`src/main/agents/subscriptionCodex.ts`), lowercase: the native login discovery, OS and
+/// keychain access and system proxy a Codex process keeps, never an API key, a provider endpoint override or
+/// `NODE_OPTIONS`.
+pub(crate) const NATIVE_ENVIRONMENT_KEYS: &[&str] = &[
+    "path", "systemroot", "windir", "comspec", "home", "user", "logname", "username", "userprofile", "homedrive", "homepath",
+    "appdata", "localappdata", "programdata", "temp", "tmp", "tmpdir", "codex_home", "http_proxy", "https_proxy", "all_proxy",
+    "no_proxy", "ssl_cert_file", "ssl_cert_dir", "lang", "lc_all",
+];
+
+/// How the user's Codex starts: the client the lookup found and the Codex home it works in.
+pub(crate) struct CodexLaunch {
+    cli: crate::cli_lookup::ResolvedCli,
+    codex_home: Option<std::ffi::OsString>,
+}
+
+impl CodexLaunch {
+    /// The user's Codex with its own leading arguments, on the environment Node gives every Codex process Sotto starts,
+    /// a thread's app-server and its side call alike: the allow-list above, `CODEX_HOME` as Node's `codexHome()` reads
+    /// it, and the PATH the lookup found the client on (Node's `withCliPath`).
+    pub(crate) fn command(&self) -> Command {
+        let mut command = Command::new(&self.cli.executable);
+        command.args(&self.cli.prefix_args);
+        super::side_process::keep_only_environment(&mut command, NATIVE_ENVIRONMENT_KEYS);
+        if let Some(home) = &self.codex_home {
+            command.env("CODEX_HOME", home);
+        }
+        self.cli.apply_tokio(&mut command);
+        command
     }
 }
 
@@ -112,35 +173,19 @@ impl RpcProcess {
         shared: Arc<CodexSharedState>,
         owner_thread_id: Option<String>,
     ) -> Result<Arc<Self>, String> {
-        let resolved = if config.use_cli_lookup {
-            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
-            Some(
-                crate::cli_lookup::resolve_provider_cli("codex", &config.data_directory, &opts)
-                    .ok_or_else(|| {
-                        "Install Codex and sign in before connecting this provider.".to_string()
-                    })?,
-            )
-        } else {
-            None
-        };
-        let mut cmd = match &resolved {
-            Some(res) => {
-                let mut c = Command::new(&res.executable);
-                c.args(&res.prefix_args);
-                res.apply_tokio(&mut c);
-                c
-            }
-            None => Command::new(&config.executable),
-        };
-        cmd.args(&config.args)
+        let launch = config
+            .launch()
+            .ok_or_else(|| "Install Codex and sign in before connecting this provider.".to_string())?;
+        if let Some(ref home) = config.codex_home {
+            let _ = fs::create_dir_all(home);
+        }
+        let mut cmd = launch.command();
+        cmd.args(&config.prefix_args)
+            .args(&config.args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        if let Some(ref home) = config.codex_home {
-            let _ = fs::create_dir_all(home);
-            cmd.env("CODEX_HOME", home);
-        }
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -966,7 +1011,8 @@ impl ProviderAdapter for CodexAdapter {
                                 provider_id: "codex".into(),
                                 ready: true,
                                 default_reasoning_effort: default_effort,
-                                reasoning_efforts: (!efforts.is_empty()).then_some(efforts),
+                                // Node orders every reported list (`orderReasoningEfforts`), so a side call runs at the least.
+                                reasoning_efforts: (!efforts.is_empty()).then(|| super::order_reasoning_efforts(&efforts)),
                                 runtime_modes: Some(vec![
                                     "approval-required".into(),
                                     "auto-accept-edits".into(),
@@ -1137,7 +1183,7 @@ impl ProviderAdapter for CodexAdapter {
                 }
                 Some(rec) => {
                     // Ensure loaded in this thread process (idempotent in Codex when already loaded).
-                    let _ = proc
+                    if proc
                         .call(
                             "thread/resume",
                             json!({
@@ -1153,7 +1199,30 @@ impl ProviderAdapter for CodexAdapter {
                             }),
                             self.config.request_timeout_ms,
                         )
-                        .await;
+                        .await
+                        .is_ok()
+                    {
+                        let mut changed = false;
+                        if let Some(stored) = self.shared.records.lock().unwrap().get_mut(&req.thread_id) {
+                            if stored.model_id.as_deref() != Some(raw_model.as_str()) {
+                                stored.model_id = Some(raw_model);
+                                changed = true;
+                            }
+                            if stored.reasoning_effort.as_deref() != Some(effort.as_str()) {
+                                stored.reasoning_effort = Some(effort);
+                                changed = true;
+                            }
+                            if let Some(mode) = req.runtime_mode.as_ref() {
+                                if stored.runtime_mode.as_deref() != Some(mode.as_str()) {
+                                    stored.runtime_mode = Some(mode.clone());
+                                    changed = true;
+                                }
+                            }
+                        }
+                        if changed {
+                            self.shared.save_records();
+                        }
+                    }
                     rec.codex_thread_id
                 }
             };
@@ -1306,6 +1375,35 @@ impl ProviderAdapter for CodexAdapter {
             )
             .await?;
             Ok(())
+        })
+    }
+
+    /// Node's `writeShortText`: a side call on this thread's model, at its least effort, in its folder, as its own
+    /// ephemeral `codex exec`, so no thread is started, resumed or listed for it on any app-server. Nothing is written
+    /// while Codex is not connected, for a council judge's thread or a personal one, for a thread it has no record of,
+    /// or when the client is not found.
+    fn write_short_text(&self, thread_id: String, prompt: crate::side_writing::ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
+        Box::pin(async move {
+            if self.shared.status.lock().unwrap().connection != "connected" {
+                return Ok(None);
+            }
+            let Some(record) = self.shared.records.lock().unwrap().get(&thread_id).cloned() else {
+                return Ok(None);
+            };
+            if record.extra.get("councilJudge") == Some(&Value::Bool(true)) || record.extra.get("kind").and_then(Value::as_str) == Some("personal") {
+                return Ok(None);
+            }
+            // Node's record always names its model; one that does not has nothing to write on.
+            let Some(model) = record.model_id else {
+                return Ok(None);
+            };
+            let Some(launch) = self.config.launch() else {
+                return Ok(None);
+            };
+            let effort = crate::side_writing::side_writing_effort(&self.models(), &public_provider_entity_id("codex", "model", &model));
+            let cwd = crate::worktree_reclaim::existing_folder(&record.cwd)?;
+            let run = super::codex_side::SideRun { prompt: &prompt, model: &model, effort: effort.as_deref(), cwd: &cwd, deadline: self.config.side_writing_deadline };
+            super::codex_side::write(&launch, &self.config.prefix_args, run).await.map(Some)
         })
     }
 

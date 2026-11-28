@@ -124,9 +124,15 @@ pub struct AcpAdapterConfig {
     pub flavor: AcpFlavor,
     pub data_directory: PathBuf,
     pub executable: String,
+    /// Node's `options.args` for Grok: what a test launch puts before everything else, a session's arguments and a side
+    /// call's alike. A native launch has none.
+    pub prefix_args: Vec<String>,
+    /// A session's own arguments, after `prefix_args`.
     pub args: Vec<String>,
     pub request_timeout_ms: u64,
     pub use_cli_lookup: bool,
+    /// How long a side call has (Node's `SIDE_WRITING_TIMEOUT_MS`); a test shortens it.
+    pub side_writing_deadline: Duration,
 }
 
 impl AcpAdapterConfig {
@@ -143,28 +149,40 @@ impl AcpAdapterConfig {
             flavor,
             data_directory,
             executable: flavor.default_executable().into(),
+            prefix_args: Vec::new(),
             args,
             request_timeout_ms: 30_000,
             use_cli_lookup: true,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
     }
 
     pub fn fake(flavor: AcpFlavor, data_directory: PathBuf, fake_script: PathBuf) -> Self {
-        let mut args = vec![
+        let prefix_args = vec![
             fake_script.to_string_lossy().into_owned(),
             data_directory.to_string_lossy().into_owned(),
         ];
-        if matches!(flavor, AcpFlavor::Cursor | AcpFlavor::Antigravity) {
-            args.push("acp".into());
-        }
+        let args = if matches!(flavor, AcpFlavor::Cursor | AcpFlavor::Antigravity) { vec!["acp".into()] } else { Vec::new() };
         Self {
             flavor,
             data_directory,
             executable: std::env::var("SOTTO_NODE_BIN").unwrap_or_else(|_| "node".into()),
+            prefix_args,
             args,
             request_timeout_ms: 5_000,
             use_cli_lookup: false,
+            side_writing_deadline: crate::side_writing::SIDE_WRITING_DEADLINE,
         }
+    }
+
+    /// The provider's client as the CLI lookup finds it, or the configured client when no lookup is made; `None` when the
+    /// lookup finds none. The configured leading arguments are the caller's to add.
+    fn launch(&self) -> Option<crate::cli_lookup::ResolvedCli> {
+        if !self.use_cli_lookup {
+            return Some(crate::cli_lookup::ResolvedCli { executable: PathBuf::from(&self.executable), prefix_args: Vec::new(), augmented_path: String::new() });
+        }
+        let options = crate::cli_lookup::CliLookupOptions::from_process_env();
+        crate::cli_lookup::resolve_provider_cli(self.flavor.id(), &self.data_directory, &options)
     }
 }
 
@@ -192,34 +210,21 @@ impl AcpProcess {
         shared: Arc<AcpSharedState>,
         cwd: &Path,
     ) -> Result<Arc<Self>, String> {
-        let resolved = if config.use_cli_lookup {
-            let opts = crate::cli_lookup::CliLookupOptions::from_process_env();
-            Some(
-                crate::cli_lookup::resolve_provider_cli(
-                    config.flavor.id(),
-                    &config.data_directory,
-                    &opts,
-                )
-                .ok_or_else(|| {
-                    format!(
-                        "Install {} and sign in before connecting this provider.",
-                        config.flavor.name()
-                    )
-                })?,
+        let launch = config.launch().ok_or_else(|| {
+            format!(
+                "Install {} and sign in before connecting this provider.",
+                config.flavor.name()
             )
-        } else {
-            None
-        };
-        let mut cmd = match &resolved {
-            Some(res) => {
-                let mut c = Command::new(&res.executable);
-                c.args(&res.prefix_args);
-                res.apply_tokio(&mut c);
-                c
-            }
-            None => Command::new(&config.executable),
-        };
-        cmd.args(&config.args)
+        })?;
+        let mut cmd = Command::new(&launch.executable);
+        // Node starts every Grok thread's process on `grokEnvironment`, a test's fake included.
+        if config.flavor == AcpFlavor::Grok {
+            super::grok_side::session_environment(&mut cmd);
+        }
+        cmd.args(&launch.prefix_args);
+        launch.apply_tokio(&mut cmd);
+        cmd.args(&config.prefix_args)
+            .args(&config.args)
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -227,12 +232,6 @@ impl AcpProcess {
             .kill_on_drop(true);
         if config.use_cli_lookup {
             match config.flavor {
-                AcpFlavor::Grok => {
-                    cmd.env("GROK_DISABLE_API_KEY_AUTH", "1");
-                    cmd.env("GROK_DISABLE_AUTOUPDATER", "1");
-                    cmd.env("GROK_DEFAULT_SELECTED_PERMISSION", "reject");
-                    cmd.env("GROK_REMEMBER_TOOL_APPROVALS", "0");
-                }
                 AcpFlavor::Cursor => {
                     let cfg_dir = config.data_directory.join("cursor").join("config");
                     let _ = fs::create_dir_all(&cfg_dir);
@@ -268,7 +267,7 @@ impl AcpProcess {
                         cmd.env("TMPDIR", &tmp_dir);
                     }
                 }
-                AcpFlavor::Devin => {}
+                AcpFlavor::Grok | AcpFlavor::Devin => {}
             }
         }
         #[cfg(windows)]
@@ -820,6 +819,9 @@ pub struct AcpAdapter {
 
 impl AcpAdapter {
     pub fn new(config: AcpAdapterConfig) -> Self {
+        if config.flavor == AcpFlavor::Grok {
+            super::grok_side::note_start();
+        }
         let shared = Arc::new(AcpSharedState::new(
             config.flavor,
             config.data_directory.clone(),
@@ -932,6 +934,11 @@ impl AcpAdapter {
         }
 
         if let Some(rec) = self.shared.records.lock().unwrap().get_mut(thread_id) {
+            if let Some(model) = raw_model.as_ref().filter(|_| flavor == AcpFlavor::Grok) {
+                // Node's `alias.nativeModelId = modelId` once Grok takes the change: the model the session is on, which
+                // its side call runs on, must not stay the one Node last saw.
+                rec.extra.insert("nativeModelId".into(), Value::String(model.clone()));
+            }
             if raw_model.is_some() {
                 rec.model_id = raw_model;
             }
@@ -1362,6 +1369,34 @@ impl ProviderAdapter for AcpAdapter {
                 let _ = proc.stdin_tx.send(encoded);
             }
             Ok(())
+        })
+    }
+
+    /// Node's Grok `writeShortText`: a side call on this thread's model in its folder, as its own short-lived Grok
+    /// process on a throwaway home, so the thread's session is never loaded for it. Nothing is written while Grok is not
+    /// connected, for a personal thread or one with no confirmed Grok session, or by the other clients this adapter
+    /// drives: Node's Devin and Hermes write nothing, and Cursor's and Antigravity's side calls are not ported yet.
+    fn write_short_text(&self, thread_id: String, prompt: crate::side_writing::ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
+        Box::pin(async move {
+            if self.config.flavor != AcpFlavor::Grok || self.shared.status.lock().unwrap().connection != "connected" {
+                return Ok(None);
+            }
+            // A record is kept only for a thread with a Grok session, as Node asks for `grokSessionId`.
+            let Some(record) = self.shared.records.lock().unwrap().get(&thread_id).cloned() else {
+                return Ok(None);
+            };
+            if record.extra.get("kind").and_then(Value::as_str) == Some("personal") {
+                return Ok(None);
+            }
+            // Node's `nativeModelId ?? modelId`.
+            let native_model = record.extra.get("nativeModelId").and_then(Value::as_str).map(String::from);
+            let Some(model) = native_model.or(record.model_id) else {
+                return Ok(None);
+            };
+            let cwd = crate::worktree_reclaim::existing_folder(&record.cwd)?;
+            let writing = self.config.data_directory.join("writing").join("grok");
+            let run = super::grok_side::SideRun { prompt: &prompt, model: &model, cwd: Path::new(&cwd), deadline: self.config.side_writing_deadline, homes_folder: &writing };
+            super::grok_side::write(self.config.launch().as_ref(), &self.config.prefix_args, run).await.map(Some)
         })
     }
 
