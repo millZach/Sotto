@@ -28,6 +28,7 @@ pub mod lock;
 pub mod ops;
 pub mod phone_access;
 pub mod plugins;
+pub mod project_setup;
 pub mod usage_ops;
 pub mod pairing;
 pub mod protocol;

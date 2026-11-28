@@ -107,6 +107,7 @@ pub fn advertised_features() -> Vec<String> {
         "failure-seen".into(),
         "host-facts".into(),
         "project-origins".into(),
+        "project-setup".into(),
         "project-git-init".into(),
         "thread-words".into(),
         "thread-prompts".into(),
@@ -453,9 +454,10 @@ fn observed_thread_ids(command: &serde_json::Map<String, Value>) -> Option<Vec<S
         .collect()
 }
 
-/// Filters host-advertised features per authenticated client: `watcher-*` (non-phone) and
-/// `project-origins` are offered ONLY to authenticated paired desktops recorded in
-/// `desktop-clients.json` (ADR-0073, ADR-0082).
+/// Filters host-advertised features per authenticated client: `HOST_DESKTOP_FEATURES` (including
+/// `project-origins` and `project-setup`) require `desktop_on_listener` (every client on the loopback
+/// listener, and recorded desktops on a tailnet listener), while `watcher-*` (non-phone) are offered
+/// ONLY to authenticated paired desktops recorded in `desktop-clients.json` (ADR-0053, ADR-0073, ADR-0082).
 fn features_for_client(features: &[String], is_desktop: bool, desktop_on_listener: bool) -> Vec<String> {
     let features: Vec<String> = features
         .iter()
@@ -470,7 +472,7 @@ fn features_for_client(features: &[String], is_desktop: bool, desktop_on_listene
         .filter(|feat| {
             let s = feat.as_str();
             let is_desktop_watcher = s.starts_with("watcher-") && !s.starts_with("watcher-phone");
-            !is_desktop_watcher && s != "project-origins"
+            !is_desktop_watcher
         })
         .cloned()
         .collect()
@@ -504,6 +506,8 @@ pub struct HostState {
     pub receipts: Arc<Mutex<CommandReceipts>>,
     /// Paired-client pull request confirmation receipts and reading IDs, shared by both listeners (#1691).
     pub pull_request_confirmations: Arc<Mutex<PullRequestConfirmations>>,
+    /// Single-flight project copy setups (`project-setup`, #1690), shared by both listeners.
+    pub project_copies: sotto_core::project_setup::ProjectCopies,
 }
 
 impl HostState {
@@ -878,6 +882,7 @@ impl RunningServer {
             client_sockets: Mutex::new(HashMap::new()),
             receipts: Arc::new(Mutex::new(CommandReceipts::default())),
             pull_request_confirmations: Arc::new(Mutex::new(PullRequestConfirmations::new())),
+            project_copies: sotto_core::project_setup::ProjectCopies::new(),
         });
 
         let initial_descriptor = state.descriptor();
@@ -2516,8 +2521,8 @@ async fn handle_ws_request(
             if choosing && sotto_core::worktree_reclaim::WorkingCopySelection::from_command(cmd).is_none() {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
-            // And so are Pull, Switch branch and Initialize Git.
-            let local_git = matches!(cmd.get("type").and_then(Value::as_str), Some("git-pull" | "git-switch-branch" | "git-init"));
+            // And so are Pull, Switch branch, Initialize Git, and Publish.
+            let local_git = matches!(cmd.get("type").and_then(Value::as_str), Some("git-pull" | "git-switch-branch" | "git-init" | "git-publish"));
             if local_git && sotto_core::git_local::LocalGitCommand::from_command(cmd).is_none() {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
@@ -3546,19 +3551,14 @@ async fn handle_ws_request(
             HostResponseEnvelope::ok(req.id, result)
         }
         "project-origins" => {
-            let is_desktop = {
-                let mut desktops = state.desktops.lock().unwrap();
-                desktops.refresh();
-                desktops.has(client_id)
-            };
-            if !is_desktop {
+            if !req.fields.is_empty() || !wire.hello_done {
                 return HostResponseEnvelope::err(
                     req.id,
-                    HostErrorCode::Forbidden,
-                    HostErrorCode::Forbidden.default_message(),
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
                 );
             }
-            if !wire.hello_done {
+            if !offered_features(state, mode, client_id).iter().any(|f| f == "project-origins") {
                 return HostResponseEnvelope::err(
                     req.id,
                     HostErrorCode::InvalidRequest,
@@ -3568,6 +3568,7 @@ async fn handle_ws_request(
             let projects = match state.coordinator.projects_for_origins().await {
                 Ok(list) => list
                     .into_iter()
+                    .filter(|(_, _, provider)| provider.as_deref().is_none_or(|p| !wire.hides_provider(p)))
                     .map(|(id, path, _)| (id, path))
                     .collect::<Vec<_>>(),
                 Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
@@ -3582,6 +3583,50 @@ async fn handle_ws_request(
                     HostErrorCode::Unavailable.default_message(),
                 ),
             }
+        }
+        "project-setup" => {
+            let parsed = req
+                .fields
+                .keys()
+                .all(|k| k == "request")
+                .then(|| sotto_core::project_setup::ProjectSetupRequest::parse(req.fields.get("request")))
+                .flatten();
+            let Some(parsed) = parsed else {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            };
+            if !wire.hello_done || !offered_features(state, mode, client_id).iter().any(|f| f == "project-setup") {
+                return HostResponseEnvelope::err(
+                    req.id,
+                    HostErrorCode::InvalidRequest,
+                    HostErrorCode::InvalidRequest.default_message(),
+                );
+            }
+            let (projects_directory, project_paths, own_folder) = match state.coordinator.project_setup_context().await {
+                Ok(ctx) => ctx,
+                Err(err) => return HostResponseEnvelope::err(req.id, err.code, err.message),
+            };
+            let home = std::env::var_os("HOME")
+                .or_else(|| std::env::var_os("USERPROFILE"))
+                .map(PathBuf::from)
+                .unwrap_or_else(|| own_folder.clone());
+            let context = sotto_core::project_setup::ProjectSetupContext {
+                projects_directory,
+                project_paths,
+                home,
+                own_folder: Some(own_folder),
+            };
+            let coordinator = state.coordinator.clone();
+            let result = state
+                .project_copies
+                .set_up(parsed, context, move |title, path| async move {
+                    coordinator.add_project_for_setup(title, path).await
+                })
+                .await;
+            HostResponseEnvelope::ok(req.id, result.to_json())
         }
         "usage-clear" => {
             if !may_answer {
@@ -4301,6 +4346,7 @@ mod tests {
             "watcher-cursor",
             "watcher-antigravity",
             "project-origins",
+            "project-setup",
             "project-git-init",
         ] {
             assert!(
@@ -4320,16 +4366,24 @@ mod tests {
     #[test]
     fn non_desktop_clients_receive_zero_watcher_or_project_origins_features() {
         let all = advertised_features();
-        let non_desktop = features_for_client(&all, false, true);
-        assert!(!non_desktop.iter().any(|f| f.starts_with("watcher-")));
-        assert!(!non_desktop.iter().any(|f| f == "project-origins"));
-        // Normal non-watcher features remain available.
-        assert!(non_desktop.iter().any(|f| f == "detail-delta"));
+        // Loopback unrecorded client: zero watcher-* features, but loopback desktop features (`project-origins`, `project-setup`) are offered as on Node.
+        let loopback_unrecorded = features_for_client(&all, false, true);
+        assert!(!loopback_unrecorded.iter().any(|f| f.starts_with("watcher-")));
+        assert!(loopback_unrecorded.iter().any(|f| f == "project-origins"));
+        assert!(loopback_unrecorded.iter().any(|f| f == "project-setup"));
+        assert!(loopback_unrecorded.iter().any(|f| f == "detail-delta"));
+
+        // Tailnet phone (not recorded desktop, not loopback): zero watcher-*, zero project-origins, zero project-setup.
+        let tailnet_phone = features_for_client(&all, false, false);
+        assert!(!tailnet_phone.iter().any(|f| f.starts_with("watcher-")));
+        assert!(!tailnet_phone.iter().any(|f| f == "project-origins"));
+        assert!(!tailnet_phone.iter().any(|f| f == "project-setup"));
 
         let desktop = features_for_client(&all, true, true);
         assert!(desktop.iter().any(|f| f == "watcher-control"));
         assert!(desktop.iter().any(|f| f == "watcher-reads"));
         assert!(desktop.iter().any(|f| f == "project-origins"));
+        assert!(desktop.iter().any(|f| f == "project-setup"));
     }
 
     #[test]

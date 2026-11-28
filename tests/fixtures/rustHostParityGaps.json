@@ -31,7 +31,6 @@
         "plugin-meshy-models",
         "plugin-meshy-phone",
         "plugin-meshy-spending",
-        "project-setup",
         "provider-deepseek",
         "provider-mode-lists",
         "provider-sign-in",
@@ -64,8 +63,6 @@
         "next-prompts",
         "owlets",
         "plugin-meshy-phone",
-        "project-origins",
-        "project-setup",
         "provider-deepseek",
         "provider-mode-lists",
         "provider-sign-in",
@@ -133,10 +130,6 @@
       "rust": "invalid_request"
     },
     "fork-thread": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "git-publish": {
       "node": "refused",
       "rust": "invalid_request"
     },
@@ -239,10 +232,6 @@
       "rust": "invalid_request"
     },
     "plugin-meshy-spending": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "project-setup": {
       "node": "ok",
       "rust": "invalid_request"
     },
