@@ -142,15 +142,62 @@ async fn sweep(parent: &Path, started: SystemTime) {
     }
 }
 
-/// Node's `mkdtemp(join(parent, 'grok-'))`: a new folder of this call's own.
+/// Creates `path` accessible only to its owner on Unix, matching Node's `mkdtemp`.
+fn create_private_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(path)
+    }
+    #[cfg(not(unix))]
+    {
+        std::fs::create_dir(path)
+    }
+}
+
+/// Node's `mkdtemp(join(parent, 'grok-'))`: a new owner-only folder of this call's own.
 async fn make_session_folder(parent: &Path) -> std::io::Result<PathBuf> {
     loop {
         let name: String = uuid::Uuid::new_v4().simple().to_string().chars().take(6).collect();
         let directory = parent.join(format!("grok-{name}"));
-        match std::fs::create_dir(&directory) {
+        match create_private_dir(&directory) {
             Ok(()) => return Ok(directory),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(error),
+        }
+    }
+}
+
+/// Removes a throwaway Grok home if the side call is cancelled (its future dropped) before `remove_session` completes.
+struct SessionFolderGuard {
+    directory: Option<PathBuf>,
+    parent: PathBuf,
+}
+
+impl SessionFolderGuard {
+    fn new(directory: PathBuf, parent: PathBuf) -> Self {
+        Self { directory: Some(directory), parent }
+    }
+
+    fn disarm(&mut self) {
+        self.directory = None;
+    }
+}
+
+impl Drop for SessionFolderGuard {
+    fn drop(&mut self) {
+        let Some(directory) = self.directory.take() else { return };
+        if directory.parent() != Some(self.parent.as_path()) {
+            return;
+        }
+        match std::fs::remove_dir_all(&directory) {
+            Ok(()) => return,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(_) => {}
+        }
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            let parent = self.parent.clone();
+            handle.spawn(async move { remove_session(&directory, &parent).await });
         }
     }
 }
@@ -209,15 +256,17 @@ pub(crate) async fn write(launch: Option<&ResolvedCli>, prefix_args: &[String], 
     std::fs::create_dir_all(run.homes_folder).map_err(|_| START_FAILED.to_string())?;
     sweep_leftover_sessions(run.homes_folder).await;
     let directory = make_session_folder(run.homes_folder).await.map_err(|_| START_FAILED.to_string())?;
+    let mut guard = SessionFolderGuard::new(directory.clone(), run.homes_folder.to_path_buf());
     let outcome = write_in(launch, prefix_args, &run, &directory).await;
     remove_session(&directory, run.homes_folder).await;
+    guard.disarm();
     outcome
 }
 
 /// The call in its throwaway home `directory`.
 async fn write_in(launch: &ResolvedCli, prefix_args: &[String], run: &SideRun<'_>, directory: &Path) -> Result<String, String> {
     let home = directory.join("home");
-    std::fs::create_dir_all(&home).map_err(|_| START_FAILED.to_string())?;
+    create_private_dir(&home).map_err(|_| START_FAILED.to_string())?;
     // Grok's own marker that its Claude settings and plugins were already imported, so it imports none: in the throwaway
     // home only, never the user's.
     write_private(&home.join("config.toml"), "[claude_compat]\nimported = true\n").map_err(|_| START_FAILED.to_string())?;
@@ -650,5 +699,21 @@ mod tests {
         std::fs::create_dir_all(dir.path().join("grok-running")).unwrap();
         runtime.block_on(sweep(dir.path(), SystemTime::now() - Duration::from_secs(60)));
         assert!(dir.path().join("grok-running").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn throwaway_session_folder_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let session = runtime.block_on(make_session_folder(dir.path())).unwrap();
+        let home = session.join("home");
+        create_private_dir(&home).unwrap();
+        let session_mode = std::fs::metadata(&session).unwrap().permissions().mode() & 0o777;
+        let home_mode = std::fs::metadata(&home).unwrap().permissions().mode() & 0o777;
+        assert_eq!(session_mode, 0o700, "expected 0700 session folder mode, got {:04o}", session_mode);
+        assert_eq!(home_mode, 0o700, "expected 0700 home folder mode, got {:04o}", home_mode);
     }
 }

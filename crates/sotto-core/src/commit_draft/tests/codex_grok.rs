@@ -123,6 +123,74 @@ fn codex_drafts_at_the_least_effort_whatever_order_the_model_reports_them_in() {
     assert_eq!(args[12], "model_reasoning_effort=\"low\"", "{args:?}");
 }
 
+/// A Codex thread that moves to a different model on a later send must draft on the new model (and its least effort),
+/// not the model from its first send.
+#[test]
+fn codex_drafts_on_the_model_this_host_moved_the_thread_to() {
+    let fixture = Fixture::new();
+    let runtime = runtime();
+    fs::create_dir_all(fixture.data()).unwrap();
+    fs::write(
+        fixture.data().join("script.json"),
+        json!({
+            "models": [
+                {
+                    "id": "model-1",
+                    "model": "fixture-model",
+                    "displayName": "Fixture Codex",
+                    "isDefault": true,
+                    "defaultReasoningEffort": "high",
+                    "supportedReasoningEfforts": [{ "reasoningEffort": "low" }, { "reasoningEffort": "high" }]
+                },
+                {
+                    "id": "model-2",
+                    "model": "newer-model",
+                    "displayName": "Newer Codex",
+                    "isDefault": false,
+                    "defaultReasoningEffort": "high",
+                    "supportedReasoningEfforts": [{ "reasoningEffort": "high" }, { "reasoningEffort": "medium" }]
+                }
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(fixture.data().join("oneshot.json"), json!({ "text": "Fix the parser" }).to_string()).unwrap();
+    let adapter = Arc::new(CodexAdapter::new(CodexAdapterConfig::fake(fixture.data(), FAKE_CODEX.into())));
+    let (events, _) = tokio::sync::mpsc::unbounded_channel();
+    runtime.block_on(adapter.connect(events)).unwrap();
+    assert_eq!(adapter.status().connection, "connected");
+
+    let send = |message_id: &str, model_id: &str, effort: &str| crate::provider::SendMessageRequest {
+        thread_id: "t".into(),
+        record_seed: crate::provider::ThreadRecordSeed { project_id: "project-1".into(), title: "Fix the build".into(), created_at: "2026-11-27T10:00:00.000Z".into() },
+        message_id: message_id.into(),
+        cwd: fixture.repo.to_string_lossy().into_owned(),
+        model_id: Some(model_id.into()),
+        reasoning_effort: Some(effort.into()),
+        runtime_mode: Some("approval-required".into()),
+        text: "Hello".into(),
+        command_id: format!("c-{message_id}"),
+        draft_id: format!("d-{message_id}"),
+        attachments: Vec::new(),
+    };
+    runtime.block_on(adapter.send_message(send("m-1", "fixture-model", "low"))).unwrap();
+    runtime.block_on(adapter.send_message(send("m-2", "newer-model", "high"))).unwrap();
+
+    commit(&fixture, &drafting(&fixture, &runtime, adapter, false), None);
+    assert_eq!(fixture.last_commit(), "Fix the parser");
+
+    let asked = oneshots(&fixture);
+    assert_eq!(asked.len(), 1);
+    let args: Vec<&str> = asked[0]["args"].as_array().unwrap().iter().map(|arg| arg.as_str().unwrap()).collect();
+    assert!(args.windows(2).any(|pair| pair == ["--model", "newer-model"]), "expected --model newer-model in {args:?}");
+    assert!(args.contains(&"model_reasoning_effort=\"medium\""), "expected least effort of newer-model in {args:?}");
+
+    let saved: serde_json::Value = serde_json::from_str(&fs::read_to_string(fixture.data().join("codex-threads.json")).unwrap()).unwrap();
+    assert_eq!(saved["t"]["modelId"], json!("newer-model"));
+    assert_eq!(saved["t"]["reasoningEffort"], json!("high"));
+}
+
 #[test]
 fn codex_that_fails_tries_a_tool_or_outlasts_the_deadline_leaves_nodes_stand_in_subject() {
     let runtime = runtime();
@@ -301,6 +369,44 @@ fn grok_that_fails_or_outlasts_the_deadline_leaves_nodes_stand_in_subject_and_no
     commit(&fixture, &drafting(&fixture, &runtime, adapter, false), None);
     assert_eq!(fixture.last_commit(), STAND_IN_SUBJECT);
     assert!(homes_left(&fixture).is_empty());
+}
+
+/// If a Grok side call is cancelled (its future dropped) mid-flight, its throwaway home is still removed rather than
+/// waiting for the next host start's sweep.
+#[test]
+fn cancelling_a_grok_side_call_still_removes_its_throwaway_home() {
+    let runtime = runtime();
+    let fixture = Fixture::new();
+    let adapter = grok(&fixture, &runtime, json!({ "delayMs": 30_000, "text": "Too late" }), Duration::from_secs(60));
+    let prompt = commit_message_request(&material(), &WritingSettings::default()).prompt;
+
+    let saw_home = runtime.block_on(async {
+        let mut call = std::pin::pin!(adapter.write_short_text("t".into(), prompt));
+        let created = async {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+            while tokio::time::Instant::now() < deadline {
+                if !homes_left(&fixture).is_empty() {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+            false
+        };
+        tokio::select! {
+            _ = &mut call => false,
+            found = created => found,
+        }
+    });
+    assert!(saw_home, "expected throwaway Grok home to be created before cancellation");
+
+    // Allow any spawned Windows retry handle release to settle.
+    runtime.block_on(async {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        while tokio::time::Instant::now() < deadline && !homes_left(&fixture).is_empty() {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+    });
+    assert!(homes_left(&fixture).is_empty(), "leftover throwaway homes after cancel: {:?}", homes_left(&fixture));
 }
 
 /// Node starts a Grok thread's process on `grokEnvironment`, and its side call on the narrower list `withSession` keeps
