@@ -106,6 +106,38 @@ All gates ran on Node 24.22.1, on the code that is now `a5a728105`:
 
 The full suite ran as `npm run test -- --maxWorkers=2`. It passed 22,384 tests and failed 11, with 907 skipped, in 54 minutes. Ten of the failures are the known ones from outside this branch, listed above: `threadWorktreeReclaim` (2), `threadWorktreeInterruptedRemoval` (3), `gitRepository` (2), `liveChildSteps` (2) and `installedProvidersGate` (1). The eleventh, `opencodeAdapter`'s "hands the history to the event store", timed out waiting under the run's load. It touches no browser code, and its file passed all 77 of its tests, with 4 skipped, when rerun on its own.
 
+## After the third review
+
+A third, independent review checked the round above, and a review of this round checked the fixes. [The secret requests verification](2026-11-27-secret-requests.md#after-the-third-review) and [the zoom and downloads verification](2026-11-27-browser-zoom-downloads.md#after-the-third-review) cover theirs. Here, it is what the full catalog does on a page a secret was typed into (ADR-0220, ADR-0221 and ADR-0222, November 28 amendments):
+
+- On a profile page, the refusal of `evaluate` told the agent to open a new page, which no agent can do in a profile. It now names only what it can do there.
+- Selectors stay limited for the page's life, as the guide and ADR-0222 say. Since the review of this round, they compare only an attribute that names an element, as `[name="email"]`, so `a[href="/settings"]` is refused there too: a ref from `snapshot` names it instead.
+- A combobox's own button and options were left out with its text. Only the text beneath a field is left out now.
+- `wait_for` on such a page read the whole page every 100 ms. It reads the visible text a snapshot carries.
+- The desktop's back-forward cache is off on every platform, since its `did-navigate` cannot tell a page given back from a new one, and a test now holds that.
+- The stable catalog's refusal of a picture names `inspect`, and a test now holds that.
+
+`pageAutomation.test.ts`, `browserTools.test.ts`, `pageSnapshot.test.ts` and `security.test.ts` check these. The new tests failed on the old code and pass, except the two that hold what was already so, the back-forward cache and the stable catalog's words, which failed once those were taken out.
+
+An adversarial pass ran after the fixes:
+
+- The rule on keys that select, copy or cut missed no chord in 110 keys with 16 sets of modifiers on each of three platforms, and refused 200 that do none of it.
+- The mask left no part of the secret in 203,049 cuts, and masked 2.9 million characters with a 16,384-character secret twice in 322 ms. With the five copies it now looks for, it masked 2.1 million characters in 355 ms.
+- The selector rule refused 302,549 of 320,643 selectors jsdom could read, and let through none whose match turned on a value other than an attribute that names an element.
+
+All gates ran on Node 24.22.1, on the code that is now `5972818b9`:
+
+- `npm run typecheck` and `npm run lint` passed, and each of the round's 24 commits typechecks on its own.
+- `npm run notices:verify` verified 202 components.
+- `npm run e2e:list` listed 693 tests in 305 files.
+- `npm run i18n:extract` added no message, and `interfaceCatalogs`, `zodSchemaSites` and `copySites` passed 12 tests.
+- The related browser, secret and host suites passed 1,316 tests in 91 files, with 7 skipped.
+- `npm run build` passed.
+- `browser-parity.spec.ts`, `browser-zoom-downloads.spec.ts`, `secret-requests.spec.ts` and `browser-pane.spec.ts` passed all 6 of their tests in 2.0 minutes.
+- The page read behind the new rules ran in Electron's own Chromium, on a page served locally, and found the page's words, two fields, an open shadow root with a field, and a same-origin frame with a field.
+
+The full suite ran as `npm run test -- --maxWorkers=2`, on `9e314a6ef`, which differs from the code above only in one comment. It passed 22,422 tests and failed 23, with 907 skipped, in 59 minutes. Ten of the failures are the known ones from outside this branch, listed above: `threadWorktreeReclaim` (2), `threadWorktreeInterruptedRemoval` (3), `gitRepository` (2), `liveChildSteps` (2) and `installedProvidersGate` (1). The other 13 each timed out at 15 seconds, waiting for a headless host or a socket: `hostPhoneAccess` (2), `phoneAccess` (4), `headlessLock` (1), `socketWebSocketInterop` (2), `museGate` (2) and `remoteClaudeLateAnswer` (2). None touches browser code. The six files, rerun together straight after, failed 13 tests again, not the same ones. On `origin/main` (`4b02b62ce`) they passed all 51 of their tests, and on this branch, run again, they passed all 51 too.
+
 ## Not checked here
 
 - macOS and Linux. The server list's `lsof` and `ss` readers and the Firefox folders there are unit-tested on fixed text only.

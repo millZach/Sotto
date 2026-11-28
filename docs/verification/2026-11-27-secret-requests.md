@@ -51,6 +51,40 @@ A second, independent review found where a typed secret could still be read back
 
 `pageAutomation.test.ts`, `hostBrowser.test.ts`, `secretTypingRules.test.ts` and `secretParityCanary.test.ts` check these. The back-forward cache tests now go A, then B, then back to A. The new tests failed on the old code and pass. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-second-review).
 
+## After the third review
+
+A third, independent review checked the round above. Looking for more of the same found three more, and a review of this round found six. All are recorded in the November 28 amendments to ADR-0219 and ADR-0222:
+
+- A secret of more than about 5,000 characters, as a private key is, overflowed the regular expression the mask was built from. The error held the value, and every browser tool in the thread failed after it. A secret with a backslash in it took ever longer on a page of backslashes. The value is now found by a search over the text's bytes, read four ways, in time that grows with the text. A failure masks everything and says nothing of the value.
+- A PIN that was also the page's port, as 5173, masked the port out of the address, and the agent lost its own page. The page's origin is now left whole, and whether the agent may see a page is decided from the page itself.
+- A secret of one or two characters masked those characters in every address. A secret that short is no longer masked; the page's rules still hold.
+- After a site's "show password" button, an agent could put the value on the clipboard: Control+A and Control+C, or a double click and a drag. While the document holds the secret those are refused, and no key or typing edits a field that holds it.
+- When an allowed type failed after the value was taken, the user saw the agent's words, with a tool's name in them. The agent lost the notice that its reference was used if the page stopped being shared meanwhile. The user now sees plain words, and the agent keeps the notice.
+- Found here: page words were cut, or had their spaces closed up, before they were masked, so a secret the cut split, or one with two spaces or a tab, reached the agent in part. They are now masked first, and read past the cut where the page itself cuts them.
+- Found here: a failed typing repeated the error's own words, and a debugger or a paired host can put the command, secret and all, in those. Only Sotto's own words are said now.
+- Found here: the element the user points at or comments on went into their message to the agent unmasked. It is masked as the agent's own reads are.
+- Found in review: the address a picture is taken at went into the user's feedback unmasked. It is masked now.
+- Found in review: a selector could compare a whole value, as `[value="4821"]`, and a site that keeps a field's value in an attribute, as React does, answers each guess. On a page a secret was typed into, a selector now compares only an attribute that names an element.
+- Found in review: the rules for pictures and for selecting text ended with the document, but a site can show the secret again in a later one. Before a picture, or an action that could select text, Sotto now reads the document for it, and holds those rules while it is there. No recording starts, and no thumbnail is kept, on a page a secret was typed into.
+- Found in review: a picked element's markup was masked only once its tags were gone, so a value in an attribute that held a `>`, or one split by tags, as a PIN drawn a digit to a box, came through. The markup is masked whole first, and an element whose tags split the value says none of its words.
+- Found in review: the mask missed copies of the value that the page or Chromium makes: its spaces closed up, as a page shows them; a download's name, which Chromium makes safe before Sotto sees it; and what a field kept when its `maxlength` cut the value. Each is masked now.
+- Found in review: `inspect` measured its answer before the last mask, which can be longer than the value. It measures it once masked.
+
+`pageAutomation.test.ts`, `documentText.test.ts`, `secretTypingRules.test.ts`, `secretParityCanary.test.ts`, `browserTools.test.ts` and `hostBrowserService.test.ts` check these. The new tests failed on the old code and pass, with three kinds of exception. Two guard the new cut and failed only once their part of the fix was taken out: one has masks shorter than the secret, which would pull a cut counted in the masked text onto a split copy; the other has markup longer than is read. `documentText.test.ts` runs the new page read in a DOM, and three of its four tests fail once the read leaves out fields, shadow roots and frames. The check that no read is tried while a dialog is open fails once that guard is taken out.
+
+Still open, since no rule in Sotto reaches them:
+
+- A page's own Copy button, which copies the field with the agent's click.
+- On Linux, Tab into a revealed field, which Chromium selects whole, putting it in the selection another program can read.
+- On the test iPhone, a swipe read as a long press, which selects a word.
+- The user's own clipboard, which still holds a value they pasted into the card.
+- A value the page changes after it is typed, or shows as an image, a canvas or in a frame from another site: the mask and the page read find only text.
+- A value the page writes back between Sotto's read and the action it checked, which the next action finds.
+- A value the page's text splits with its own spaces, as a PIN in boxes, in a snapshot: only a picked element's markup is checked for that.
+- A value of one or two characters, which nothing masks.
+
+The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-third-review).
+
 ## Not checked here
 
 - A phone, the popup and Watcher showing the card with Decline only: unit tests cover the request's words and Decline.

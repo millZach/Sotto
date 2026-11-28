@@ -79,6 +79,17 @@ A second, independent review of the round above found these, recorded in ADR-022
 
 `browserDownloads.test.ts` holds each await of a placing with a gate on `node:fs/promises` and presses Cancel there. `browserTools.test.ts` covers the private-page, cross-site and action-answer cases, masked names, and a ref click after a zoom on both ports. The new tests failed on the old code and pass, except two that guard the new placing and passed before too: a Cancel while the next free name is found, and Sotto closing during mkdir. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-second-review).
 
+## After the third review
+
+A third, independent review checked the round above. Its findings are recorded in ADR-0222's November 28 amendment:
+
+- **What the agent hears (decision 5).** A download the user started while the agent only read the page, with a `wait_for` say, counted as the agent's. An action that ended after Stop sharing made the page's next download count as the agent's again. Now an action counts only while it runs and only if it can start a download, and one that ends after Stop sharing does not count.
+- **Names.** A name was made safe to save before it was masked, so a secret with `:` or `*` in it, which a file name cannot hold, went unfound. Sotto now masks the name before its own step, and a review of this round found that Chromium makes the name safe before Sotto is told it. The mask now also looks for the secret with each such character made `_` or `-`.
+- **A Cancel that comes too late (decision 3).** The strip hid a download as soon as Cancel was pressed, even when it then saved, so the user took it for cancelled. It now goes only once it is cancelled.
+- **The guide** still said the agent hears of any download its own action started. It now says what decision 5 says.
+
+`browserTools.test.ts`, `browserDownloads.test.ts`, `browserZoomDownloads.test.tsx` and `pageAutomation.test.ts` check these. Their new tests failed on the old code and pass. The review also found that the test of a download named in an action's answer passed without reaching the answer. It now reaches it, and fails when the rule is taken out. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-third-review).
+
 ## Not checked here
 
 - macOS and Linux: zoom keys under Command, Touch ID or a Linux security key for passkeys, and the system Save dialog there.
