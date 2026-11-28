@@ -150,6 +150,22 @@ pub trait ProviderAdapter: Send + Sync {
         Box::pin(async { Ok(()) })
     }
 
+    /// Early-starts a thread's provider session when the user begins typing (`start-thread-session`),
+    /// matching `startThreadSession` in `src/main/agents/control.ts`.
+    fn start_thread_session(&self, _thread_id: String, _cwd: String) -> BoxFuture<'_, Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    /// Lists native skills for a thread (`refresh-thread-skills`), matching `listThreadSkills` in `workspace.ts`.
+    fn list_thread_skills(
+        &self,
+        _thread_id: String,
+        _cwd: String,
+        _force_reload: bool,
+    ) -> BoxFuture<'_, Result<Value, String>> {
+        Box::pin(async { Err("Reconnect this thread provider to browse its native skills.".into()) })
+    }
+
     /// Reads a thread's waiting questions and permissions from the provider again, as Node's host `refreshThread` reads a
     /// thread for an answer check (ADR-0025). `None` when the adapter has no read of its own: the questions it last
     /// reported are what it holds, so they stand. A failure's words are the adapter's and go no further than the host.

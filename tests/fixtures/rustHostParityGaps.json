@@ -3,7 +3,6 @@
     "desktop": {
       "missing": [
         "agents-view",
-        "atomic-send",
         "branch-moves",
         "bring-changes-back",
         "browser",
@@ -54,7 +53,6 @@
     "unrecorded": {
       "missing": [
         "agents-view",
-        "atomic-send",
         "bring-changes-back",
         "browser",
         "client-update-not-listed",
@@ -89,10 +87,6 @@
     ]
   },
   "commands": {
-    "babysit-pull-request": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
     "bring-changes-back": {
       "node": "refused",
       "rust": "invalid_request"
@@ -101,20 +95,8 @@
       "node": "refused",
       "rust": "invalid_request"
     },
-    "cancel-draft": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "cancel-restart": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
     "check-client-updates": {
       "node": "ok",
-      "rust": "invalid_request"
-    },
-    "compose": {
-      "node": "refused",
       "rust": "invalid_request"
     },
     "continue-agent": {
@@ -137,31 +119,7 @@
       "node": "refused",
       "rust": "invalid_request"
     },
-    "refresh-thread-skills": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "regenerate-thread-title": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "send": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
     "set-owlet": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "start-thread-session": {
-      "node": "ok",
-      "rust": "invalid_request"
-    },
-    "stop-babysitting": {
-      "node": "refused",
-      "rust": "invalid_request"
-    },
-    "stop-detached-run": {
       "node": "refused",
       "rust": "invalid_request"
     }

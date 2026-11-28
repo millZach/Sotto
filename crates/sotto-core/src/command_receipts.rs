@@ -79,11 +79,19 @@ impl Receipt {
 }
 
 /// What a command's receipt says once it ended, as Node's socket server writes it: completed, `unavailable` in its fixed
-/// words when it failed however it failed, and for an answer whether the provider took it. A command turned down before
-/// it acted keeps no receipt at all: the socket server refuses it before one is made.
+/// words when it failed however it failed, and for an answer whether the provider took it (`result.error == null`,
+/// `src/host/socketServer.ts:1752-1755`). A command turned down before it acted keeps no receipt at all: the socket
+/// server refuses it before one is made.
 pub fn ended_receipt(is_answer: bool, outcome: &Result<Value, CoordinatorError>) -> Receipt {
-    let ended = if outcome.is_ok() { Receipt::completed() } else { Receipt::unavailable() };
-    Receipt { answer_delivered: is_answer.then_some(outcome.is_ok()), ..ended }
+    if is_answer {
+        let answered = matches!(
+            outcome,
+            Ok(shell) if shell.get("error").and_then(Value::as_str).is_none_or(str::is_empty)
+        );
+        let ended = if answered { Receipt::completed() } else { Receipt::unavailable() };
+        return Receipt { answer_delivered: Some(answered), ..ended };
+    }
+    if outcome.is_ok() { Receipt::completed() } else { Receipt::unavailable() }
 }
 
 /// The receipt of a command this host does not hold, or no longer does.
@@ -345,5 +353,18 @@ mod tests {
         assert_eq!(watches.watched()[0].0, "n-0", "the two oldest went");
         watches.forget("n-0");
         assert_eq!(watches.watched()[0].0, "n-1");
+    }
+
+    #[test]
+    fn refused_answer_shell_settles_receipt_as_not_delivered_and_unavailable() {
+        let refused_shell = Ok(json!({ "error": "This draft or question changed before Send arrived." }));
+        let receipt = ended_receipt(true, &refused_shell);
+        assert_eq!(receipt.answer_delivered, Some(false));
+        assert_eq!(receipt.error, Some(HostErrorCode::Unavailable));
+
+        let ok_shell = Ok(json!({ "error": Value::Null }));
+        let ok_receipt = ended_receipt(true, &ok_shell);
+        assert_eq!(ok_receipt.answer_delivered, Some(true));
+        assert_eq!(ok_receipt.error, None);
     }
 }

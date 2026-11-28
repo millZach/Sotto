@@ -151,6 +151,47 @@ impl ThreadDrafts {
         self.drafts.iter().any(|d| d.thread_id == thread_id && d.request_id.is_some())
     }
 
+    /// Reads one thread's saved draft, if any.
+    pub fn get(&self, thread_id: &str) -> Option<&ThreadDraft> {
+        self.drafts.iter().find(|d| d.thread_id == thread_id)
+    }
+
+    /// Whether `draft_id` was already replaced or cleared on `thread_id` (`obsoleteDrafts`).
+    pub fn is_obsolete(&self, thread_id: &str, draft_id: &str) -> bool {
+        self.obsolete.iter().any(|d| d.thread_id == thread_id && d.draft_id == draft_id)
+    }
+
+    /// Whether `draft_id` belongs to a different thread across saved, empty, obsolete, or delivered drafts.
+    pub fn owns_elsewhere(&self, thread_id: &str, draft_id: &str) -> bool {
+        self.drafts.iter().any(|d| d.draft_id == draft_id && d.thread_id != thread_id)
+            || self.empty.iter().any(|(owner, e)| e.draft_id == draft_id && owner != thread_id)
+            || self.obsolete.iter().any(|d| d.draft_id == draft_id && d.thread_id != thread_id)
+            || self.delivered.iter().any(|d| d.draft_id == draft_id && d.thread_id != thread_id)
+    }
+
+    /// Clears a thread's empty-draft binding (`clearEmptyDraftBinding`).
+    pub fn clear_empty(&mut self, thread_id: &str) {
+        self.empty.remove(thread_id);
+    }
+
+    /// Discards a thread's draft (`discardThreadDraft`), recording its revision as obsolete so late saves do not revive it.
+    pub fn discard(&mut self, thread_id: &str) -> bool {
+        let mut changed = false;
+        if let Some(previous) = self.current_id(thread_id).map(ToString::to_string) {
+            self.make_obsolete(thread_id, &previous);
+            changed = true;
+        }
+        let before = self.drafts.len();
+        self.drafts.retain(|d| d.thread_id != thread_id);
+        if self.drafts.len() != before {
+            changed = true;
+        }
+        if self.empty.remove(thread_id).is_some() {
+            changed = true;
+        }
+        changed
+    }
+
     /// Lets go of every draft whose revision went as a prompt by another store's record, as Node's start reconciles a
     /// crash between `agents.json` and the queue (`syncFollowups`). Answers whether any went.
     pub fn forget_sent(&mut self, sent: impl Fn(&str, &str) -> bool) -> bool {

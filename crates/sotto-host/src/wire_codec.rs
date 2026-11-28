@@ -51,6 +51,10 @@ pub struct ClientWireState {
     read_ahead_order: VecDeque<String>,
     /// The answers this connection asked the receipt of and was told were not accepted yet (`answer-receipts`).
     pub answer_watches: sotto_core::command_receipts::AnswerWatches,
+    /// Per-socket selection and composer state (`peer.selectedThreadId`, `peer.selectedProjectId`, `peer.editingThreadId`).
+    pub selected_thread_id: Option<String>,
+    pub selected_project_id: Option<String>,
+    pub editing_thread_id: Option<String>,
 }
 
 impl ClientWireState {
@@ -95,6 +99,51 @@ impl ClientWireState {
     fn filter_shell(&mut self, mut shell: Value, may_omit_catalog: bool) -> Value {
         let hidden = self.hidden_providers();
         if let Some(obj) = shell.as_object_mut() {
+            // Project this socket peer's own selection and composer draft before stripping `PHONE_UNREAD_SHELL_PARTS`
+            // (matching `src/host/socketServer.ts:853-882`). Always overwrite selection and clear unrelated legacy
+            // composer fields so another peer's or host-global state never leaks to this socket.
+            if obj.contains_key("activeProjectId") {
+                obj.insert(
+                    "activeProjectId".into(),
+                    self.selected_project_id
+                        .as_deref()
+                        .map_or(Value::Null, |p| Value::String(p.to_string())),
+                );
+            }
+            if obj.contains_key("activeThreadId") {
+                obj.insert(
+                    "activeThreadId".into(),
+                    self.selected_thread_id
+                        .as_deref()
+                        .map_or(Value::Null, |t| Value::String(t.to_string())),
+                );
+            }
+            let editing_draft = if self.editing_thread_id.is_some() && self.editing_thread_id == self.selected_thread_id {
+                self.editing_thread_id.as_deref().and_then(|tid| {
+                    obj.get("threadDrafts")
+                        .and_then(Value::as_array)
+                        .and_then(|arr| {
+                            arr.iter().find(|d| d.get("threadId").and_then(Value::as_str) == Some(tid))
+                        })
+                        .cloned()
+                        .map(|draft| (tid.to_string(), draft))
+                })
+            } else {
+                None
+            };
+            if let Some((tid, draft)) = editing_draft {
+                obj.insert("composing".into(), Value::Bool(true));
+                obj.insert("draft".into(), draft.get("text").cloned().unwrap_or_else(|| json!("")));
+                obj.insert("draftAttachments".into(), draft.get("attachments").cloned().unwrap_or_else(|| json!([])));
+                obj.insert("draftThreadId".into(), Value::String(tid));
+                obj.insert("draftRequestId".into(), draft.get("requestId").cloned().unwrap_or(Value::Null));
+            } else if obj.contains_key("composing") {
+                obj.insert("composing".into(), Value::Bool(false));
+                obj.insert("draft".into(), Value::String(String::new()));
+                obj.insert("draftAttachments".into(), Value::Array(Vec::new()));
+                obj.insert("draftThreadId".into(), Value::Null);
+                obj.insert("draftRequestId".into(), Value::Null);
+            }
             // A phone, which says so by accepting activity summaries, is sent none of the parts no phone reads
             // (`PHONE_UNREAD_SHELL_PARTS` in `src/shared/hostProtocol.ts`).
             if self.has("activity-summaries") {
@@ -106,6 +155,13 @@ impl ClientWireState {
                 if let Some(updates) = obj.get_mut("clientUpdates").and_then(Value::as_array_mut) {
                     updates.retain(|u| {
                         u.get("id")
+                            .and_then(Value::as_str)
+                            .is_none_or(|id| !hidden.contains(id))
+                    });
+                }
+                if let Some(catalogs) = obj.get_mut("skillCatalogs").and_then(Value::as_array_mut) {
+                    catalogs.retain(|c| {
+                        c.get("providerId")
                             .and_then(Value::as_str)
                             .is_none_or(|id| !hidden.contains(id))
                     });

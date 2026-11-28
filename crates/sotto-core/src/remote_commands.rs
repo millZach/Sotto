@@ -270,6 +270,190 @@ pub fn validate_remote_command(
     Ok(cmd_type)
 }
 
+fn is_valid_id(val: Option<&Value>) -> bool {
+    val.and_then(Value::as_str)
+        .is_some_and(|s| !s.is_empty() && s.encode_utf16().count() <= 512)
+}
+
+fn is_valid_uuid(val: Option<&Value>) -> bool {
+    val.and_then(Value::as_str)
+        .is_some_and(|s| s.len() == 36 && uuid::Uuid::parse_str(s).is_ok())
+}
+
+fn is_valid_hex64(val: Option<&Value>) -> bool {
+    val.and_then(Value::as_str)
+        .is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()))
+}
+
+fn is_valid_prompt_text(val: Option<&Value>) -> bool {
+    val.and_then(Value::as_str)
+        .is_some_and(|s| s.encode_utf16().count() <= 100_000)
+}
+
+fn is_valid_attachments_opt(val: Option<&Value>) -> bool {
+    let Some(v) = val else {
+        return true;
+    };
+    let Some(arr) = v.as_array() else {
+        return false;
+    };
+    if arr.len() > crate::attachment_store::AGENT_MAX_ATTACHMENTS {
+        return false;
+    }
+    let mut seen_ids = std::collections::HashSet::new();
+    for item in arr {
+        let Some(obj) = item.as_object() else {
+            return false;
+        };
+        let Some(id) = obj.get("id").and_then(Value::as_str) else {
+            return false;
+        };
+        if id.is_empty() || id.encode_utf16().count() > 512 || !seen_ids.insert(id) {
+            return false;
+        }
+        let Some(name) = obj.get("name").and_then(Value::as_str) else {
+            return false;
+        };
+        if name.is_empty() || name.encode_utf16().count() > 512 {
+            return false;
+        }
+        let Some(mime) = obj.get("mimeType").and_then(Value::as_str) else {
+            return false;
+        };
+        if mime.is_empty() || mime.encode_utf16().count() > 256 {
+            return false;
+        }
+        let Some(size) = obj.get("sizeBytes").and_then(Value::as_u64) else {
+            return false;
+        };
+        if size == 0 {
+            return false;
+        }
+        if obj.contains_key("digest") && !is_valid_hex64(obj.get("digest")) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Strict shape validation for `compose` (`src/shared/agents.ts:1619`).
+pub fn valid_compose_shape(command: &Map<String, Value>) -> bool {
+    if command.get("type").and_then(Value::as_str) != Some("compose") {
+        return false;
+    }
+    if !command
+        .keys()
+        .all(|k| matches!(k.as_str(), "type" | "threadId" | "draftId" | "text" | "attachments"))
+    {
+        return false;
+    }
+    if !is_valid_prompt_text(command.get("text")) {
+        return false;
+    }
+    if command.contains_key("threadId") && !is_valid_id(command.get("threadId")) {
+        return false;
+    }
+    if command.contains_key("draftId") && !is_valid_uuid(command.get("draftId")) {
+        return false;
+    }
+    is_valid_attachments_opt(command.get("attachments"))
+}
+
+/// Strict shape validation for `send` (`src/shared/agents.ts:1625-1629`).
+pub fn valid_send_shape(command: &Map<String, Value>) -> bool {
+    if command.get("type").and_then(Value::as_str) != Some("send") {
+        return false;
+    }
+    if !command.keys().all(|k| matches!(k.as_str(), "type" | "draft")) {
+        return false;
+    }
+    let Some(draft_val) = command.get("draft") else {
+        return true;
+    };
+    let Some(draft) = draft_val.as_object() else {
+        return false;
+    };
+    if !draft
+        .keys()
+        .all(|k| matches!(k.as_str(), "threadId" | "draftId" | "text" | "attachments" | "binding"))
+    {
+        return false;
+    }
+    if !is_valid_id(draft.get("threadId")) || !is_valid_prompt_text(draft.get("text")) {
+        return false;
+    }
+    if draft.contains_key("draftId") && !is_valid_uuid(draft.get("draftId")) {
+        return false;
+    }
+    if !is_valid_attachments_opt(draft.get("attachments")) {
+        return false;
+    }
+    if let Some(binding_val) = draft.get("binding") {
+        let Some(binding) = binding_val.as_object() else {
+            return false;
+        };
+        if binding.len() != 2 || !binding.contains_key("requestId") || !binding.contains_key("questionsDigest") {
+            return false;
+        }
+        let req_null = binding.get("requestId") == Some(&Value::Null);
+        let dig_null = binding.get("questionsDigest") == Some(&Value::Null);
+        if req_null != dig_null {
+            return false;
+        }
+        if !req_null && (!is_valid_id(binding.get("requestId")) || !is_valid_hex64(binding.get("questionsDigest"))) {
+            return false;
+        }
+    }
+    true
+}
+
+/// Strict shape validation for `cancel-draft` (`src/shared/agents.ts:1639`).
+pub fn valid_cancel_draft_shape(command: &Map<String, Value>) -> bool {
+    command.len() == 1 && command.get("type").and_then(Value::as_str) == Some("cancel-draft")
+}
+
+/// Strict shape validation for `refresh-thread-skills` (`src/shared/agents.ts:1606`).
+pub fn valid_refresh_skills_shape(command: &Map<String, Value>) -> bool {
+    if command.get("type").and_then(Value::as_str) != Some("refresh-thread-skills") {
+        return false;
+    }
+    if !command.keys().all(|k| matches!(k.as_str(), "type" | "threadId" | "forceReload")) {
+        return false;
+    }
+    if !is_valid_id(command.get("threadId")) {
+        return false;
+    }
+    command.get("forceReload").is_none_or(Value::is_boolean)
+}
+
+/// Strict shape validation for `stop-detached-run` (`src/shared/agents.ts:1809`).
+pub fn valid_stop_detached_run_shape(command: &Map<String, Value>) -> bool {
+    command.get("type").and_then(Value::as_str) == Some("stop-detached-run")
+        && command.len() == 3
+        && is_valid_id(command.get("threadId"))
+        && is_valid_uuid(command.get("runId"))
+}
+
+/// Strict shape validation for `babysit-pull-request` and `stop-babysitting` (`src/shared/agents.ts:1779-1780`).
+pub fn valid_babysit_shape(command: &Map<String, Value>) -> bool {
+    matches!(
+        command.get("type").and_then(Value::as_str),
+        Some("babysit-pull-request" | "stop-babysitting")
+    ) && command.len() == 3
+        && is_valid_id(command.get("threadId"))
+        && command
+            .get("url")
+            .and_then(Value::as_str)
+            .is_some_and(crate::pull_requests::is_valid_pull_request_url)
+}
+
+/// Strict shape validation for `{ type, threadId }` commands (`start-thread-session`, `regenerate-thread-title`, `cancel-restart`).
+pub fn valid_thread_id_only_shape(command: &Map<String, Value>, expected_type: &str) -> bool {
+    command.len() == 2
+        && command.get("type").and_then(Value::as_str) == Some(expected_type)
+        && is_valid_id(command.get("threadId"))
+}
+
 fn remote_command_needs_answer_policy(cmd_type: &str, command: &Map<String, Value>) -> bool {
     match cmd_type {
         "answer" | "delete-thread" => true,
@@ -372,5 +556,59 @@ mod tests {
                 .code,
             HostErrorCode::InvalidRequest
         );
+    }
+
+    #[test]
+    fn validates_slice_23_command_shapes_strictly() {
+        let obj = |v: Value| v.as_object().unwrap().clone();
+        let uid = "00000000-0000-4000-8000-000000000001";
+        let hex64 = "a".repeat(64);
+        assert!(valid_compose_shape(&obj(json!({ "type": "compose", "text": "hi" }))));
+        assert!(valid_compose_shape(&obj(json!({ "type": "compose", "threadId": "t1", "draftId": uid, "text": "hi", "attachments": [] }))));
+        assert!(!valid_compose_shape(&obj(json!({ "type": "compose", "text": "hi", "draftId": "not-a-uuid" }))));
+        assert!(!valid_compose_shape(&obj(json!({ "type": "compose", "text": "hi", "extra": 1 }))));
+
+        assert!(valid_send_shape(&obj(json!({ "type": "send" }))));
+        assert!(valid_send_shape(&obj(json!({
+            "type": "send",
+            "draft": {
+                "threadId": "t1",
+                "draftId": uid,
+                "text": "go",
+                "binding": { "requestId": "req-1", "questionsDigest": hex64 }
+            }
+        }))));
+        assert!(valid_send_shape(&obj(json!({
+            "type": "send",
+            "draft": {
+                "threadId": "t1",
+                "text": "go",
+                "binding": { "requestId": null, "questionsDigest": null }
+            }
+        }))));
+        // Mismatched nullability in binding is invalid.
+        assert!(!valid_send_shape(&obj(json!({
+            "type": "send",
+            "draft": {
+                "threadId": "t1",
+                "text": "go",
+                "binding": { "requestId": "req-1", "questionsDigest": null }
+            }
+        }))));
+
+        assert!(valid_cancel_draft_shape(&obj(json!({ "type": "cancel-draft" }))));
+        assert!(!valid_cancel_draft_shape(&obj(json!({ "type": "cancel-draft", "threadId": "t1" }))));
+
+        assert!(valid_refresh_skills_shape(&obj(json!({ "type": "refresh-thread-skills", "threadId": "t1", "forceReload": true }))));
+        assert!(!valid_refresh_skills_shape(&obj(json!({ "type": "refresh-thread-skills", "threadId": "t1", "forceReload": "yes" }))));
+
+        assert!(valid_stop_detached_run_shape(&obj(json!({ "type": "stop-detached-run", "threadId": "t1", "runId": uid }))));
+        assert!(!valid_stop_detached_run_shape(&obj(json!({ "type": "stop-detached-run", "threadId": "t1", "runId": "bad" }))));
+
+        assert!(valid_babysit_shape(&obj(json!({ "type": "babysit-pull-request", "threadId": "t1", "url": "https://github.com/o/r/pull/1" }))));
+        assert!(!valid_babysit_shape(&obj(json!({ "type": "babysit-pull-request", "threadId": "t1", "url": "https://example.com/1" }))));
+
+        assert!(valid_thread_id_only_shape(&obj(json!({ "type": "cancel-restart", "threadId": "t1" })), "cancel-restart"));
+        assert!(!valid_thread_id_only_shape(&obj(json!({ "type": "cancel-restart", "threadId": "" })), "cancel-restart"));
     }
 }
