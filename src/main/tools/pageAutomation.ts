@@ -980,12 +980,13 @@ export abstract class PageAutomation {
    * Whether the document loaded now could show a typed secret, so no picture of it goes to the agent and no text there
    * is selected: one was typed into it (`holdsSecret`), or, on a page one was typed into, a site wrote one back into a
    * later document, in its words or a field (`DOCUMENT_TEXT`). The text is read in the page and compared only here, and
-   * a document Sotto cannot read counts as one that shows it. A secret drawn in an image or a canvas, or written in a
-   * frame from another site, is not found.
+   * a document Sotto cannot read counts as one that shows it, as does one with a dialog open, which holds any read until
+   * it is answered. A secret drawn in an image or a canvas, or written in a frame from another site, is not found.
    */
   async showsSecret(): Promise<boolean> {
     if (this.secretInDocument) return true
     if (!this.typedSecrets.size) return false
+    if (this.dialogOpen) return true
     try {
       await this.ready()
       const read = await this.send('Runtime.evaluate', { expression: DOCUMENT_TEXT, returnByValue: true }) as { result?: { value?: unknown } }
@@ -993,6 +994,8 @@ export abstract class PageAutomation {
       return typeof text !== 'string' || this.masked(text, '') !== text
     } catch { return true }
   }
+  /** Whether a secret was typed into this page while it has been open, in any of its documents. */
+  typedSecret(): boolean { return this.typedSecrets.size > 0 }
   /** Refuses, while the document could show a typed secret (`showsSecret`), an action that would select, copy, cut or carry text (`movesText`). */
   private async textStays(action: TargetedAction | PageInput): Promise<void> {
     const what = movesText(action)

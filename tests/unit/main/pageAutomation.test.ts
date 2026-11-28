@@ -1143,11 +1143,21 @@ describe('a secret a site writes back into a later document (after the third rev
     }
     await automation_.typeSecret(given(secret), go, { selector: '#password' })
     automation_.documentCommitted()
+    expect(automation_.typedSecret()).toBe(true)
     expect(await automation_.showsSecret()).toBe(true)
     for (answer of [undefined, { text: secret }, new Error(`Uncaught: ${secret}`)]) {
       expect(await automation_.showsSecret(), String(answer)).toBe(true)
       await expect(automation_.input(chord, go)).rejects.toMatchObject({ code: 'blocked', message: expect.not.stringContaining('hunter') })
     }
+    // A dialog holds any read until it is answered, so none is tried while one is open.
+    const reads = (): number => fake.calls('Runtime.evaluate').filter(call => String(call.expression).includes('documentElement.textContent')).length
+    const before = reads()
+    answer = ''
+    fake.emit('Page.javascriptDialogOpening', { type: 'alert', message: 'Saved' })
+    expect(await automation_.showsSecret()).toBe(true)
+    expect(reads()).toBe(before)
+    fake.emit('Page.javascriptDialogClosed', {})
+    expect(await automation_.showsSecret()).toBe(false)
     // The read names every field's value and follows open shadow roots and same-origin frames.
     const expression = String(fake.calls('Runtime.evaluate').filter(call => String(call.expression).includes('documentElement.textContent')).at(-1)?.expression)
     for (const part of ['.value', 'shadowRoot', 'contentDocument']) expect(expression).toContain(part)

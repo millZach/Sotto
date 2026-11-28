@@ -808,8 +808,9 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       }
       // Revocation during an asynchronous capture must not release page evidence.
       if (action.type !== 'navigate') guard(reading)
-      // A page with a dialog open draws no new picture until it is answered, and one that holds a typed secret keeps none.
-      const thumbnail = action.type === 'navigate' || (this.parity && record.automation.dialog()) || await record.automation.showsSecret() ? null : await record.automation.thumbnail(image).catch(() => null)
+      // A page with a dialog open draws no new picture until it is answered, and one a secret was typed into keeps none
+      // while it is open: a later document can show it again, and it is not read for that after every action.
+      const thumbnail = action.type === 'navigate' || (this.parity && record.automation.dialog()) || record.automation.typedSecret() ? null : await record.automation.thumbnail(image).catch(() => null)
       if (action.type !== 'navigate') guard(reading)
       if (record.page.sharedOrigin && task.status === 'working') task.thumbnail = thumbnail
       const note = this.actionNote?.(record, startedAt)
