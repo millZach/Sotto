@@ -48,6 +48,36 @@ describe('a page snapshot as an agent reads it (ADR-0220)', () => {
     expect(refs.size).toBe(3)
     expect(truncated).toBe(true)
   })
+
+  it('hides only the text inside a field while its page holds a secret, and reads a control inside one as ever (the third review)', () => {
+    const nodes: AXNode[] = [
+      node('1', 'RootWebArea', 'Sign in', { childIds: ['2', '6'] }),
+      // A combobox whose inner editor holds what was typed, with a button to open it and a list of its options.
+      node('2', 'combobox', 'Country', { parentId: '1', backendDOMNodeId: 20, value: { value: 'hunter2' }, childIds: ['3', '4', '5'] }),
+      node('3', 'generic', '', { parentId: '2', childIds: ['3a'] }),
+      node('3a', 'StaticText', 'hunter2', { parentId: '3', childIds: ['3b'] }),
+      node('3b', 'InlineTextBox', 'hunter2', { parentId: '3a' }),
+      node('4', 'button', 'Open the list', { parentId: '2', backendDOMNodeId: 21 }),
+      node('5', 'listbox', 'Countries', { parentId: '2', backendDOMNodeId: 22, childIds: ['5a'] }),
+      node('5a', 'option', 'Norway', { parentId: '5', backendDOMNodeId: 23, childIds: ['5b'] }),
+      node('5b', 'StaticText', 'Norway', { parentId: '5a' }),
+      // A rich editor's lines are its text too.
+      node('6', 'textbox', 'Notes', { parentId: '1', backendDOMNodeId: 30, childIds: ['7'] }),
+      node('7', 'paragraph', '', { parentId: '6', childIds: ['8', '9'] }),
+      node('8', 'StaticText', 'hunter2 again', { parentId: '7' }),
+      { nodeId: '9', parentId: '7' },
+    ]
+    const { tree } = formatSnapshot(nodes, undefined, true)
+    expect(tree.split('\n')).toEqual([
+      '- combobox "Country" [value hidden: this page holds a secret you saved] [ref=e1]',
+      '  - button "Open the list" [ref=e2]',
+      '  - listbox "Countries" [ref=e3]',
+      '    - option "Norway" [ref=e4]',
+      '- textbox "Notes" [ref=e5]',
+      '  - paragraph',
+    ])
+    expect(tree).not.toContain('hunter2')
+  })
 })
 
 describe('keys with modifiers (ADR-0220)', () => {

@@ -240,6 +240,8 @@ export abstract class PageAutomation {
    * which the pane can then answer. Off, the Page domain stays off and dialogs stay Electron's, as before.
    */
   parity = false
+  /** The page is in one of the user's browser profiles (ADR-0221), where an agent cannot open a page of its own. */
+  inProfile = false
   /** Told when the page's dialog or file chooser opens or closes, so its owner publishes the page again. */
   onChange: (() => void) | null = null
   /** Refs from the latest snapshot to the DOM nodes they name; a navigation or a handoff forgets them. */
@@ -558,7 +560,7 @@ export abstract class PageAutomation {
     this.noDialog()
     // Not only while the secret's document is open: its history and referrer keep an address a form sent it in, and a
     // site can write it back into a later document (a sign-in form filled again), so a script could read it back there.
-    if (this.typedSecrets.size) return fail('blocked', 'A secret you saved was typed into this page, so evaluate is off on it until it closes: its history keeps the addresses it went to, and a site can write the secret back into a later document. Use snapshot, click and type, or open a new page.')
+    if (this.typedSecrets.size) return fail('blocked', `A secret you saved was typed into this page, so evaluate is off on it until it closes: its history keeps the addresses it went to, and a site can write the secret back into a later document. Use snapshot, click and type${this.inProfile ? '' : ', or open a new page'}.`)
     await this.ready()
     // From here the script may run, so no secret goes into this document: anything it left listening could take it.
     this.scriptedDocument = this.scriptedEver = true

@@ -29,19 +29,23 @@ const oneLine = (value: unknown, max: number): string => String(value ?? '').rep
 const FIELD_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton'])
 /** What a field's value reads as while its page holds a typed secret. */
 export const FIELD_VALUE_HIDDEN = '[value hidden: this page holds a secret you saved]'
+/** Roles that carry a field's text beneath it, as Chromium lists an input's inner editor and a rich editor's lines. */
+const FIELD_TEXT_ROLES = new Set([...PASS_THROUGH, 'paragraph'])
 /**
- * The nodes inside a field, as the text it holds, which Chromium lists under it. While a page holds a typed secret they
- * are not read out: a site's "show password" button and an edit to the field would let its value out a piece at a time,
- * past a mask that matches only the whole of it.
+ * The nodes inside a field that carry the text it holds, which Chromium lists under it. While a page holds a typed
+ * secret they are not read out: a site's "show password" button and an edit to the field would let its value out a
+ * piece at a time, past a mask that matches only the whole of it. A control inside a field, such as a combobox's
+ * button or its options, is not its text, so it and what is under it are read as ever.
  */
 export function fieldContents(nodes: readonly AXNode[]): Set<string> {
   const byId = new Map(nodes.map(node => [node.nodeId, node]))
   const inside = new Set<string>()
   const add = (node: AXNode): void => {
     for (const childId of node.childIds ?? []) {
-      if (inside.has(childId)) continue
+      const child = byId.get(childId), role = child ? oneLine(child.role?.value, 60) : ''
+      // One whose role is not known is taken for text.
+      if (inside.has(childId) || (role !== '' && !FIELD_TEXT_ROLES.has(role))) continue
       inside.add(childId)
-      const child = byId.get(childId)
       if (child) add(child)
     }
   }

@@ -15,6 +15,7 @@ import { SecretRequests } from '../../src/main/secrets/secretRequests'
 import { registerSecretRequestsIpc } from '../../src/main/secrets/secretRequestsIpc'
 import { SecretToolServer } from '../../src/main/agents/secretTools'
 import { BrowserService } from '../../src/main/tools/browser'
+import { BrowserProfiles } from '../../src/main/tools/browserProfiles'
 import { createBrowserAgentServer } from '../../src/main/tools/browserAgentTools'
 import { FilesService } from '../../src/main/files/service'
 import { SECRET_REQUESTS_ANSWER, SECRET_VALUE_MAX } from '../../src/shared/secretRequests'
@@ -119,7 +120,8 @@ beforeAll(async () => {
   const files = new FilesService({ resolveBinding: threadId => ({ threadId, projectId: 'p', workingDirectory: work }), copyPath: vi.fn(), reveal: vi.fn() })
   // The browser grant is on, as it is by default (ADR-0029).
   browser = new BrowserService({ files, getWindow: () => null, emit: event => { events.push(event) }, openExternal: vi.fn(), destination: async () => 'embedded', byDefault: () => true,
-    parity: true, secret: async (threadId, ref) => secrets.take(threadId, ref), secretSite: async (threadId, ref) => secrets.site(threadId, ref) })
+    parity: true, secret: async (threadId, ref) => secrets.take(threadId, ref), secretSite: async (threadId, ref) => secrets.site(threadId, ref),
+    profiles: new BrowserProfiles(join(userData, 'browser-profiles.json')) })
 })
 afterAll(async () => {
   browser.dispose()
@@ -205,6 +207,28 @@ describe('a secret reference is not typed where the agent\'s script could be lis
     expect((await github.act({ type: 'navigate', url: 'https://github.com/login' })).isError).toBeFalsy()
     expect((await github.act({ type: 'type', selector: '#password', secretRef: ref })).isError).toBeFalsy()
     expect(page.typed).toBe(CANARY)
+  })
+
+  it('does not offer a new page in its refusal on a profile page, where the agent cannot open one (the third review, Q-N5)', async () => {
+    fresh()
+    const listed = await browser.list({ threadId: THREAD })
+    if (!listed.ok) throw new Error(listed.error.message)
+    const workspace = { threadId: THREAD, workspaceId: listed.value.workspace.workspaceId }
+    const added = await browser.addProfile({ name: 'Work' })
+    if (!added.ok) throw new Error(added.error.message)
+    // The user opens the sign-in page in their profile and shares it; the agent works there.
+    const created = await browser.create({ ...workspace, url: 'https://github.com/login', profileId: added.value.profile.id })
+    if (!created.ok) throw new Error(created.error.message)
+    await vi.waitFor(() => expect(page.contents.at(-1)!.url).toBe('https://github.com/login'))
+    expect(await browser.share({ ...workspace, pageId: created.value.id, enabled: true })).toMatchObject({ ok: true })
+    const started = JSON.parse((await call('browser_start', { pageId: created.value.id, description: 'Sign in' })).text) as { task: { id: string } }
+    const act = (action: Record<string, unknown>) => call('browser_action', { pageId: created.value.id, taskId: started.task.id, action })
+    expect((await act({ type: 'type', selector: '#password', secretRef: await secretRef({ url: 'https://github.com/login' }) })).isError).toBeFalsy()
+    expect(page.typed).toBe(CANARY)
+    const refused = await act({ type: 'evaluate', expression: '1' })
+    expect(refused.isError).toBe(true)
+    expect(refused.text).toContain('evaluate is off')
+    expect(refused.text).not.toContain('new page')
   })
 
   it('keeps evaluate off for the rest of the page\'s life once the page\'s address has held the secret', async () => {

@@ -161,6 +161,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
    */
   protected track(record: R): void {
     record.automation.parity = this.parity
+    record.automation.inProfile = Boolean(record.page.profile)
     record.automation.onChange = () => { if (this.pages.has(record.page.id) && !this.disposed) this.publish(record) }
   }
   /**

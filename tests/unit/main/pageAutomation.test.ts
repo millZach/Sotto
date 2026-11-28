@@ -473,6 +473,15 @@ describe('what is masked (ADR-0219)', () => {
     await expect(automation_.evaluate('1')).rejects.toMatchObject({ code: 'blocked' })
   })
 
+  it('offers a new page in the evaluate refusal only where an agent can open one, not in a profile (the third review)', async () => {
+    const own = automation(page()), signedIn = automation(page())
+    signedIn.inProfile = true
+    for (const each of [own, signedIn]) await each.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
+    await expect(own.evaluate('1')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('or open a new page') })
+    await expect(signedIn.evaluate('1')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('Use snapshot, click and type.') })
+    await expect(signedIn.evaluate('1')).rejects.toMatchObject({ message: expect.not.stringContaining('new page') })
+  })
+
   it('keeps the page\'s own origin whole, and masks the secret everywhere else, the same address\'s path included (the third review)', async () => {
     // The page is on https://shop.example, and the secret is also part of its host.
     const fake = page(), automation_ = automation(fake)
