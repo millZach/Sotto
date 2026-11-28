@@ -17,7 +17,7 @@ import { SecretToolServer } from '../../src/main/agents/secretTools'
 import { BrowserService } from '../../src/main/tools/browser'
 import { createBrowserAgentServer } from '../../src/main/tools/browserAgentTools'
 import { FilesService } from '../../src/main/files/service'
-import { SECRET_REQUESTS_ANSWER } from '../../src/shared/secretRequests'
+import { SECRET_REQUESTS_ANSWER, SECRET_VALUE_MAX } from '../../src/shared/secretRequests'
 import type { BrowserEvent, BrowserTask } from '../../src/shared/browser'
 import { ipcRegistry } from '../fixtures/ipcHarness'
 
@@ -130,12 +130,12 @@ afterAll(async () => {
   await rm(work, { recursive: true, force: true })
 })
 
-/** Asks for a secret as the agent would, saves the card as the user would, and returns the reference. */
-async function secretRef(card: Record<string, unknown> = {}): Promise<string> {
+/** Asks for a secret as the agent would, saves the card with `value` as the user would, and returns the reference. */
+async function secretRef(card: Record<string, unknown> = {}, value = CANARY): Promise<string> {
   const call = tools.call(THREAD, 'request_secret', { label: 'GitHub password', reason: 'To sign in.', ...card })
   await vi.waitFor(() => expect(secrets.requests().get(THREAD)?.length).toBe(1))
   const requestId = secrets.requests().get(THREAD)![0]!.id
-  expect(await answer({ answer: 'save', threadId: THREAD, requestId, values: { value: CANARY } })).toEqual({ ok: true })
+  expect(await answer({ answer: 'save', threadId: THREAD, requestId, values: { value } })).toEqual({ ok: true })
   const result = await call
   return (JSON.parse((result.content[0] as { text: string }).text) as { secretRef: string }).secretRef
 }
@@ -279,5 +279,28 @@ describe('a failed type and the pictures of a page that holds a secret', () => {
     const after = await github.act({ type: 'screenshot' })
     expect(after.isError).toBeFalsy()
     expect(after.images).toBe(1)
+  })
+})
+
+describe('a typed secret of any length (the third review)', () => {
+  it('keeps the browser working once a secret of the longest length a card takes is typed, and its words go nowhere', async () => {
+    fresh()
+    // Characters a pattern would have had to escape, a backslash and a quote among them.
+    const awkward = '\\"%+ /.*?()[]{}|^$aZ9'
+    const long = Array.from({ length: SECRET_VALUE_MAX }, (_, index) => awkward[index % awkward.length]).join('')
+    const github = await opened('https://github.com/login')
+    expect((await github.act({ type: 'type', selector: '#password', secretRef: await secretRef({ url: 'https://github.com/login' }, long) })).isError).toBeFalsy()
+    expect(page.typed).toBe(long)
+    // The page's own news is published outside any tool call, and none of it may throw.
+    const contents = page.contents.at(-1)!
+    expect(() => { contents.emit('page-title-updated', {}, `Welcome ${long}`); contents.emit('did-navigate-in-page', {}, 'https://github.com/login#done', true) }).not.toThrow()
+    for (const [name, args] of [['browser_pages', {}], ['browser_status', {}]] as const) {
+      const said = await call(name, args)
+      expect(said.isError, name).toBeFalsy()
+      expect(said.text).not.toContain(long.slice(0, 200))
+    }
+    const read = await github.act({ type: 'snapshot' })
+    expect(read.isError).toBeFalsy()
+    expect(JSON.stringify(events)).not.toContain(long.slice(0, 200))
   })
 })

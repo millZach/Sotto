@@ -1,6 +1,7 @@
 import { presetSize, type BrowserAction, type BrowserAppearance, type BrowserBounds, type BrowserCapture, type BrowserDialog, type BrowserTargetFields } from '../../shared/browser'
 import { ToolFailure, fail } from './common'
 import { SNAPSHOT_TEXT, fieldContents, formatSnapshot, keyEvents, modifierMask, type AXNode } from './pageSnapshot'
+import { MASK, maskSecrets, secretMatcher, type SecretMatcher } from './secretMask'
 
 /**
  * The page's debugger, as a page automation drives it: Electron's own on the desktop, a DevTools session over a pipe
@@ -96,33 +97,6 @@ export function cssIdentifier(value: string): string {
     return /[a-zA-Z0-9_\-\u0080-￿]/u.test(character) ? character : `\\${character}`
   }).join('')
 }
-/** What a typed secret is replaced by wherever it is found. */
-const MASK = '••••••••'
-const regExpCharacter = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/gu, '\\$&')
-/** A pattern for two hex digits, either case, as an address may escape a byte in either. */
-const hexPair = (byte: number): string => [...byte.toString(16).padStart(2, '0')].map(digit => /[a-f]/u.test(digit) ? `[${digit}${digit.toUpperCase()}]` : digit).join('')
-const utf8 = new TextEncoder()
-/**
- * Every way `secret` is found written in what a page says back (ADR-0219): each character as itself; as an address or a
- * form escapes it, in hex of either case, once or twice over, a space as `+` too, so an address that escapes some
- * characters and not others, or has a stray `%` beside them, is found as well; and as JSON escapes it. One pattern per
- * secret, made when it is typed.
- */
-export function secretPattern(secret: string): RegExp {
-  const characters = [...secret].map(character => {
-    const bytes = [...utf8.encode(character)]
-    const ways = new Set([
-      regExpCharacter(character),
-      bytes.map(byte => `%${hexPair(byte)}`).join(''),
-      bytes.map(byte => `%25${hexPair(byte)}`).join(''),
-      regExpCharacter(JSON.stringify(character).slice(1, -1)),
-      Array.from({ length: character.length }, (_, index) => character.charCodeAt(index)).map(unit => `\\\\u${hexPair(unit >> 8)}${hexPair(unit & 0xff)}`).join(''),
-      ...character === ' ' ? ['\\+'] : [],
-    ])
-    return `(?:${[...ways].join('|')})`
-  })
-  return new RegExp(characters.join(''), 'gu')
-}
 /**
  * Whether a CSS selector compares part of an attribute's value (`^=`, `$=`, `*=`, `~=`, `|=`), which could test a value
  * a character at a time. It is looked for as written and with comments left out, since the operator's two halves may
@@ -192,12 +166,12 @@ export abstract class PageAutomation {
   private cursorSession = -1
   private readonly errors: { kind: string; message: string }[] = []
   /**
-   * Secrets typed into this page from a secret request (ADR-0219), each with the pattern that finds it, held only in
-   * memory while the page is open, so whatever the page says back (its words, errors, an evaluated value) reaches the
-   * agent with each one masked. Once one is here, `evaluate` stays off for the page's life (`evaluate`), and `wait_for`
-   * and selectors cannot test it (`waitFor`, `checkedSelector`).
+   * Secrets typed into this page from a secret request (ADR-0219), each with the matcher that finds it once `masked`
+   * has made it, held only in memory while the page is open, so whatever the page says back (its words, errors, an
+   * evaluated value) reaches the agent with each one masked. Once one is here, `evaluate` stays off for the page's life
+   * (`evaluate`), and `wait_for` and selectors cannot test it (`waitFor`, `checkedSelector`).
    */
-  private readonly typedSecrets = new Map<string, RegExp>()
+  private readonly typedSecrets = new Map<string, SecretMatcher | null | undefined>()
   /**
    * A secret was typed into the document loaded now, so a picture of the page could show it (ADR-0222, decision 12).
    * Only a cross-document navigation that commits clears it: a hash change, a load that never commits, Stop sharing or
@@ -484,13 +458,22 @@ export abstract class PageAutomation {
   }
   /**
    * `text` with every secret typed into this page masked: as written, as JSON writes it, and however an address or a form
-   * sent by GET escapes it (`secretPattern`), so a sign-in form that puts the password in its address does not hand it on.
-   * A match shorter than three characters is left, as one that short is as likely the page's own words.
+   * sent by GET escapes it (`maskSecrets`), so a sign-in form that puts the password in its address does not hand it on.
+   * A secret shorter than three characters is not masked, as one that short is as likely the page's own words; its
+   * page's rules hold all the same. This never throws: should finding a secret ever fail, the whole text is the mask,
+   * and nothing of the failure, which could hold the secret, goes on.
    */
   masked(text: string): string {
-    let result = text
-    for (const pattern of this.typedSecrets.values()) result = result.replace(pattern, found => found.length >= 3 ? MASK : found)
-    return result
+    if (!this.typedSecrets.size) return text
+    try {
+      const matchers: (SecretMatcher | null)[] = []
+      for (const [secret, known] of this.typedSecrets) {
+        const matcher = known === undefined ? secretMatcher(secret) : known
+        if (known === undefined) this.typedSecrets.set(secret, matcher)
+        matchers.push(matcher)
+      }
+      return maskSecrets(text, matchers)
+    } catch { return MASK }
   }
   /**
    * The page as an agent reads it in the full catalog (ADR-0220): its address and title, the accessibility tree with a
@@ -757,7 +740,8 @@ export abstract class PageAutomation {
       if (origin !== undefined && await this.documentOrigin() !== origin) fail('blocked', `This page is no longer on ${origin}, the site this secret is for.`)
       guard()
     } catch (error) { return fail(error instanceof ToolFailure ? error.code : 'blocked', `${sentenceOf(error)} Nothing was typed, and ${SECRET_SPENT}`) }
-    this.typedSecrets.set(value, secretPattern(value))
+    // Its matcher is made when something is first masked, where a failure masks everything rather than going on.
+    if (!this.typedSecrets.has(value)) this.typedSecrets.set(value, undefined)
     this.secretInDocument = true
     try { await this.send('Input.insertText', { text: value }) } catch (error) {
       // Whether the page took any of it is not known, so the document is still taken to hold it.

@@ -1,7 +1,15 @@
 // @vitest-environment node
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { attributeOf, CURSOR_ARROW, PageAutomation, SNAPSHOT_TOTAL, type PageDebugger, type PageEventListener, type PageFrame, type PagePicture } from '../../../src/main/tools/pageAutomation'
 import { ToolFailure } from '../../../src/main/tools/common'
+import { maskSecrets } from '../../../src/main/tools/secretMask'
+import { SECRET_VALUE_MAX } from '../../../src/shared/secretRequests'
+
+// The real matcher, wrapped so a test can make it fail once and see what the page then says back.
+vi.mock('../../../src/main/tools/secretMask', async importOriginal => {
+  const real = await importOriginal<typeof import('../../../src/main/tools/secretMask')>()
+  return { ...real, maskSecrets: vi.fn(real.maskSecrets) }
+})
 
 type Handler = (method: string, params: Record<string, unknown>) => unknown
 
@@ -444,6 +452,85 @@ describe('what is masked (ADR-0219)', () => {
     for (const form of [encodeURIComponent(wide), encodeURIComponent(wide).replace(/%20/gu, '+').toLowerCase(), JSON.stringify(wide).slice(1, -1), 'p\\u00e4 ss w\\u00F6rd', 'p%C3%A4 ss+w%c3%b6rd']) {
       expect(others.masked(`[${form}]`)).toBe('[••••••••]')
     }
+  })
+
+  it('masks a space a form sent as + and an address then escaped again, as %2B or %252B (the third review)', async () => {
+    const fake = page(), automation_ = automation(fake)
+    await automation_.typeSecret(given('my pass'), go, { selector: '#password' })
+    for (const form of ['my%2Bpass', 'my%2bpass', 'my%252Bpass', 'my+pass']) expect(automation_.masked(`https://app.example/?next=%2F%3Fp%3D${form}&x=1`)).toBe('https://app.example/?next=%2F%3Fp%3D••••••••&x=1')
+    // A + in the secret is found escaped too.
+    const plus = page(), plusses = automation(plus)
+    await plusses.typeSecret(given('a+b=c'), go, { selector: '#password' })
+    for (const form of ['a+b=c', 'a%2Bb%3Dc', 'a%252Bb%253Dc', 'a\\u002bb\\u003dc']) expect(plusses.masked(`[${form}]`)).toBe('[••••••••]')
+  })
+
+  it('leaves a secret shorter than three characters unmasked everywhere, and keeps its page\'s rules (the third review)', async () => {
+    const fake = page(), automation_ = automation(fake)
+    await automation_.typeSecret(given('/'), go, { selector: '#password' })
+    // Masking a single character, raw or escaped, would mangle every address the page gives.
+    expect(automation_.masked('https://app.example/a?next=https%3A%2F%2Fapp.example%2Fb')).toBe('https://app.example/a?next=https%3A%2F%2Fapp.example%2Fb')
+    // evaluate stays off all the same.
+    await expect(automation_.evaluate('1')).rejects.toMatchObject({ code: 'blocked' })
+  })
+
+})
+
+describe('masking a typed secret stays linear and cannot throw (the third review)', () => {
+  /** Characters a pattern would have had to escape, a backslash and a quote among them, and some beyond ASCII. */
+  const awkward = [...'\\"%+ /.*?()[]{}|^$aZ9é😀']
+  /** A secret `length` code units long, as a card counts them, made of `awkward` and never splitting a character. */
+  const longSecret = (length: number): string => {
+    let made = ''
+    for (let index = 0; ; index++) {
+      const next = awkward[index % awkward.length]!
+      if (made.length + next.length > length) return made.padEnd(length, 'a')
+      made += next
+    }
+  }
+  const typed = async (secret: string): Promise<TestAutomation> => { const automation_ = automation(page()); await automation_.typeSecret(given(secret), go, { selector: '#password' }); return automation_ }
+  const time = (work: () => unknown): number => { const started = performance.now(); work(); return performance.now() - started }
+
+  it('masks a secret of the longest length a card takes, as written, escaped and as JSON writes it', async () => {
+    const secret = longSecret(SECRET_VALUE_MAX), automation_ = await typed(secret)
+    expect(secret).toHaveLength(SECRET_VALUE_MAX)
+    for (const form of [secret, encodeURIComponent(secret), JSON.stringify(secret).slice(1, -1), encodeURIComponent(encodeURIComponent(secret))]) {
+      expect(automation_.masked(`before ${form} after`)).toBe('before •••••••• after')
+    }
+    // The page's own words beside it, and a page that does not hold it, come back as they are.
+    expect(automation_.masked('Sign in to continue')).toBe('Sign in to continue')
+  })
+
+  it('masks a page of a megabyte and more, in time that grows only with the text, however the text is built', async () => {
+    const backslashes = '\\'.repeat(16_383) + 'Z', quoted = '\\"'.repeat(8_191) + 'Z'
+    const cases: { secret: string; text: string }[] = [
+      // A pattern with a backslash in it backtracked for ever on a run of backslashes that ends wrong.
+      { secret: '\\'.repeat(24) + 'Z', text: ('\\'.repeat(36) + 'X').repeat(12) },
+      { secret: '\\"'.repeat(22) + 'Z', text: ('\\"'.repeat(33) + 'X').repeat(12) },
+      { secret: backslashes, text: '\\'.repeat(1_100_000) },
+      { secret: quoted, text: '\\"'.repeat(550_000) },
+      { secret: '%'.repeat(16_000) + 'Z', text: '%25'.repeat(400_000) },
+      { secret: longSecret(16_384), text: `${longSecret(16_383)}X`.repeat(70) },
+    ]
+    for (const { secret, text } of cases) {
+      const automation_ = await typed(secret)
+      // A page of the same length that holds nothing like the secret is the yardstick, so a slow machine is not a failure.
+      const plain = time(() => automation_.masked('a'.repeat(text.length)))
+      const hostile = time(() => expect(automation_.masked(text)).not.toContain(secret))
+      expect(hostile, `${secret.length} characters against ${text.length}`).toBeLessThan(plain * 20 + 500)
+    }
+  })
+
+  it('shows nothing of a text it could not check, and the failure carries nothing of the secret', async () => {
+    const secret = 'hunter2-secret', automation_ = await typed(secret)
+    vi.mocked(maskSecrets).mockImplementationOnce(() => { throw new SyntaxError(`Invalid regular expression: /${secret}/`) })
+    let said = ''
+    expect(() => { said = automation_.masked(`Your password is ${secret}`) }).not.toThrow()
+    expect(said).toBe('••••••••')
+    // What the page says back goes through the same mask: the snapshot is all mask, not the page's raw words.
+    vi.mocked(maskSecrets).mockImplementationOnce(() => { throw new RangeError(secret) })
+    const snapshot = await automation_.snapshotText()
+    expect(snapshot).toBe('••••••••')
+    expect(vi.mocked(maskSecrets)).toHaveBeenCalled()
   })
 })
 
