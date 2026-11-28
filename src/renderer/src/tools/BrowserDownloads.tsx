@@ -104,7 +104,9 @@ export function DownloadStrip({ page, downloads, onAct }: { readonly page: Brows
   const { lead, detail } = words(download)
   const act = (action: 'save' | 'save-as' | 'cancel' | 'open' | 'show'): void => {
     setBusy(true); setProblem(null)
-    void onAct(download, action).then(error => { setProblem(error); if (!error && action === 'cancel') setHidden(set => new Set([...set, download.id])) }).finally(() => setBusy(false))
+    // A cancelled download leaves the strip when its state says so, not on Cancel: one cancelled too late, as it was
+    // being placed, is saved, and stays to say where.
+    void onAct(download, action).then(error => { setProblem(error) }).finally(() => setBusy(false))
   }
   return <div className="browser-pane__strip browser-parity__download" data-state={download.state === 'asking' ? 'waiting' : download.state} role="group" aria-labelledby={`browser-download-${download.id}`}>
     <Download size={15} className="browser-parity__download-icon" aria-hidden="true" />

@@ -102,6 +102,23 @@ describe('a download asking at the page\'s foot', () => {
     rerender(<DownloadStrip page={page} downloads={[download({ pageId: '99999999-9999-4999-8999-999999999999' })]} onAct={onAct} />)
     expect(container.textContent).toBe('')
   })
+
+  it('keeps a download whose Cancel came too late and was saved, and takes one off once it is cancelled (the third review)', async () => {
+    const onAct = vi.fn(async () => null)
+    const saving = download({ state: 'saving', receivedBytes: 1024 })
+    const { container, rerender } = render(<DownloadStrip page={page} downloads={[saving]} onAct={onAct} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(onAct).toHaveBeenCalledWith(saving, 'cancel')
+    // Placing had already begun, so the download was saved all the same: the strip says where.
+    rerender(<DownloadStrip page={page} downloads={[{ ...saving, state: 'saved', folder: 'C:\\Users\\me\\Downloads' }]} onAct={onAct} />)
+    expect(screen.getByRole('status').textContent).toBe('Saved report.pdf')
+    // One the Cancel did stop leaves the page.
+    const asking = download({ file: 'other.zip' })
+    rerender(<DownloadStrip page={page} downloads={[asking]} onAct={onAct} />)
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    rerender(<DownloadStrip page={page} downloads={[{ ...asking, state: 'cancelled' }]} onAct={onAct} />)
+    expect(container.textContent).toBe('')
+  })
 })
 
 describe('the downloads in the empty pane', () => {
