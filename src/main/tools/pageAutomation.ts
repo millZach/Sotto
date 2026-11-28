@@ -1025,7 +1025,8 @@ export abstract class PageAutomation {
     if (snapshot.empty) return fail('unavailable', 'This page has not drawn yet. Wait for it to load, then try again.')
     const image = snapshot.dataUrl
     if (image.length > 16_000_000) return fail('too-large', 'This page is too large to capture. Set a smaller viewport, then try again.')
-    return { image, url, width: snapshot.width, height: snapshot.height, element }
+    // The address goes with the picture into the user's feedback, which the agent reads, so it is masked as the agent's reads are.
+    return { image, url: this.maskedUrl(url), width: snapshot.width, height: snapshot.height, element }
   }
   /**
    * The node a click or tap at a point in the screenshot lands on. The point is in the visible viewport, as screenshots

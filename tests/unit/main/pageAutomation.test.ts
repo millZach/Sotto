@@ -1020,6 +1020,14 @@ describe('page words are masked before they are cut or tidied (after the third r
     expect(commented?.element).toMatchObject({ role: '••••••••', selector: '#••••••••', name: expect.stringMatching(/y{5}••••••••$/u), text: expect.stringMatching(/z{5}••••••••$/u) })
     expect((await automation_.pointed({ backendNodeId: 31 }))?.element.text).not.toContain('corr')
   })
+
+  it('masks the address a picture is taken at, which the user\'s feedback names to the agent', async () => {
+    const automation_ = await typedOn(showing('Thanks'))
+    // A form sent by GET carries the value in the next document's address, where pictures are allowed again.
+    automation_.clear()
+    const capture = await automation_.capture(`https://shop.example/done?pin=${secret}`)
+    expect(capture.url).toBe('https://shop.example/done?pin=••••••••')
+  })
 })
 
 describe('the masker cuts a text without splitting a secret (after the third review)', () => {
