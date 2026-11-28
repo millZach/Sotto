@@ -279,6 +279,16 @@ pub(crate) fn resolve_model<'a>(models: &'a [AgentModel], model_id: &str) -> Opt
         return Some(exact);
     }
     let parsed = parse_public_provider_entity_id(model_id);
+    if let Some((provider, kind, ref value)) = parsed {
+        // Legacy saved threads with unencoded public IDs (e.g. `native:opencode:model:opencode/x` before
+        // `public_provider_entity_id` percent-encoded the native ID) still resolve to the catalog's encoded entry.
+        let canonical = public_provider_entity_id(provider, kind, value);
+        if canonical != model_id {
+            if let Some(found) = models.iter().find(|m| m.id == canonical) {
+                return Some(found);
+            }
+        }
+    }
     if parsed.as_ref().is_some_and(|(provider, kind, _)| *provider != "claude" || *kind != "model") || parsed.is_none() && model_id.starts_with("native:") {
         return None;
     }
@@ -8466,6 +8476,31 @@ mod tests {
         assert!(resolve_model(&models, "native:codex:model:gpt[1m]").is_none());
         assert!(resolve_model(&models, "native:claude:model:[1m]").is_none());
         assert!(resolve_model(&models, "native:claude:model:sonnet").is_none());
+
+        // Legacy unencoded public model IDs still match percent-encoded catalog entries (and side_writing_effort).
+        let encoded_models = vec![
+            AgentModel {
+                id: public_provider_entity_id("opencode", "model", "opencode/big-pickle"),
+                reasoning_efforts: Some(vec!["low".into(), "high".into()]),
+                ..model("opencode")
+            },
+            AgentModel {
+                id: public_provider_entity_id("cursor", "model", "gpt-5[reasoning=high]"),
+                ..model("cursor")
+            },
+        ];
+        assert_eq!(
+            resolve_model(&encoded_models, "native:opencode:model:opencode/big-pickle").map(|m| m.id.as_str()),
+            Some("native:opencode:model:opencode%2Fbig-pickle")
+        );
+        assert_eq!(
+            crate::side_writing::side_writing_effort(&encoded_models, "native:opencode:model:opencode/big-pickle").as_deref(),
+            Some("low")
+        );
+        assert_eq!(
+            resolve_model(&encoded_models, "native:cursor:model:gpt-5[reasoning=high]").map(|m| m.id.as_str()),
+            Some("native:cursor:model:gpt-5%5Breasoning%3Dhigh%5D")
+        );
     }
 
     /// A folder made for a project whose Git did not start is taken back as far as it was made, and kept when something
