@@ -1432,6 +1432,152 @@ impl ProviderAdapter for CodexAdapter {
             Ok(())
         })
     }
+
+    fn list_thread_skills(
+        &self,
+        thread_id: String,
+        cwd: String,
+        force_reload: bool,
+    ) -> BoxFuture<'_, Result<Value, String>> {
+        Box::pin(async move {
+            let effective_cwd = self
+                .shared
+                .records
+                .lock()
+                .unwrap()
+                .get(&thread_id)
+                .map(|r| r.cwd.clone())
+                .filter(|p| !p.is_empty())
+                .unwrap_or(cwd);
+            if self.shared.status.lock().unwrap().connection != "connected" {
+                return Err("Reconnect Codex before browsing skills.".into());
+            }
+            if effective_cwd.is_empty() || !std::path::Path::new(&effective_cwd).is_absolute() {
+                return Err("This thread has no available Codex working folder.".into());
+            }
+            if !std::path::Path::new(&effective_cwd).is_dir() {
+                return Ok(codex_skills_error(&thread_id, &effective_cwd));
+            }
+            let proc = {
+                let procs = self.thread_procs.lock().await;
+                procs.get(&thread_id).cloned()
+            };
+            let proc = match proc {
+                Some(p) if p.is_alive() => p,
+                _ => {
+                    let ctrl = self.control_proc.lock().await.clone();
+                    match ctrl {
+                        Some(p) if p.is_alive() => p,
+                        _ => return Err("Reconnect Codex before browsing skills.".into()),
+                    }
+                }
+            };
+            let response = proc
+                .call(
+                    "skills/list",
+                    json!({ "cwds": [&effective_cwd], "forceReload": force_reload }),
+                    self.config.request_timeout_ms,
+                )
+                .await;
+            match response.and_then(|val| parse_codex_skill_catalog(&val, &thread_id, &effective_cwd)) {
+                Ok(catalog) => Ok(catalog),
+                Err(_) => Ok(codex_skills_error(&thread_id, &effective_cwd)),
+            }
+        })
+    }
+}
+
+fn codex_skills_error(thread_id: &str, cwd: &str) -> Value {
+    json!({
+        "threadId": thread_id,
+        "providerId": "codex",
+        "cwd": cwd,
+        "status": "error",
+        "skills": [],
+        "errors": [],
+        "error": "Codex skills could not be listed. Check Codex and refresh skills.",
+    })
+}
+
+fn normalize_skill_path_key(path: &str) -> String {
+    let cleaned = std::path::Path::new(path)
+        .components()
+        .collect::<PathBuf>()
+        .to_string_lossy()
+        .into_owned();
+    if cfg!(windows) {
+        cleaned.to_lowercase()
+    } else {
+        cleaned
+    }
+}
+
+/// Parses Codex `skills/list` RPC output matching `parseCodexSkillCatalog` (`src/main/agents/providers/codex/codexSkills.ts`).
+pub(crate) fn parse_codex_skill_catalog(value: &Value, thread_id: &str, cwd: &str) -> Result<Value, String> {
+    let data = value
+        .get("data")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Codex returned an invalid skill catalog.".to_string())?;
+    let wanted = normalize_skill_path_key(cwd);
+    let entry = data
+        .iter()
+        .find(|item| {
+            item.get("cwd")
+                .and_then(Value::as_str)
+                .is_some_and(|c| normalize_skill_path_key(c) == wanted)
+        })
+        .ok_or_else(|| "Codex returned no skill catalog for this working folder.".to_string())?;
+    let raw_skills = entry
+        .get("skills")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Codex returned an invalid skill catalog.".to_string())?;
+    let mut skills = Vec::new();
+    for item in raw_skills {
+        let path = item
+            .get("path")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "Codex returned an invalid skill reference.".to_string())?;
+        if !std::path::Path::new(path).is_absolute() {
+            return Err("Codex returned an invalid skill reference.".to_string());
+        }
+        if item.get("enabled").and_then(Value::as_bool) != Some(true) {
+            continue;
+        }
+        let name = item
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "Codex returned an invalid skill reference.".to_string())?;
+        let description = item.get("description").and_then(Value::as_str).unwrap_or("");
+        let scope = item.get("scope").and_then(Value::as_str).unwrap_or("repo");
+        skills.push(json!({
+            "name": name,
+            "description": description,
+            "path": path,
+            "scope": scope,
+        }));
+    }
+    let errors: Vec<Value> = entry
+        .get("errors")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|e| {
+                    let path = e.get("path").and_then(Value::as_str)?;
+                    let message = e.get("message").and_then(Value::as_str)?;
+                    Some(json!({ "path": path, "message": message }))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(json!({
+        "threadId": thread_id,
+        "providerId": "codex",
+        "cwd": cwd,
+        "status": "ready",
+        "skills": skills,
+        "errors": errors,
+    }))
 }
 
 fn codex_capabilities() -> AgentCapabilities {
@@ -1806,5 +1952,35 @@ mod tests {
             },
         );
         assert_eq!(p_res["decision"], "accept");
+    }
+
+    #[test]
+    fn parses_codex_skill_catalog_from_rpc_result() {
+        let repo = std::env::temp_dir().join("codex-skills-repo");
+        let repo_str = repo.to_string_lossy().into_owned();
+        let skill_path = repo.join(".codex/skills/review/SKILL.md").to_string_lossy().into_owned();
+        let broken_path = repo.join(".codex/skills/broken/SKILL.md").to_string_lossy().into_owned();
+        let res = json!({
+            "data": [{
+                "cwd": repo_str,
+                "skills": [{
+                    "name": "review",
+                    "description": "Review changes",
+                    "path": skill_path,
+                    "scope": "repo",
+                    "enabled": true
+                }],
+                "errors": [{ "path": broken_path, "message": "Invalid frontmatter" }]
+            }]
+        });
+        let catalog = parse_codex_skill_catalog(&res, "t1", &repo_str).unwrap();
+        assert_eq!(catalog["status"], "ready");
+        assert_eq!(catalog["providerId"], "codex");
+        assert_eq!(catalog["skills"].as_array().unwrap().len(), 1);
+        assert_eq!(catalog["skills"][0]["name"], "review");
+        assert_eq!(catalog["skills"][0]["description"], "Review changes");
+        assert_eq!(catalog["skills"][0]["path"], skill_path);
+        assert_eq!(catalog["skills"][0]["scope"], "repo");
+        assert_eq!(catalog["errors"].as_array().unwrap().len(), 1);
     }
 }

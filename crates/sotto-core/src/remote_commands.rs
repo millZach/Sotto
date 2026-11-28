@@ -290,7 +290,34 @@ fn is_valid_prompt_text(val: Option<&Value>) -> bool {
         .is_some_and(|s| s.encode_utf16().count() <= 100_000)
 }
 
+fn is_image_mime(mime: &str) -> bool {
+    matches!(mime, "image/png" | "image/jpeg" | "image/gif" | "image/webp")
+}
+
+fn is_valid_mime_type(mime: &str) -> bool {
+    let mut parts = mime.split('/');
+    let (Some(top), Some(sub), None) = (parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+    let ok_token = |s: &str| {
+        !s.is_empty()
+            && s.len() <= 127
+            && s.bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'!' | b'#' | b'$' | b'&' | b'-' | b'^' | b'_' | b'.' | b'+'))
+    };
+    ok_token(top) && ok_token(sub)
+}
+
+/// Strict attachment handles validation matching `agentAttachmentHandleSchema` + `agentAttachmentHandlesSchema`
+/// (`src/shared/agents.ts:249-277`).
 fn is_valid_attachments_opt(val: Option<&Value>) -> bool {
+    const IMAGE_MAX: u64 = 10 * 1024 * 1024;
+    const FILE_MAX: u64 = 25 * 1024 * 1024;
+    const VIDEO_MAX: u64 = 500 * 1024 * 1024;
+    const IMAGES_TOTAL_MAX: u64 = 20 * 1024 * 1024;
+    const NON_VIDEO_TOTAL_MAX: u64 = 50 * 1024 * 1024;
+    const VIDEOS_TOTAL_MAX: u64 = 500 * 1024 * 1024;
+
     let Some(v) = val else {
         return true;
     };
@@ -301,39 +328,75 @@ fn is_valid_attachments_opt(val: Option<&Value>) -> bool {
         return false;
     }
     let mut seen_ids = std::collections::HashSet::new();
+    let mut images_total: u64 = 0;
+    let mut non_video_total: u64 = 0;
+    let mut videos_total: u64 = 0;
+
     for item in arr {
         let Some(obj) = item.as_object() else {
             return false;
         };
+        if !obj.keys().all(|k| {
+            matches!(
+                k.as_str(),
+                "id" | "name" | "mimeType" | "sizeBytes" | "digest" | "dimensions" | "browserFeedback"
+            )
+        }) {
+            return false;
+        }
         let Some(id) = obj.get("id").and_then(Value::as_str) else {
             return false;
         };
-        if id.is_empty() || id.encode_utf16().count() > 512 || !seen_ids.insert(id) {
+        if id.is_empty()
+            || id.len() > 128
+            || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            || !seen_ids.insert(id)
+        {
             return false;
         }
         let Some(name) = obj.get("name").and_then(Value::as_str) else {
             return false;
         };
-        if name.is_empty() || name.encode_utf16().count() > 512 {
+        let trimmed_name = name.trim();
+        if trimmed_name.is_empty() || trimmed_name.encode_utf16().count() > 255 {
             return false;
         }
         let Some(mime) = obj.get("mimeType").and_then(Value::as_str) else {
             return false;
         };
-        if mime.is_empty() || mime.encode_utf16().count() > 256 {
+        if !is_valid_mime_type(mime) {
+            return false;
+        }
+        if !is_valid_hex64(obj.get("digest")) {
             return false;
         }
         let Some(size) = obj.get("sizeBytes").and_then(Value::as_u64) else {
             return false;
         };
-        if size == 0 {
+        let is_video = mime.starts_with("video/");
+        let is_image = is_image_mime(mime);
+        let max_bytes = if is_video {
+            VIDEO_MAX
+        } else if is_image {
+            IMAGE_MAX
+        } else {
+            FILE_MAX
+        };
+        if size == 0 || size > max_bytes {
             return false;
         }
-        if obj.contains_key("digest") && !is_valid_hex64(obj.get("digest")) {
-            return false;
+        if is_video {
+            videos_total = videos_total.saturating_add(size);
+        } else {
+            non_video_total = non_video_total.saturating_add(size);
+            if is_image {
+                images_total = images_total.saturating_add(size);
+            }
         }
     }
-    true
+    images_total <= IMAGES_TOTAL_MAX
+        && non_video_total <= NON_VIDEO_TOTAL_MAX
+        && videos_total <= VIDEOS_TOTAL_MAX
 }
 
 /// Strict shape validation for `compose` (`src/shared/agents.ts:1619`).
@@ -610,5 +673,39 @@ mod tests {
 
         assert!(valid_thread_id_only_shape(&obj(json!({ "type": "cancel-restart", "threadId": "t1" })), "cancel-restart"));
         assert!(!valid_thread_id_only_shape(&obj(json!({ "type": "cancel-restart", "threadId": "" })), "cancel-restart"));
+
+        // Attachment handle validation matches agentAttachmentHandleSchema + aggregate size caps.
+        let valid_img = json!({
+            "id": "att_1",
+            "name": "photo.png",
+            "mimeType": "image/png",
+            "sizeBytes": 1024,
+            "digest": hex64
+        });
+        assert!(valid_compose_shape(&obj(json!({ "type": "compose", "text": "hi", "attachments": [valid_img] }))));
+        // Missing digest is rejected.
+        assert!(!valid_compose_shape(&obj(json!({
+            "type": "compose",
+            "text": "hi",
+            "attachments": [{ "id": "att_1", "name": "photo.png", "mimeType": "image/png", "sizeBytes": 1024 }]
+        }))));
+        // Unknown key is rejected.
+        assert!(!valid_compose_shape(&obj(json!({
+            "type": "compose",
+            "text": "hi",
+            "attachments": [{ "id": "att_1", "name": "photo.png", "mimeType": "image/png", "sizeBytes": 1024, "digest": hex64, "extra": true }]
+        }))));
+        // Invalid id characters are rejected.
+        assert!(!valid_compose_shape(&obj(json!({
+            "type": "compose",
+            "text": "hi",
+            "attachments": [{ "id": "../escape", "name": "photo.png", "mimeType": "image/png", "sizeBytes": 1024, "digest": hex64 }]
+        }))));
+        // Over per-image cap (> 10 MiB) is rejected.
+        assert!(!valid_compose_shape(&obj(json!({
+            "type": "compose",
+            "text": "hi",
+            "attachments": [{ "id": "att_1", "name": "big.png", "mimeType": "image/png", "sizeBytes": 11 * 1024 * 1024, "digest": hex64 }]
+        }))));
     }
 }

@@ -2041,6 +2041,12 @@ impl<'a> CommandReceipt<'a> {
         let decision_id = matches!(cmd_kind.as_str(), "answer" | "send")
             .then(|| answer_decision_id(client_id, &request_id));
         let selected_thread_id = wire.selected_thread_id.clone();
+        // Set `editing_thread_id` BEFORE awaiting a queued `compose` and revert on error so pushes during a
+        // queued `compose` reflect the active composer (matching `src/host/socketServer.ts:1737-1748`).
+        let previous_editor = wire.editing_thread_id.clone();
+        if cmd_kind == "compose" {
+            wire.editing_thread_id = wire.selected_thread_id.clone();
+        }
         let queued = state.coordinator.enqueue_command_with_context(
             client,
             command,
@@ -2065,17 +2071,25 @@ impl<'a> CommandReceipt<'a> {
                     .get("error")
                     .and_then(Value::as_str)
                     .is_some_and(|e| !e.is_empty());
-                if !has_err {
-                    if cmd_kind == "compose" {
-                        wire.editing_thread_id = wire.selected_thread_id.clone();
-                    } else if matches!(cmd_kind.as_str(), "cancel-draft" | "send") {
-                        wire.editing_thread_id = None;
-                    }
+                if cmd_kind == "compose" && has_err {
+                    wire.editing_thread_id = previous_editor;
+                } else if !has_err && matches!(cmd_kind.as_str(), "cancel-draft" | "send") {
+                    wire.editing_thread_id = None;
                 }
                 HostResponseEnvelope::ok(request_id, wire.encode_command_shell(raw_shell))
             }
-            Ok(Err(err)) => HostResponseEnvelope::err(request_id, err.code, err.message),
-            Err(_) => HostResponseEnvelope::err(request_id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message()),
+            Ok(Err(err)) => {
+                if cmd_kind == "compose" {
+                    wire.editing_thread_id = previous_editor;
+                }
+                HostResponseEnvelope::err(request_id, err.code, err.message)
+            }
+            Err(_) => {
+                if cmd_kind == "compose" {
+                    wire.editing_thread_id = previous_editor;
+                }
+                HostResponseEnvelope::err(request_id, HostErrorCode::Unavailable, HostErrorCode::Unavailable.default_message())
+            }
         }
     }
 }
@@ -2341,6 +2355,13 @@ async fn handle_ws_request(
                 .unwrap_or_default();
             wire.apply_hello(accepts);
             watcher_peer.reset();
+            // Clear a previously selected thread if a narrower re-hello now hides its provider (`socketServer.ts:2129`).
+            if let Some(selected_tid) = wire.selected_thread_id.clone() {
+                if hides_thread(state, wire, &selected_tid).await {
+                    wire.selected_thread_id = None;
+                    wire.editing_thread_id = None;
+                }
+            }
 
             let after_seq = req
                 .fields
@@ -5029,5 +5050,134 @@ mod tests {
         assert_eq!(cleared["result"]["composing"], false, "{cleared}");
 
         host.server.close().await;
+    }
+
+    /// Re-hello with narrower `accepts` that hides the selected thread's provider clears both
+    /// `selected_thread_id` and `editing_thread_id` (`socketServer.ts:2129`).
+    #[tokio::test]
+    async fn rehello_hiding_selected_provider_clears_selection_and_editor() {
+        let dir = tempfile::tempdir().unwrap();
+        let cursor = Arc::new(sotto_core::MockProviderAdapter::new("cursor"));
+        let mut providers: BTreeMap<String, Arc<dyn ProviderAdapter>> = BTreeMap::new();
+        providers.insert("cursor".into(), cursor);
+        let server = RunningServer::start(ServerConfig {
+            data_directory: dir.path().to_path_buf(),
+            host_id: "00000000-0000-4000-8000-000000000001".into(),
+            port: 0,
+            sotto_version: "0.1.0".into(),
+            started_by: None,
+            credentials: HostCredentials::open(dir.path(), None).unwrap(),
+            providers,
+            tailscale: None,
+            phone_retry_interval: None,
+        })
+        .await
+        .unwrap();
+        let state = &server.state;
+        let code = state.pairing.lock().unwrap().issue_pairing_code().code;
+        let client_id = state.pairing.lock().unwrap().redeem_pairing_code(&code, "Test Desktop").unwrap().client_id;
+        let session = state.pairing.lock().unwrap().issue_session(&client_id).unwrap().session;
+        let client = ClientContext { client_id: client_id.clone(), user: "Test Desktop".into(), may_answer: true };
+        let run = |command: Value| state.coordinator.run_command(client.clone(), command.as_object().unwrap().clone());
+        let shell = run(json!({
+            "type": "create-project",
+            "provider": "cursor",
+            "title": "P",
+            "path": dir.path().to_string_lossy(),
+            "useExisting": true
+        }))
+        .await
+        .unwrap();
+        let project_id = shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let cursor_tid = "00000000-0000-4000-8000-00000000c001";
+        run(json!({
+            "type": "create-thread",
+            "threadId": cursor_tid,
+            "projectId": project_id,
+            "title": "Cursor Thread",
+            "titleSource": "user",
+            "modelId": "native:cursor:model:fixture-model",
+            "workingCopy": "shared",
+            "managed": false
+        }))
+        .await
+        .unwrap();
+
+        #[allow(clippy::too_many_arguments)]
+        async fn ask_req(
+            state: &Arc<HostState>,
+            client_id: &str,
+            session: &str,
+            out_tx: &mpsc::UnboundedSender<OutboundFrame>,
+            wire: &mut ClientWireState,
+            watcher_peer: &mut WatcherPeerState,
+            out_rx: &mut mpsc::UnboundedReceiver<OutboundFrame>,
+            req: Value,
+        ) -> Value {
+            match dispatch_ws_request(
+                state,
+                &ListenerMode::Admin,
+                client_id,
+                "Test Desktop",
+                session,
+                wire,
+                watcher_peer,
+                out_tx,
+                &req.to_string(),
+            )
+            .await
+            {
+                Some(reply) => serde_json::to_value(reply).unwrap(),
+                None => {
+                    let Some(OutboundFrame::Text(raw)) = out_rx.recv().await else {
+                        panic!("deferred request sent no reply frame");
+                    };
+                    serde_json::from_str(&raw).unwrap()
+                }
+            }
+        }
+
+        let (out_tx, mut out_rx) = mpsc::unbounded_channel();
+        let mut wire = ClientWireState::default();
+        let mut watcher_peer = WatcherPeerState::default();
+
+        // Initial hello accepts `provider-cursor`; select and compose on the cursor thread.
+        let h1 = ask_req(state, &client_id, &session, &out_tx, &mut wire, &mut watcher_peer, &mut out_rx, json!({ "v": 1, "id": "h1", "op": "hello", "accepts": ["provider-cursor"] })).await;
+        assert_eq!(h1["ok"], true, "{h1}");
+        let sel = ask_req(
+            state,
+            &client_id,
+            &session,
+            &out_tx,
+            &mut wire,
+            &mut watcher_peer,
+            &mut out_rx,
+            json!({ "v": 1, "id": "sel", "op": "command", "command": { "type": "select-thread", "threadId": cursor_tid } }),
+        )
+        .await;
+        assert_eq!(sel["ok"], true, "{sel}");
+        let comp = ask_req(
+            state,
+            &client_id,
+            &session,
+            &out_tx,
+            &mut wire,
+            &mut watcher_peer,
+            &mut out_rx,
+            json!({ "v": 1, "id": "comp", "op": "command", "command": { "type": "compose", "text": "hi" } }),
+        )
+        .await;
+        assert_eq!(comp["ok"], true, "{comp}");
+        assert_eq!(wire.selected_thread_id.as_deref(), Some(cursor_tid));
+        assert_eq!(wire.editing_thread_id.as_deref(), Some(cursor_tid));
+
+        // Re-hello dropping `provider-cursor` hides the selected thread and clears both pointers.
+        let h2 = ask_req(state, &client_id, &session, &out_tx, &mut wire, &mut watcher_peer, &mut out_rx, json!({ "v": 1, "id": "h2", "op": "hello", "accepts": [] })).await;
+        assert_eq!(h2["ok"], true, "{h2}");
+        assert_eq!(wire.selected_thread_id, None);
+        assert_eq!(wire.editing_thread_id, None);
+        while out_rx.try_recv().is_ok() {}
+
+        server.close().await;
     }
 }

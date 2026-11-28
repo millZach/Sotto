@@ -567,6 +567,10 @@ struct AcpSharedState {
     streaming_msg: Mutex<HashMap<String, AcpStreamingMessage>>,
     /// Pending inbound requests (permission / question / elicitation).
     pending_requests: Mutex<HashMap<String, InboundAcpRequest>>,
+    /// Latest skill/command list emitted by any session via `available_commands_update`.
+    commands: Mutex<Option<Vec<Value>>>,
+    /// Per-thread skill/command list emitted via `available_commands_update`.
+    thread_commands: Mutex<HashMap<String, Vec<Value>>>,
 }
 
 impl AcpSharedState {
@@ -596,6 +600,8 @@ impl AcpSharedState {
             active_turns: Mutex::new(HashMap::new()),
             streaming_msg: Mutex::new(HashMap::new()),
             pending_requests: Mutex::new(HashMap::new()),
+            commands: Mutex::new(None),
+            thread_commands: Mutex::new(HashMap::new()),
         }
     }
 
@@ -765,6 +771,16 @@ impl AcpSharedState {
                     thread_id: sotto_tid,
                     activity: act,
                 });
+            }
+            "available_commands_update" => {
+                if let Some(list) = update.get("availableCommands").and_then(Value::as_array) {
+                    let skills = parse_acp_commands(self.flavor.id(), list);
+                    self.thread_commands
+                        .lock()
+                        .unwrap()
+                        .insert(sotto_tid, skills.clone());
+                    *self.commands.lock().unwrap() = Some(skills);
+                }
             }
             "turn_completed" => {
                 let reason = update
@@ -1044,6 +1060,7 @@ impl ProviderAdapter for AcpAdapter {
         crate::providers::forget_thread_record(&shared.data_directory.join(shared.flavor.threads_file()), thread_id);
         drop(records);
         shared.native_to_sotto.lock().unwrap().retain(|_, sotto| sotto != thread_id);
+        shared.thread_commands.lock().unwrap().remove(thread_id);
     }
 
     fn id(&self) -> &str {
@@ -1612,6 +1629,87 @@ impl ProviderAdapter for AcpAdapter {
             Ok(())
         })
     }
+
+    fn list_thread_skills(
+        &self,
+        thread_id: String,
+        cwd: String,
+        _force_reload: bool,
+    ) -> BoxFuture<'_, Result<Value, String>> {
+        Box::pin(async move {
+            let flavor = self.config.flavor;
+            let resolved_cwd = self
+                .shared
+                .records
+                .lock()
+                .unwrap()
+                .get(&thread_id)
+                .map(|r| r.cwd.clone())
+                .filter(|c| !c.is_empty())
+                .unwrap_or(cwd);
+            let connected = self.shared.status.lock().unwrap().connection == "connected";
+            if !connected {
+                return Ok(json!({
+                    "threadId": thread_id,
+                    "providerId": flavor.id(),
+                    "cwd": resolved_cwd,
+                    "status": "error",
+                    "skills": [],
+                    "errors": [],
+                    "error": format!("Connect {} to read its skills.", flavor.name()),
+                }));
+            }
+            let skills = self
+                .shared
+                .thread_commands
+                .lock()
+                .unwrap()
+                .get(&thread_id)
+                .cloned()
+                .or_else(|| self.shared.commands.lock().unwrap().clone());
+            let Some(skills) = skills else {
+                return Ok(json!({
+                    "threadId": thread_id,
+                    "providerId": flavor.id(),
+                    "cwd": resolved_cwd,
+                    "status": "error",
+                    "skills": [],
+                    "errors": [],
+                    "error": format!("{} has not listed its skills yet. Open a {} thread, then try again.", flavor.name(), flavor.name()),
+                }));
+            };
+            Ok(json!({
+                "threadId": thread_id,
+                "providerId": flavor.id(),
+                "cwd": resolved_cwd,
+                "status": "ready",
+                "skills": skills,
+                "errors": [],
+            }))
+        })
+    }
+}
+
+pub(crate) fn parse_acp_commands(provider_id: &str, commands: &[Value]) -> Vec<Value> {
+    let mut skills = Vec::new();
+    for item in commands {
+        let Some(name) = item.get("name").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let description = item.get("description").and_then(Value::as_str).unwrap_or("");
+        let scope = if description.trim_end().ends_with("(global)") { "user" } else { "system" };
+        skills.push(json!({
+            "name": name,
+            "path": format!("{provider_id}:/{name}"),
+            "description": description,
+            "scope": scope,
+            "enabled": true,
+            "userInvocable": true,
+            "invocation": format!("/{name}"),
+            "nativeSource": provider_id,
+        }));
+    }
+    skills
 }
 
 fn acp_capabilities() -> AgentCapabilities {
@@ -2093,5 +2191,45 @@ mod tests {
         );
         assert_eq!(res["outcome"]["outcome"], "selected");
         assert_eq!(res["outcome"]["optionId"], "allow-once");
+    }
+
+    #[tokio::test]
+    async fn acp_available_commands_update_populates_list_thread_skills() {
+        let dir = tempfile::tempdir().unwrap();
+        let adapter = AcpAdapter::new(AcpAdapterConfig::native(
+            AcpFlavor::Cursor,
+            dir.path().to_path_buf(),
+        ));
+        adapter.shared.status.lock().unwrap().connection = "connected".into();
+        adapter
+            .shared
+            .native_to_sotto
+            .lock()
+            .unwrap()
+            .insert("native-1".into(), "t1".into());
+        adapter.shared.handle_notification(
+            "session/update",
+            json!({
+                "sessionId": "native-1",
+                "update": {
+                    "sessionUpdate": "available_commands_update",
+                    "availableCommands": [
+                        { "name": "review", "description": "Review branch (global)" },
+                        { "name": "plan", "description": "Plan work" }
+                    ]
+                }
+            }),
+        );
+        let catalog = adapter
+            .list_thread_skills("t1".into(), "/repo".into(), false)
+            .await
+            .unwrap();
+        assert_eq!(catalog["status"], "ready");
+        assert_eq!(catalog["providerId"], "cursor");
+        assert_eq!(catalog["skills"].as_array().unwrap().len(), 2);
+        assert_eq!(catalog["skills"][0]["name"], "review");
+        assert_eq!(catalog["skills"][0]["scope"], "user");
+        assert_eq!(catalog["skills"][0]["invocation"], "/review");
+        assert_eq!(catalog["skills"][1]["scope"], "system");
     }
 }

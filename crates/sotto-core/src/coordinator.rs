@@ -700,6 +700,7 @@ enum AsyncCommandOutcome {
         thread_id: String,
         command_id: String,
         draft_id: String,
+        content_digest: String,
         text: String,
         attachments: Vec<StagedAttachmentEntry>,
         elapsed_ms: u64,
@@ -726,6 +727,7 @@ enum AsyncCommandOutcome {
         decision_id: String,
         /// Draft revision answered via `send`, recorded in `deliveredDrafts` only after the provider accepts it.
         draft_id: Option<String>,
+        content_digest: Option<String>,
         title: String,
         approved: Option<bool>,
         permission_choice: Option<String>,
@@ -1816,8 +1818,6 @@ struct CoordinatorActor {
     deliveries: Vec<AgentDelivery>,
     /// Each thread's draft revision and the revisions delivered as prompts, kept in `agents.json` as Node keeps them.
     thread_drafts: ThreadDrafts,
-    /// Content digests for atomic/delivered drafts keyed by `(thread_id, draft_id)`, preventing silent reuse with different text.
-    delivered_digests: HashMap<(String, String), String>,
     /// Legacy composer state mirrored in shell (`composing`, `draft`, `draftAttachments`, `draftThreadId`, `draftRequestId`).
     composing: bool,
     draft: String,
@@ -2025,7 +2025,6 @@ impl CoordinatorActor {
             details,
             deliveries: Vec::new(),
             thread_drafts,
-            delivered_digests: HashMap::new(),
             composing: false,
             draft: String::new(),
             draft_attachments: Vec::new(),
@@ -3084,7 +3083,7 @@ impl CoordinatorActor {
                 let words = if self.host_connected() { "There is no unbound recovered draft to use.".to_string() } else { format!("{NO_PROVIDER_ON_HOST}{DRAFT_KEPT}") };
                 self.refuse_sync_command(lane, &client, words, reply);
             }
-            "answer" => self.spawn_cmd_answer(lane, client, &command, decision_id, None, reply),
+            "answer" => self.spawn_cmd_answer(lane, client, &command, decision_id, None, None, reply),
             "interrupt" => self.cmd_interrupt(lane, client, &command, reply),
             "compact-thread" => {
                 self.error = None;
@@ -3554,6 +3553,14 @@ impl CoordinatorActor {
         let self_tx = self.self_tx.clone();
         let model_opt = (!thread.model_id.is_empty()).then_some(thread.model_id.clone());
 
+        let attachment_handles: Vec<Value> = attachments
+            .iter()
+            .filter_map(|entry| serde_json::to_value(&entry.handle).ok())
+            .collect();
+        let skills_slice = command.get("skills").and_then(Value::as_array).map(Vec::as_slice);
+        let files_slice = command.get("files").and_then(Value::as_array).map(Vec::as_slice);
+        let content_digest = crate::watcher::followup_digest(&text, &attachment_handles, skills_slice, files_slice);
+
         let message_id = explicit_message_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         self.in_flight_sends.insert(
             tid.clone(),
@@ -3601,6 +3608,7 @@ impl CoordinatorActor {
                                 thread_id: tid,
                                 command_id,
                                 draft_id,
+                                content_digest,
                                 text,
                                 attachments,
                                 elapsed_ms: started.elapsed().as_millis() as u64,
@@ -3671,6 +3679,7 @@ impl CoordinatorActor {
                     thread_id: tid,
                     command_id,
                     draft_id,
+                    content_digest,
                     text,
                     attachments,
                     elapsed_ms: started.elapsed().as_millis() as u64,
@@ -3684,6 +3693,7 @@ impl CoordinatorActor {
         });
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn spawn_cmd_answer(
         &mut self,
         lane: Option<String>,
@@ -3691,6 +3701,7 @@ impl CoordinatorActor {
         command: &Map<String, Value>,
         decision_id: Option<String>,
         draft_id: Option<String>,
+        content_digest: Option<String>,
         reply: oneshot::Sender<Result<Value, CoordinatorError>>,
     ) {
         let Some(tid) = command.get("threadId").and_then(Value::as_str).map(ToString::to_string) else {
@@ -3769,6 +3780,7 @@ impl CoordinatorActor {
                     questions_digest,
                     decision_id,
                     draft_id,
+                    content_digest,
                     title,
                     approved,
                     permission_choice,
@@ -3984,6 +3996,7 @@ impl CoordinatorActor {
                 thread_id,
                 command_id,
                 draft_id,
+                content_digest,
                 text,
                 attachments,
                 elapsed_ms,
@@ -4085,8 +4098,9 @@ impl CoordinatorActor {
                     local_feedback_ms: Some(elapsed_ms),
                     provider_latency_ms: is_accepted.then_some(ack.provider_latency_ms),
                 });
-                self.thread_drafts.clear_empty(&thread_id);
+                self.thread_drafts.clear_empty_binding(&thread_id, Some(&draft_id));
                 self.thread_drafts.deliver(&thread_id, &draft_id);
+                self.thread_drafts.record_delivered_digest(&thread_id, &draft_id, content_digest);
                 if self.draft_thread_id.as_deref() == Some(thread_id.as_str())
                     && self.manual_draft_id.as_deref() == Some(draft_id.as_str())
                 {
@@ -4102,6 +4116,7 @@ impl CoordinatorActor {
                 questions_digest,
                 decision_id,
                 draft_id,
+                content_digest,
                 title,
                 approved,
                 permission_choice,
@@ -4124,8 +4139,11 @@ impl CoordinatorActor {
                     should_save = true;
                 }
                 if let Some(did) = draft_id {
-                    self.thread_drafts.clear_empty(&thread_id);
+                    self.thread_drafts.clear_empty_binding(&thread_id, Some(&did));
                     self.thread_drafts.deliver(&thread_id, &did);
+                    if let Some(digest) = content_digest {
+                        self.thread_drafts.record_delivered_digest(&thread_id, &did, digest);
+                    }
                     if self.draft_thread_id.as_deref() == Some(thread_id.as_str())
                         && self.manual_draft_id.as_deref() == Some(did.as_str())
                     {
@@ -6625,7 +6643,6 @@ impl CoordinatorActor {
         // What the coordinator kept of it: its drafts, delivery receipts, queued prompts and their receipts, attachment
         // previews, and being the active or a shown thread.
         self.thread_drafts.forget_threads(&gone);
-        self.delivered_digests.retain(|(tid, _), _| !gone.contains(tid));
         if self.draft_thread_id.as_ref().is_some_and(|id| gone.contains(id)) {
             self.clear_legacy_draft();
         }
@@ -6850,6 +6867,8 @@ impl CoordinatorActor {
     }
 
     /// `cancel-restart` (`control.ts:3401-3410`): cancels a scheduled limit restart if present.
+    /// Owl headless hosts enable limit-restart tracking (`src/host/index.ts:184`), so when no restart
+    /// is scheduled for the thread this returns `ok` with `CANCEL_RESTART_NONE` matching Node parity.
     fn cmd_cancel_restart(&mut self, command: &Map<String, Value>) -> Result<(), CoordinatorError> {
         if !crate::remote_commands::valid_thread_id_only_shape(command, "cancel-restart") {
             return Err(CoordinatorError::invalid(HostErrorCode::InvalidRequest.default_message()));
@@ -6975,6 +6994,8 @@ impl CoordinatorActor {
 
     /// `regenerate-thread-title` (`control.ts:3536-3541`, `threadTitles.ts:221-231`): asks the thread's own provider
     /// for a new title from its first exchange, never raising an error banner on failure.
+    /// Respects both `historyEnabled` (`threadTitles.ts:224`) and `threadTitles` (`threadTitle.ts:61`) in `settings.json`,
+    /// failing closed when `settings.json` exists and cannot be read.
     fn cmd_regenerate_thread_title(
         &mut self,
         client: ClientContext,
@@ -6993,7 +7014,10 @@ impl CoordinatorActor {
             return;
         };
         let archived = has_time(thread.extra.get("archivedAt").and_then(Value::as_str));
-        if thread.title_source.as_deref() == Some("user") || archived {
+        if thread.title_source.as_deref() == Some("user")
+            || archived
+            || !title_writing_allowed(&self.data_directory)
+        {
             let _ = reply.send(Ok(self.build_shell(client.may_answer)));
             return;
         }
@@ -7187,12 +7211,7 @@ impl CoordinatorActor {
                 .map(ToString::to_string)
         };
         if request_id.is_some() && !client.may_answer {
-            return finish_refusal(
-                self,
-                lane,
-                "Remote permission answers are disabled for this device.".into(),
-                reply,
-            );
+            return finish_refusal(self, lane, REMOTE_PERMISSION_DENIED.into(), reply);
         }
         let explicit_draft_id = command.get("draftId").and_then(Value::as_str).map(ToString::to_string);
         if let Some(ref did) = explicit_draft_id {
@@ -7446,9 +7465,9 @@ impl CoordinatorActor {
         let content_digest = crate::watcher::followup_digest(&text, &attachments, skills.as_deref(), files.as_deref());
         if self.thread_drafts.was_delivered(&thread_id, &draft_id) {
             let matches_content = self
-                .delivered_digests
-                .get(&(thread_id.clone(), draft_id.clone()))
-                .is_none_or(|prev| prev == &content_digest);
+                .thread_drafts
+                .delivered_digest(&thread_id, &draft_id)
+                .is_some_and(|prev| prev == content_digest);
             if !matches_content {
                 return finish_refusal(
                     self,
@@ -7514,12 +7533,7 @@ impl CoordinatorActor {
 
         if let Some(req_id) = request_id {
             if !client.may_answer {
-                return finish_refusal(
-                    self,
-                    lane,
-                    "Remote permission answers are disabled for this device.".into(),
-                    reply,
-                );
+                return finish_refusal(self, lane, REMOTE_PERMISSION_DENIED.into(), reply);
             }
             if !attachments.is_empty() {
                 return finish_refusal(
@@ -7541,13 +7555,12 @@ impl CoordinatorActor {
                     reply,
                 );
             }
-            self.delivered_digests.insert((thread_id.clone(), draft_id.clone()), content_digest);
             let mut answer_cmd = Map::new();
             answer_cmd.insert("type".into(), json!("answer"));
             answer_cmd.insert("threadId".into(), json!(thread_id));
             answer_cmd.insert("requestId".into(), json!(req_id));
             answer_cmd.insert("answer".into(), json!(text.trim()));
-            self.spawn_cmd_answer(lane, client, &answer_cmd, decision_id, Some(draft_id), reply);
+            self.spawn_cmd_answer(lane, client, &answer_cmd, decision_id, Some(draft_id), Some(content_digest), reply);
             return;
         }
 
@@ -7568,7 +7581,6 @@ impl CoordinatorActor {
             );
         }
 
-        self.delivered_digests.insert((thread_id.clone(), draft_id.clone()), content_digest);
         let mut send_cmd = Map::new();
         send_cmd.insert("type".into(), json!("manual-send"));
         send_cmd.insert("threadId".into(), json!(thread_id));
@@ -9285,6 +9297,22 @@ fn with_real_worktree_folders(data_directory: &Path, mut threads: Vec<AgentThrea
         worktree.path = Some(new);
     }
     threads
+}
+
+/// Whether `settings.json` allows writing thread titles (`threadTitles.ts:224`, `threadTitle.ts:61`):
+/// requires both `historyEnabled` (default `true`) and `threadTitles` (default `true`), failing closed
+/// when `settings.json` exists and cannot be read.
+fn title_writing_allowed(data_directory: &Path) -> bool {
+    let saved = match std::fs::read(data_directory.join("settings.json")) {
+        Ok(bytes) => serde_json::from_str::<Value>(&String::from_utf8_lossy(&bytes))
+            .ok()
+            .filter(Value::is_object)
+            .unwrap_or(Value::Null),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Value::Null,
+        Err(_) => return false,
+    };
+    saved.get("historyEnabled").and_then(Value::as_bool).unwrap_or(true)
+        && saved.get("threadTitles").and_then(Value::as_bool).unwrap_or(true)
 }
 
 #[cfg(test)]
@@ -13021,6 +13049,263 @@ mod tests {
             conflict["error"].as_str(),
             Some("This revision already belongs to a submitted prompt. Use a new draft revision for different content.")
         );
+
+        coord.shutdown().await;
+    }
+
+    /// L1 regression (`2936-L1-send-drops-empty-revision`): sending a revision preserves an already-saved
+    /// newer empty revision so the client's next save carrying `expectedDraftId: E` succeeds cleanly.
+    #[tokio::test]
+    async fn send_keeps_empty_draft_revision_so_next_save_succeeds() {
+        let dir = tempdir().unwrap();
+        let (coord, client, _project_id, thread_id) = organized_workspace(dir.path()).await;
+        let obj = |v: Value| v.as_object().unwrap().clone();
+        let d_id = "00000000-0000-4000-8000-000000000201";
+        let e_id = "00000000-0000-4000-8000-000000000202";
+        let f_id = "00000000-0000-4000-8000-000000000203";
+
+        let s1 = coord
+            .run_command(client.clone(), obj(json!({ "type": "save-thread-draft", "threadId": thread_id, "draftId": d_id, "text": "Hello" })))
+            .await
+            .unwrap();
+        assert_eq!(s1["error"], Value::Null, "{s1}");
+
+        // Client saves empty revision E replacing D.
+        let s2 = coord
+            .run_command(
+                client.clone(),
+                obj(json!({ "type": "save-thread-draft", "threadId": thread_id, "draftId": e_id, "expectedDraftId": d_id, "text": "" })),
+            )
+            .await
+            .unwrap();
+        assert_eq!(s2["error"], Value::Null, "{s2}");
+
+        // Accepted send of D clears only D's binding, preserving empty revision E.
+        let sent = coord
+            .run_command(client.clone(), obj(json!({ "type": "manual-send", "threadId": thread_id, "draftId": d_id, "text": "Hello" })))
+            .await
+            .unwrap();
+        assert_eq!(sent["error"], Value::Null, "{sent}");
+
+        // Next save expecting E succeeds cleanly instead of failing with a conflict.
+        let s3 = coord
+            .run_command(
+                client.clone(),
+                obj(json!({ "type": "save-thread-draft", "threadId": thread_id, "draftId": f_id, "expectedDraftId": e_id, "text": "Next" })),
+            )
+            .await
+            .unwrap();
+        assert_eq!(s3["error"], Value::Null, "{s3}");
+        assert_eq!(s3["threadDrafts"][0]["draftId"], f_id);
+
+        coord.shutdown().await;
+    }
+
+    /// L2 regression (`2936-L2-missing-digest-matches`): delivered prompt digests are recorded for
+    /// `manual-send` and persisted across coordinator restarts so reusing a delivered `draftId` with
+    /// different text is always refused while identical content stays idempotent.
+    #[tokio::test]
+    async fn delivered_digest_blocks_reuse_after_manual_send_and_across_restart() {
+        let dir = tempdir().unwrap();
+        let (coord, client, _project_id, thread_id) = organized_workspace(dir.path()).await;
+        let obj = |v: Value| v.as_object().unwrap().clone();
+        let d1 = "00000000-0000-4000-8000-000000000301";
+        let d2 = "00000000-0000-4000-8000-000000000302";
+
+        // 1. manual-send records deliveredPromptDigests so atomic send with different words is refused.
+        let ms = coord
+            .run_command(client.clone(), obj(json!({ "type": "manual-send", "threadId": thread_id, "draftId": d1, "text": "First words" })))
+            .await
+            .unwrap();
+        assert_eq!(ms["error"], Value::Null, "{ms}");
+
+        let different = coord
+            .enqueue_command_with_context(
+                client.clone(),
+                obj(json!({ "type": "send", "draft": { "threadId": thread_id, "draftId": d1, "text": "Different words" } })),
+                None,
+                None,
+                Some(thread_id.clone()),
+            )
+            .unwrap()
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            different["error"].as_str(),
+            Some("This revision already belongs to a submitted prompt. Use a new draft revision for different content.")
+        );
+
+        let same = coord
+            .enqueue_command_with_context(
+                client.clone(),
+                obj(json!({ "type": "send", "draft": { "threadId": thread_id, "draftId": d1, "text": "First words" } })),
+                None,
+                None,
+                Some(thread_id.clone()),
+            )
+            .unwrap()
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(same["error"], Value::Null, "{same}");
+
+        // 2. Interrupt the mock turn, then atomic send persists its digest across a coordinator restart.
+        coord
+            .run_command(client.clone(), obj(json!({ "type": "interrupt", "threadId": thread_id })))
+            .await
+            .unwrap();
+        let s2 = coord
+            .enqueue_command_with_context(
+                client.clone(),
+                obj(json!({ "type": "send", "draft": { "threadId": thread_id, "draftId": d2, "text": "Persisted words" } })),
+                None,
+                None,
+                Some(thread_id.clone()),
+            )
+            .unwrap()
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(s2["error"], Value::Null, "{s2}");
+        coord.shutdown().await;
+
+        let coord2 = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000001".into(),
+            false,
+            mock_providers(),
+        )
+        .unwrap();
+
+        let replay_same = coord2
+            .enqueue_command_with_context(
+                client.clone(),
+                obj(json!({ "type": "send", "draft": { "threadId": thread_id, "draftId": d2, "text": "Persisted words" } })),
+                None,
+                None,
+                Some(thread_id.clone()),
+            )
+            .unwrap()
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(replay_same["error"], Value::Null, "{replay_same}");
+
+        let replay_diff = coord2
+            .enqueue_command_with_context(
+                client.clone(),
+                obj(json!({ "type": "send", "draft": { "threadId": thread_id, "draftId": d2, "text": "Tampered words" } })),
+                None,
+                None,
+                Some(thread_id.clone()),
+            )
+            .unwrap()
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            replay_diff["error"].as_str(),
+            Some("This revision already belongs to a submitted prompt. Use a new draft revision for different content.")
+        );
+
+        coord2.shutdown().await;
+    }
+
+    /// L3 regression (`2936-L3-title-ignores-history-setting`): `regenerate-thread-title` does not invoke
+    /// `write_short_text` when `historyEnabled: false` or `threadTitles: false` in `settings.json`, and
+    /// regenerates the title when both are enabled.
+    #[tokio::test]
+    async fn regenerate_thread_title_respects_history_and_thread_titles_settings() {
+        let dir = tempdir().unwrap();
+        let project_dir = dir.path().join("project");
+        std::fs::create_dir_all(&project_dir).unwrap();
+        let codex = Arc::new(MockProviderAdapter::new("codex"));
+        codex.answer_side_call(Ok(Some("Renamed Title".into())));
+        let mut providers = mock_providers();
+        providers.insert("codex".into(), codex.clone());
+
+        let coord = CoordinatorHandle::spawn(
+            dir.path().to_path_buf(),
+            "00000000-0000-4000-8000-000000000001".into(),
+            false,
+            providers,
+        )
+        .unwrap();
+        let client = ClientContext { client_id: "c1".into(), user: "Test".into(), may_answer: true };
+        let obj = |v: Value| v.as_object().unwrap().clone();
+        let project_shell = coord
+            .run_command(
+                client.clone(),
+                obj(json!({ "type": "create-project", "provider": "codex", "title": "P", "path": project_dir.to_string_lossy(), "useExisting": true })),
+            )
+            .await
+            .unwrap();
+        let project_id = project_shell["host"]["projects"][0]["id"].as_str().unwrap().to_string();
+        let thread_id = "00000000-0000-4000-8000-000000000401";
+        coord
+            .run_command(
+                client.clone(),
+                obj(json!({
+                    "type": "create-thread",
+                    "threadId": thread_id,
+                    "projectId": project_id,
+                    "title": "New thread",
+                    "titleSource": "default",
+                    "modelId": "native:codex:model:fixture-model",
+                    "workingCopy": "shared",
+                    "managed": false
+                })),
+            )
+            .await
+            .unwrap();
+        // Seed a completed first exchange in the thread store.
+        let store = ThreadStore::open(&dir.path().join("threads.sqlite")).unwrap();
+        for (id, role, text) in [("m1", "user", "Fix the widget"), ("m2", "assistant", "Done.")] {
+            let msg = StoredMessage {
+                id: id.into(),
+                role: role.into(),
+                text: text.into(),
+                created_at: "2026-11-28T00:00:00.000Z".into(),
+                command_id: None,
+                turn_message_id: None,
+                attachments: None,
+                watcher_own_change: None,
+                watcher_observed_changes: None,
+                provider_error: None,
+            };
+            store.append_event(thread_id, &ThreadEvent::MessageAdded { at: msg.created_at.clone(), message: msg, redacted: None }).unwrap();
+        }
+        drop(store);
+
+        let settings_path = dir.path().join("settings.json");
+
+        // historyEnabled: false -> no side call, title unchanged.
+        std::fs::write(&settings_path, r#"{"historyEnabled": false, "threadTitles": true}"#).unwrap();
+        let s_no_hist = coord
+            .run_command(client.clone(), obj(json!({ "type": "regenerate-thread-title", "threadId": thread_id })))
+            .await
+            .unwrap();
+        assert!(codex.side_calls().is_empty(), "must not call provider when historyEnabled is false");
+        assert_eq!(s_no_hist["host"]["threads"][0]["title"], "New thread");
+
+        // threadTitles: false -> no side call, title unchanged.
+        std::fs::write(&settings_path, r#"{"historyEnabled": true, "threadTitles": false}"#).unwrap();
+        let s_no_titles = coord
+            .run_command(client.clone(), obj(json!({ "type": "regenerate-thread-title", "threadId": thread_id })))
+            .await
+            .unwrap();
+        assert!(codex.side_calls().is_empty(), "must not call provider when threadTitles is false");
+        assert_eq!(s_no_titles["host"]["threads"][0]["title"], "New thread");
+
+        // Both enabled -> calls provider and renames thread.
+        std::fs::write(&settings_path, r#"{"historyEnabled": true, "threadTitles": true}"#).unwrap();
+        let s_ok = coord
+            .run_command(client.clone(), obj(json!({ "type": "regenerate-thread-title", "threadId": thread_id })))
+            .await
+            .unwrap();
+        assert_eq!(codex.side_calls().len(), 1);
+        assert_eq!(s_ok["host"]["threads"][0]["title"], "Renamed Title");
 
         coord.shutdown().await;
     }

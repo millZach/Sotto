@@ -1389,6 +1389,124 @@ impl ProviderAdapter for ClaudeAdapter {
             Ok(())
         })
     }
+
+    fn list_thread_skills(
+        &self,
+        thread_id: String,
+        cwd: String,
+        _force_reload: bool,
+    ) -> BoxFuture<'_, Result<Value, String>> {
+        Box::pin(async move {
+            let effective_cwd = self
+                .shared
+                .records
+                .lock()
+                .unwrap()
+                .get(&thread_id)
+                .map(|r| r.cwd.clone())
+                .filter(|p| !p.is_empty())
+                .unwrap_or(cwd);
+            if self.shared.status.lock().unwrap().connection != "connected" || effective_cwd.is_empty() {
+                return Err("Reconnect this Claude thread before browsing skills.".into());
+            }
+            if !std::path::Path::new(&effective_cwd).is_dir() {
+                return Ok(claude_skills_error(&thread_id, &effective_cwd));
+            }
+            let probe = match ClaudeSessionProcess::spawn(
+                &self.config,
+                Arc::clone(&self.shared),
+                None,
+                "skills".into(),
+                &effective_cwd,
+                "",
+                None,
+                None,
+                false,
+                true,
+            ) {
+                Ok(p) => p,
+                Err(_) => return Ok(claude_skills_error(&thread_id, &effective_cwd)),
+            };
+            let init = probe.initialize(self.config.request_timeout_ms).await;
+            probe.shutdown().await;
+            match init.and_then(|val| parse_claude_skill_catalog(&thread_id, &effective_cwd, &val)) {
+                Ok(catalog) => Ok(catalog),
+                Err(_) => Ok(claude_skills_error(&thread_id, &effective_cwd)),
+            }
+        })
+    }
+}
+
+fn claude_skills_error(thread_id: &str, cwd: &str) -> Value {
+    json!({
+        "threadId": thread_id,
+        "providerId": "claude",
+        "cwd": cwd,
+        "status": "error",
+        "skills": [],
+        "errors": [],
+        "error": "Claude native skill discovery failed. Reconnect or check the installed client.",
+    })
+}
+
+fn percent_encode_uri_component(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        let keep = byte.is_ascii_alphanumeric()
+            || matches!(byte, b'-' | b'_' | b'.' | b'!' | b'~' | b'*' | b'\'' | b'(' | b')');
+        if keep {
+            out.push(byte as char);
+        } else {
+            out.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    out
+}
+
+/// Parses Claude `initialize` control output matching `claudeCatalog` (`src/main/agents/providers/claude/claudeSkills.ts`).
+pub(crate) fn parse_claude_skill_catalog(thread_id: &str, cwd: &str, value: &Value) -> Result<Value, String> {
+    let commands = value
+        .get("commands")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "Claude returned an invalid skill catalog.".to_string())?;
+    let mut by_name: std::collections::BTreeMap<String, Value> = std::collections::BTreeMap::new();
+    let encoded_cwd = percent_encode_uri_component(cwd);
+    for cmd in commands.iter().take(10_000) {
+        let Some(name) = cmd.get("name").and_then(Value::as_str).filter(|s| !s.is_empty() && s.len() <= 512) else {
+            continue;
+        };
+        let description = cmd.get("description").and_then(Value::as_str).unwrap_or("");
+        let scope = if description.ends_with("(user)") {
+            "user"
+        } else if description.ends_with("(project)") {
+            "repo"
+        } else {
+            "system"
+        };
+        let path = format!("claude-command:{encoded_cwd}:{}", percent_encode_uri_component(name));
+        by_name.insert(
+            name.to_string(),
+            json!({
+                "name": name,
+                "path": path,
+                "description": description,
+                "scope": scope,
+                "enabled": true,
+                "userInvocable": true,
+                "invocation": format!("/{name}"),
+            }),
+        );
+    }
+    Ok(json!({
+        "threadId": thread_id,
+        "providerId": "claude",
+        "cwd": cwd,
+        "status": "ready",
+        "errors": [],
+        "maxSkillsPerMessage": 1,
+        "invocationNotice": "Claude expands one slash invocation per message. Other skill mentions are ordinary prompt text.",
+        "skills": by_name.into_values().collect::<Vec<_>>(),
+    }))
 }
 
 fn claude_capabilities() -> AgentCapabilities {
@@ -1773,5 +1891,23 @@ mod tests {
         assert_eq!(p_resp["behavior"], "allow");
         assert_eq!(p_resp["updatedInput"], bash_input);
         assert!(p_resp.get("updatedPermissions").is_none());
+    }
+
+    #[test]
+    fn parses_claude_skill_catalog_from_initialize_response() {
+        let init = json!({
+            "commands": [
+                { "name": "review", "description": "Review pull request", "argumentHint": "<pr>" },
+                { "name": "compact", "description": "Compact thread" }
+            ]
+        });
+        let catalog = parse_claude_skill_catalog("t1", "/repo", &init).unwrap();
+        assert_eq!(catalog["status"], "ready");
+        assert_eq!(catalog["providerId"], "claude");
+        assert_eq!(catalog["skills"].as_array().unwrap().len(), 2);
+        assert_eq!(catalog["skills"][0]["name"], "compact");
+        assert_eq!(catalog["skills"][1]["name"], "review");
+        assert_eq!(catalog["skills"][1]["invocation"], "/review");
+        assert_eq!(catalog["skills"][1]["path"], "claude-command:%2Frepo:review");
     }
 }

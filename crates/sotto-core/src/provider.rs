@@ -163,7 +163,7 @@ pub trait ProviderAdapter: Send + Sync {
         _cwd: String,
         _force_reload: bool,
     ) -> BoxFuture<'_, Result<Value, String>> {
-        Box::pin(async { Err("Reconnect this thread provider to browse its native skills.".into()) })
+        Box::pin(async { Err("Skills are unavailable for this thread.".into()) })
     }
 
     /// Reads a thread's waiting questions and permissions from the provider again, as Node's host `refreshThread` reads a
