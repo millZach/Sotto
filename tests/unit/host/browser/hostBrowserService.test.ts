@@ -30,7 +30,7 @@ class FakePage {
     snapshotText: vi.fn(async () => 'heading "Sign in" [ref=e1]'), emulateAppearance: vi.fn(async () => undefined),
     dialog: vi.fn(() => null), colorScheme: vi.fn(() => null), forgetRefs: vi.fn(), domContentSince: vi.fn(() => false),
     // What the page says back, masked against a typed secret (ADR-0219); none is typed in these tests.
-    masked: vi.fn((text: string) => text), maskedUrl: vi.fn((url: string) => url), holdsSecret: vi.fn(() => false),
+    masked: vi.fn((text: string) => text), maskedUrl: vi.fn((url: string) => url), holdsSecret: vi.fn(() => false), showsSecret: vi.fn(async () => false),
   }
   onChange(listener: (state: HostPageState) => void): () => void { this.changes.add(listener); return () => this.changes.delete(listener) }
   onClose(listener: () => void): () => void { this.closes.add(listener); return () => this.closes.delete(listener) }

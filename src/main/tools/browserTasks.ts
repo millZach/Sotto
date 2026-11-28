@@ -597,12 +597,13 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
     return site.origin
   }
   /**
-   * No picture of a page whose document holds a typed secret goes to the agent: a page can show what a password field
-   * holds. An open dialog is refused first, by the capture, since it has to be answered before anything else.
+   * No picture of a page whose document could show a typed secret goes to the agent (`showsSecret`): a page can show
+   * what a password field holds, and a site can write the secret back into a later document. An open dialog is refused
+   * first, by the capture, since it has to be answered before anything else, and the page is not read while one is open.
    */
-  private noPicture(record: R): void {
+  private async noPicture(record: R): Promise<void> {
     // The stable catalog reads a page with inspect; snapshot is the full catalog's (ADR-0220).
-    if (record.automation.holdsSecret() && !record.automation.dialog()) fail('blocked', `This page holds a secret you saved, and a page can show what a password field holds, so no picture of it goes to you until it loads another document. Use ${this.parity ? 'snapshot' : 'inspect'}, whose words are masked.`)
+    if (!record.automation.dialog() && await record.automation.showsSecret()) fail('blocked', `This page holds a secret you saved, and a page can show what a password field holds, so no picture of it goes to you while it holds one. Use ${this.parity ? 'snapshot' : 'inspect'}, whose words are masked.`)
   }
   /** The pending request's words: what will happen, where, and for upload which files. */
   private describe(record: R, action: BrowserAction, staged?: StagedUpload, secretFor?: string | null): string {
@@ -741,10 +742,10 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       } else if (action.type === 'inspect') output = await record.automation.inspect()
       else if (action.type === 'snapshot') {
         output = await record.automation.snapshotText()
-        if (action.includeImage && record.automation.holdsSecret()) output = `${output}\n\n(No picture: this page holds a secret you saved, and a page can show what a password field holds. Pictures come back once it loads another document.)`
+        if (action.includeImage && await record.automation.showsSecret()) output = `${output}\n\n(No picture: this page holds a secret you saved, and a page can show what a password field holds. Pictures come back once it loads a document that holds none.)`
         else if (action.includeImage) { capture = await record.automation.capture(record.page.url); image = capture.image }
       } else if (action.type === 'screenshot') {
-        this.noPicture(record)
+        await this.noPicture(record)
         capture = await record.automation.capture(record.page.url, undefined, undefined, action.fullPage === true); image = capture.image
         let saved: string | undefined
         if (action.save) {
@@ -808,7 +809,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       // Revocation during an asynchronous capture must not release page evidence.
       if (action.type !== 'navigate') guard(reading)
       // A page with a dialog open draws no new picture until it is answered, and one that holds a typed secret keeps none.
-      const thumbnail = action.type === 'navigate' || (this.parity && record.automation.dialog()) || record.automation.holdsSecret() ? null : await record.automation.thumbnail(image).catch(() => null)
+      const thumbnail = action.type === 'navigate' || (this.parity && record.automation.dialog()) || await record.automation.showsSecret() ? null : await record.automation.thumbnail(image).catch(() => null)
       if (action.type !== 'navigate') guard(reading)
       if (record.page.sharedOrigin && task.status === 'working') task.thumbnail = thumbnail
       const note = this.actionNote?.(record, startedAt)

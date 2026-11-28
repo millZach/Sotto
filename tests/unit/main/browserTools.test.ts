@@ -340,9 +340,9 @@ describe('browser agent boundaries', () => {
       const { service, target } = await browserFixture(false, new Set(), () => false, parity)
       unwrap(await service.share({ ...target, enabled: true }))
       const task = unwrap(await service.startTask({ ...target, description: 'Check screenshot' }))
-      const holds = vi.spyOn(PageAutomation.prototype, 'holdsSecret').mockReturnValue(true)
-      const refused = await service.action({ ...target, taskId: task.id, action: { type: 'screenshot' } }).finally(() => holds.mockRestore())
-      expect(refused).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining(`no picture of it goes to you until it loads another document. Use ${read}, whose words are masked.`) } })
+      const shows = vi.spyOn(PageAutomation.prototype, 'showsSecret').mockResolvedValue(true)
+      const refused = await service.action({ ...target, taskId: task.id, action: { type: 'screenshot' } }).finally(() => shows.mockRestore())
+      expect(refused).toMatchObject({ ok: false, error: { code: 'blocked', message: expect.stringContaining(`no picture of it goes to you while it holds one. Use ${read}, whose words are masked.`) } })
     }
   })
 

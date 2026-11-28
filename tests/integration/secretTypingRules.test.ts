@@ -42,6 +42,8 @@ vi.mock('electron', async () => {
       if (expression === 'document.activeElement') return { result: { objectId: 'active' } }
       if (expression === 'location.origin') return { result: { type: 'string', value: new URL(contents.url).origin } }
       if (expression.startsWith('document.querySelector("#password")')) return { result: { objectId: 'password' } }
+      // The page's words, as each document it loads says them; none says back what was typed.
+      if (expression.includes('documentElement.textContent')) return { result: { value: 'Sign in' } }
       if (expression.includes('document.title')) return { result: { value: { title: 'Sign in', text: 'Sign in', state: 'complete' } } }
       if (params.returnByValue && params.userGesture) return { result: { type: 'string', value: 'ran' } }
       return { result: {} }

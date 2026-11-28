@@ -45,6 +45,8 @@ vi.mock('electron', async () => {
       if (expression === 'document.activeElement') return { result: { objectId: 'active' } }
       if (expression === 'location.origin') return { result: { type: 'string', value: new URL(page.contents.at(-1)!.url).origin } }
       if (expression.startsWith('document.querySelector("#password")')) return { result: { objectId: 'password' } }
+      // Every document the page loads says back what was typed, in its words and in a field.
+      if (expression.includes('documentElement.textContent')) return { result: { value: `Echo ${page.typed}` } }
       if (expression.includes('document.title')) return { result: { value: { title: 'Sign in', text: `Echo ${page.typed}`, state: 'complete' } } }
       if (expression.startsWith('Array.from(document.querySelectorAll')) return { result: { value: [{ tag: 'input', role: '', name: page.typed, x: 0, y: 0, width: 200, height: 30, disabled: false }] } }
       if (params.returnByValue && params.userGesture) return { result: { type: 'string', value: `field holds ${page.typed}` } }
@@ -219,6 +221,9 @@ describe('a secret typed into a page with the full catalog on', () => {
     // A new document committed, but a secret was typed into this page: its history keeps the address, so evaluate stays off.
     const evaluated = await act({ type: 'evaluate', expression: 'btoa(location.search)' })
     expect(evaluated).toMatchObject({ isError: true, text: expect.stringContaining('address') })
+    // The new document says the secret back too, so no picture of it goes to the agent and none of its text is copied.
+    expect(await act({ type: 'screenshot' })).toMatchObject({ isError: true, text: expect.stringContaining('no picture of it goes to you') })
+    expect(await act({ type: 'key', key: 'a', modifiers: ['Control'] })).toMatchObject({ isError: true, text: expect.stringContaining('refused while it does') })
     await call('browser_status', {})
   })
 

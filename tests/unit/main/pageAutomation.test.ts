@@ -60,6 +60,8 @@ function page(focus: { node: number } = { node: 7 }): FakePage {
     if (method === 'DOM.describeNode' && params.backendNodeId === 7) return { node: { backendNodeId: 7, nodeName: 'INPUT', attributes: ['id', 'password', 'type', 'password'] } }
     if (method === 'DOM.describeNode' && params.backendNodeId === 9) return { node: { backendNodeId: 9, nodeName: 'INPUT', attributes: ['id', 'name', 'type', 'text'] } }
     if (method === 'DOM.focus') { focus.node = params.backendNodeId as number; return {} }
+    // A document that holds no words and no field with anything in it.
+    if (method === 'Runtime.evaluate' && String(params.expression).includes('documentElement.textContent')) return { result: { value: '' } }
     return {}
   })
 }
@@ -1041,10 +1043,80 @@ describe('page words are masked before they are cut or tidied (after the third r
 
   it('masks the address a picture is taken at, which the user\'s feedback names to the agent', async () => {
     const automation_ = await typedOn(showing('Thanks'))
-    // A form sent by GET carries the value in the next document's address, where pictures are allowed again.
-    automation_.clear()
+    // A form sent by GET carries the value in the next document's address, which a picture the user takes there names.
+    automation_.documentCommitted()
     const capture = await automation_.capture(`https://shop.example/done?pin=${secret}`)
     expect(capture.url).toBe('https://shop.example/done?pin=••••••••')
+  })
+})
+
+describe('a secret a site writes back into a later document (after the third review)', () => {
+  const secret = 'hunter2-secret'
+  /** A page whose document holds `shown()` in its words and fields, as Sotto reads them whole, or fails to read when it throws. */
+  const writing = (shown: () => string): FakePage => {
+    const fake = page(), base = fake.handle
+    fake.handle = (method, params) => method === 'Runtime.evaluate' && String(params.expression ?? '').includes('documentElement.textContent') ? { result: { value: shown() } } : base(method, params)
+    return fake
+  }
+  const chord = { type: 'key', key: 'a', modifiers: ['Control'] } as const satisfies PageInput
+  const selecting = [chord, { type: 'key', key: 'c', modifiers: ['Meta'] }, { type: 'click', x: 5, y: 5, clickCount: 2 }, { type: 'drag', from: { x: 5, y: 5 }, to: { x: 50, y: 5 } }] as const satisfies readonly PageInput[]
+
+  it('selects, copies and records none of a later document that shows the secret again, and pictures none of it', async () => {
+    let shown = `Saved. Your key is ${secret}.`
+    const fake = writing(() => shown), automation_ = automation(fake)
+    await automation_.typeSecret(given(secret), go, { selector: '#password' })
+    // The site's next document says the key back, as a settings page can.
+    automation_.documentCommitted()
+    for (const action of selecting) {
+      await expect(automation_.target(action), JSON.stringify(action)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('while it does') })
+      await expect(automation_.input(action, go), JSON.stringify(action)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('while it does') })
+    }
+    expect(fake.calls('Input.dispatchKeyEvent')).toEqual([])
+    expect(fake.calls('Input.dispatchMouseEvent')).toEqual([])
+    expect(await automation_.showsSecret()).toBe(true)
+    // A recording runs on into later documents, so none starts on a page a secret was typed into.
+    shown = 'Saved.'
+    await expect(automation_.startScreencast(() => undefined)).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('later documents') })
+    expect(fake.calls('Page.startScreencast')).toEqual([])
+    // A later document that shows none of it takes them again.
+    expect(await automation_.showsSecret()).toBe(false)
+    await automation_.input(chord, go)
+    expect(fake.calls('Input.dispatchKeyEvent')).toHaveLength(2)
+  })
+
+  it('finds the secret in a field, and counts a document it cannot read as one that shows it', async () => {
+    let answer: unknown = 'hunter2-secret'
+    const fake = page(), base = fake.handle, automation_ = automation(fake)
+    fake.handle = (method, params) => {
+      if (method !== 'Runtime.evaluate' || !String(params.expression ?? '').includes('documentElement.textContent')) return base(method, params)
+      if (answer instanceof Error) throw answer
+      return { result: { value: answer } }
+    }
+    await automation_.typeSecret(given(secret), go, { selector: '#password' })
+    automation_.documentCommitted()
+    expect(await automation_.showsSecret()).toBe(true)
+    for (answer of [undefined, { text: secret }, new Error(`Uncaught: ${secret}`)]) {
+      expect(await automation_.showsSecret(), String(answer)).toBe(true)
+      await expect(automation_.input(chord, go)).rejects.toMatchObject({ code: 'blocked', message: expect.not.stringContaining('hunter') })
+    }
+    // The read names every field's value and follows open shadow roots and same-origin frames.
+    const expression = String(fake.calls('Runtime.evaluate').filter(call => String(call.expression).includes('documentElement.textContent')).at(-1)?.expression)
+    for (const part of ['.value', 'shadowRoot', 'contentDocument']) expect(expression).toContain(part)
+  })
+
+  it('holds a tap straight after another back on a later document that shows the secret, and reads nothing on a page none was typed into', async () => {
+    const at: number[] = [], fake = writing(() => `Key: ${secret}`), base = fake.handle, automation_ = automation(fake, { parity: false })
+    fake.handle = (method, params) => { if (method === 'Input.dispatchTouchEvent') at.push(Date.now()); return base(method, params) }
+    await automation_.typeSecret(given(secret), go, { selector: '#password' })
+    automation_.documentCommitted()
+    await automation_.input({ type: 'tap', x: 5, y: 5 }, go)
+    await automation_.input({ type: 'tap', x: 5, y: 5 }, go)
+    expect(at[2]! - at[1]!).toBeGreaterThanOrEqual(DOUBLE_TAP_GAP_MS - 2)
+    const plain = writing(() => `Key: ${secret}`), plainly = automation(plain)
+    await plainly.input(chord, go)
+    await plainly.input({ type: 'tap', x: 5, y: 5 }, go)
+    expect(await plainly.showsSecret()).toBe(false)
+    expect(plain.calls('Runtime.evaluate').filter(call => String(call.expression).includes('documentElement.textContent'))).toEqual([])
   })
 })
 

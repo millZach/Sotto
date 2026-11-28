@@ -177,6 +177,30 @@ const FIELD_TEXT = `function() {
   if (!element) return ''
   return typeof element.value === 'string' ? element.value : element.isContentEditable ? element.innerText : ''
 }`
+/**
+ * The text a document holds where it could be selected, copied or drawn: its words as written and as shown, what each
+ * field holds, and the same in open shadow roots and same-origin frames. Read only in Sotto, never said back.
+ */
+export const DOCUMENT_TEXT = `(() => {
+  const parts = [], seen = new Set()
+  const words = root => { if (root && root.documentElement) parts.push(root.documentElement.textContent || ''); if (root && root.body) parts.push(root.body.innerText || '') }
+  const read = (root, depth) => {
+    if (!root || seen.has(root) || depth > 16) return
+    seen.add(root)
+    for (const element of root.querySelectorAll('*')) {
+      if ((element.tagName === 'INPUT' || element.tagName === 'TEXTAREA') && typeof element.value === 'string') parts.push(element.value)
+      if (element.shadowRoot) { parts.push(element.shadowRoot.textContent || ''); read(element.shadowRoot, depth + 1) }
+      if (element.tagName === 'IFRAME' || element.tagName === 'FRAME') {
+        let inner = null
+        try { inner = element.contentDocument } catch { inner = null }
+        if (inner) { words(inner); read(inner, depth + 1) }
+      }
+    }
+  }
+  words(document)
+  read(document, 0)
+  return parts.join('\\n')
+})()`
 /** What a refusal ends with once a secret request's value was taken (ADR-0219): the reference is used up. */
 export const SECRET_SPENT = 'this secretRef is used. Ask for it again with request_secret.'
 /**
@@ -753,8 +777,9 @@ export abstract class PageAutomation {
    */
   async startScreencast(onFrame: (data: string) => void): Promise<void> {
     this.noDialog()
-    // A page can show what its password field holds (a "show password" button), so no recording starts on one that holds a secret.
-    if (this.secretInDocument) return fail('blocked', 'This page holds a secret you saved, so it is not recorded until it loads another document. Use snapshot, whose words are masked.')
+    // A page can show what its password field holds (a "show password" button), and a recording runs on into later
+    // documents, where a site can show it again, so none starts on a page a secret was typed into.
+    if (this.typedSecrets.size) return fail('blocked', `A secret you saved was typed into this page, so it is not recorded while it is open: a recording runs on into later documents, where a site can show the secret again. Use snapshot, whose words are masked${this.inProfile ? '' : ', or open a new page'}.`)
     await this.ready()
     this.screencast = onFrame
     // A recording that did not start leaves the page not recording, so it does not refuse a secret for one.
@@ -929,12 +954,29 @@ export abstract class PageAutomation {
     if (this.scriptedEver) this.scriptedDocument = true
     if (this.typedSecrets.size) this.secretInDocument = true
   }
-  /** Whether the document loaded now holds a secret typed from a secret request, so no picture of it goes to the agent. */
+  /** Whether a secret from a secret request was typed into the document loaded now. */
   holdsSecret(): boolean { return this.secretInDocument }
-  /** Refuses, while the document holds a typed secret, an action that would select, copy, cut or carry text (`movesText`). */
-  private textStays(action: TargetedAction | PageInput): void {
-    const what = this.secretInDocument ? movesText(action) : null
-    if (what) fail('blocked', `This page holds a secret you saved, so ${what} is refused until it loads another document: it could select, copy or carry the secret where you can read it. Click once, and press keys without Shift, Control or Command.`)
+  /**
+   * Whether the document loaded now could show a typed secret, so no picture of it goes to the agent and no text there
+   * is selected: one was typed into it (`holdsSecret`), or, on a page one was typed into, a site wrote one back into a
+   * later document, in its words or a field (`DOCUMENT_TEXT`). The text is read in the page and compared only here, and
+   * a document Sotto cannot read counts as one that shows it. A secret drawn in an image or a canvas, or written in a
+   * frame from another site, is not found.
+   */
+  async showsSecret(): Promise<boolean> {
+    if (this.secretInDocument) return true
+    if (!this.typedSecrets.size) return false
+    try {
+      await this.ready()
+      const read = await this.send('Runtime.evaluate', { expression: DOCUMENT_TEXT, returnByValue: true }) as { result?: { value?: unknown } }
+      const text = read.result?.value
+      return typeof text !== 'string' || this.masked(text, '') !== text
+    } catch { return true }
+  }
+  /** Refuses, while the document could show a typed secret (`showsSecret`), an action that would select, copy, cut or carry text (`movesText`). */
+  private async textStays(action: TargetedAction | PageInput): Promise<void> {
+    const what = movesText(action)
+    if (what && await this.showsSecret()) fail('blocked', `This page holds a secret you saved, so ${what} is refused while it does: it could select, copy or carry the secret where you can read it. Click once, and press keys without Shift, Control or Command.`)
   }
   /**
    * Refuses an edit to a field that holds a typed secret, for the page's life: typing into it, or any key but one that
@@ -1065,7 +1107,7 @@ export abstract class PageAutomation {
   async target(action: TargetedAction): Promise<string> {
     if (action.type === 'dialog') return this.pendingKey('dialog')
     this.noDialog()
-    this.textStays(action)
+    await this.textStays(action)
     await this.ready()
     if (action.type === 'upload' && action.x === undefined && action.ref === undefined && action.selector === undefined) return this.pendingKey('chooser')
     if (action.type === 'drag') return `${await this.describeTarget(action.from)} -> ${await this.describeTarget(action.to)}`
@@ -1120,11 +1162,11 @@ export abstract class PageAutomation {
    */
   async input(action: PageInput, guard: () => void): Promise<string | undefined> {
     this.noDialog()
-    this.textStays(action)
+    await this.textStays(action)
     await this.ready()
     // The focus may have moved since the action was asked for, so the field it reaches is looked at again.
     if (action.type === 'key' || action.type === 'type') await this.noSecretEdit(action, action.type === 'type' && (action.ref !== undefined || action.selector !== undefined) ? await this.nodeOf(action) : undefined)
-    if (action.type === 'tap' && this.secretInDocument) {
+    if (action.type === 'tap' && await this.showsSecret()) {
       const wait = this.tappedAt + DOUBLE_TAP_GAP_MS - Date.now()
       if (wait > 0) await new Promise(resolve => setTimeout(resolve, wait))
     }
