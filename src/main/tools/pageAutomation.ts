@@ -106,6 +106,10 @@ export function comparesPartOfAttribute(selector: string): boolean {
   const operator = /[~|^$*]\s*=/u
   return operator.test(selector) || operator.test(selector.replace(/\/\*[\s\S]*?(?:\*\/|$)/gu, ''))
 }
+/** A web address's origin, as `https://example.com:8443`, or nothing for one that has none. */
+function originOf(url: string): string {
+  try { const origin = new URL(url).origin; return origin === 'null' ? '' : origin } catch { return '' }
+}
 /** What a refusal ends with once a secret request's value was taken (ADR-0219): the reference is used up. */
 export const SECRET_SPENT = 'this secretRef is used. Ask for it again with request_secret.'
 /** An error's own words as a sentence, for a refusal that goes on to say the reference is spent. */
@@ -459,11 +463,13 @@ export abstract class PageAutomation {
   /**
    * `text` with every secret typed into this page masked: as written, as JSON writes it, and however an address or a form
    * sent by GET escapes it (`maskSecrets`), so a sign-in form that puts the password in its address does not hand it on.
-   * A secret shorter than three characters is not masked, as one that short is as likely the page's own words; its
-   * page's rules hold all the same. This never throws: should finding a secret ever fail, the whole text is the mask,
-   * and nothing of the failure, which could hold the secret, goes on.
+   * The page's own origin is left whole wherever it is written, since it is the site the page is shared for: a PIN that
+   * is also the page's port, as 5173 on localhost:5173, masks the rest of an address and not the port. A secret shorter
+   * than three characters is not masked, as one that short is as likely the page's own words; its page's rules hold all
+   * the same. This never throws: should finding a secret ever fail, the whole text is the mask, and nothing of the
+   * failure, which could hold the secret, goes on.
    */
-  masked(text: string): string {
+  masked(text: string, origin?: string): string {
     if (!this.typedSecrets.size) return text
     try {
       const matchers: (SecretMatcher | null)[] = []
@@ -472,9 +478,11 @@ export abstract class PageAutomation {
         if (known === undefined) this.typedSecrets.set(secret, matcher)
         matchers.push(matcher)
       }
-      return maskSecrets(text, matchers)
+      return maskSecrets(text, matchers, origin ?? (this.page.isGone() ? '' : originOf(this.page.url())))
     } catch { return MASK }
   }
+  /** An address as the agent and the window are told it: masked as the page's words are, with its own origin left whole. */
+  maskedUrl(url: string): string { return this.masked(url, originOf(url)) }
   /**
    * The page as an agent reads it in the full catalog (ADR-0220): its address and title, the accessibility tree with a
    * ref on each element, the words on screen, and what its console and network said. Refs replace the last snapshot's.

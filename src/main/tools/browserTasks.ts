@@ -213,10 +213,12 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   }
   /**
    * A page as it leaves the engine, for the window and the agent alike: a secret typed into it is masked in its title
-   * and address, as a page that echoes it there, or a sign-in form sent by GET, would otherwise pass it on (ADR-0219).
+   * and in its address after the origin, as a page that echoes it there, or a sign-in form sent by GET, would otherwise
+   * pass it on (ADR-0219). Whether the agent may see the page is decided from the page itself, not this view
+   * (`observable`).
    */
   private view(record: R): BrowserPage {
-    return { ...record.page, url: record.automation.masked(record.page.url), title: record.automation.masked(record.page.title) }
+    return { ...record.page, url: record.automation.maskedUrl(record.page.url), title: record.automation.masked(record.page.title) }
   }
   /** The thread's working copy. A thread Sotto no longer lists takes its browser grant with it. */
   protected async owner(threadId: string, expected?: string): Promise<FileWorkspace> {
@@ -245,6 +247,15 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
   protected sharedNow(pageId: string, threadId: string): boolean {
     const record = this.pages.get(pageId)
     return record !== undefined && record.page.workspace.threadId === threadId && !record.madePrivate && record.page.sharedOrigin !== null
+  }
+  /**
+   * Whether the thread's agent may see a page now: shared with it, and at the origin it was shared for. Decided here, from
+   * the page's own address, and not from the masked view the agent is given, whose address can hold a mask (ADR-0219).
+   */
+  observable(pageId: string, threadId: string): boolean {
+    if (!this.sharedNow(pageId, threadId)) return false
+    const record = this.pages.get(pageId)!
+    try { return record.page.sharedOrigin === new URL(record.page.url).origin } catch { return false }
   }
   /** `text` about a page, its address or title, with any secret typed into that page masked, as the agent is told it (ADR-0219). */
   masked(pageId: string, text: string): string { return this.pages.get(pageId)?.automation.masked(text) ?? text }
@@ -779,7 +790,7 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       if (capture) {
         const evidence = await record.automation.evidence(capture)
         guard()
-        if (evidence) task.evidence = [...(task.evidence ?? []), { id: randomUUID(), at: Date.now(), url: record.automation.masked(record.page.url), viewport: record.page.viewport ?? null, ...evidence }].slice(-3)
+        if (evidence) task.evidence = [...(task.evidence ?? []), { id: randomUUID(), at: Date.now(), url: record.automation.maskedUrl(record.page.url), viewport: record.page.viewport ?? null, ...evidence }].slice(-3)
       }
       // Revocation during an asynchronous capture must not release page evidence.
       if (action.type !== 'navigate') guard(reading)
@@ -793,14 +804,14 @@ export abstract class BrowserTasks<R extends TaskPage> extends ToolOperations {
       output = record.automation.masked(output)
       task.output = output
       const grantNote = granted ? ' Not asked: you let this thread use the browser without asking.' : ''
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: this.stepDetail(action, output, grantNote), url: record.automation.masked(observedUrl), viewport: record.page.viewport ?? null })
+      task.steps.push({ id: randomUUID(), action: action.type, status: 'completed', at: Date.now(), detail: this.stepDetail(action, output, grantNote), url: record.automation.maskedUrl(observedUrl), viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40)
       return { task: this.publishTask(task), output, ...(image ? { image } : {}), approvalRequired: false }
     } catch (error) {
       // A spent reference is said in the task too: an action the user allowed answers the agent with the task, not the error.
       const said = spent ? record.automation.masked(spentWords(error)) : null
       task.output = said ?? 'The browser action did not finish. Inspect the page before trying again.'
-      task.steps.push({ id: randomUUID(), action: action.type, status: 'failed', at: Date.now(), detail: task.output, url: record.automation.masked(observedUrl), viewport: record.page.viewport ?? null })
+      task.steps.push({ id: randomUUID(), action: action.type, status: 'failed', at: Date.now(), detail: task.output, url: record.automation.maskedUrl(observedUrl), viewport: record.page.viewport ?? null })
       task.steps = task.steps.slice(-40); this.publishTask(task)
       if (said !== null) throw new ToolFailure(error instanceof ToolFailure ? error.code : 'unavailable', said)
       throw error

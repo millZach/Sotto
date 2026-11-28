@@ -282,7 +282,7 @@ describe('a failed type and the pictures of a page that holds a secret', () => {
   })
 })
 
-describe('a typed secret of any length (the third review)', () => {
+describe('a typed secret of any length, and one the page\'s own address holds (the third review)', () => {
   it('keeps the browser working once a secret of the longest length a card takes is typed, and its words go nowhere', async () => {
     fresh()
     // Characters a pattern would have had to escape, a backslash and a quote among them.
@@ -302,5 +302,25 @@ describe('a typed secret of any length (the third review)', () => {
     const read = await github.act({ type: 'snapshot' })
     expect(read.isError).toBeFalsy()
     expect(JSON.stringify(events)).not.toContain(long.slice(0, 200))
+  })
+
+  it('keeps a page\'s origin whole when the secret matches its port or its host, and the agent still sees the page', async () => {
+    for (const { secret, address } of [{ secret: '5173', address: 'http://localhost:5173/login' }, { secret: 'staging', address: 'https://staging.example/login' }]) {
+      fresh()
+      const signIn = await opened(address)
+      expect((await signIn.act({ type: 'type', selector: '#password', secretRef: await secretRef({ url: address }, secret) })).isError).toBeFalsy()
+      const listed = JSON.parse((await call('browser_pages', {})).text) as { pages: { pageId: string; url?: string; shared: boolean }[] }
+      expect(listed.pages.find(entry => entry.pageId === signIn.pageId)).toMatchObject({ url: address, shared: true })
+      const read = await signIn.act({ type: 'snapshot' })
+      expect(read.isError, `${secret}: ${read.text}`).toBeFalsy()
+      expect(read.text).not.toContain('is not shared')
+      expect(read.text).toContain(`URL: ${address}`)
+      // Past the origin, the secret is masked as anywhere else.
+      const contents = page.contents.at(-1)!
+      const next = `${new URL(address).origin}/done?pin=${secret}`
+      contents.url = next
+      contents.emit('did-start-navigation', {}, next, false, true)
+      expect(JSON.parse((await call('browser_pages', {})).text).pages.find((entry: { pageId: string }) => entry.pageId === signIn.pageId).url).toBe(`${new URL(address).origin}/done?pin=••••••••`)
+    }
   })
 })

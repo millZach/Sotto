@@ -131,7 +131,7 @@ async function dispatchCloud(cloud: CloudIphoneService, name: string, data: unkn
 }
 
 /** What the browser tools ask of a browser, wherever it runs; the test iPhone is this computer's alone. */
-export type BrowserAgentService = Pick<BrowserTasks<TaskPage>, 'list' | 'tasks' | 'agentOpen' | 'startTask' | 'action' | 'finishTask' | 'waitForAction' | 'agentClose'> & Partial<Pick<BrowserTasks<TaskPage>, 'masked'>> & Partial<Pick<BrowserService, 'phoneOpen' | 'localServers' | 'agentDownloads'>>
+export type BrowserAgentService = Pick<BrowserTasks<TaskPage>, 'list' | 'tasks' | 'agentOpen' | 'startTask' | 'action' | 'finishTask' | 'waitForAction' | 'agentClose' | 'observable'> & Partial<Pick<BrowserService, 'phoneOpen' | 'localServers' | 'agentDownloads'>>
 /**
  * A paired host's threads get the browser and nothing of the test iPhone or the cloud iPhone (ADR-0198, decision 2).
  * With the full catalog they also close their pages; servers are this computer's, so `browser_servers` stays here.
@@ -173,16 +173,15 @@ function browserAgentServer(definitions: readonly BrowserToolDefinition[], instr
       return dispatchCloud(cloud, name, input.data, target, context)
     }
     const pages = listing.value.pages
-    const observable = (pageId: string, currentPages = pages): boolean => {
-      const page = currentPages.find(page => page.id === pageId)
-      return !!page?.sharedOrigin && page.sharedOrigin === new URL(page.url).origin
-    }
+    // Whether the agent may see a page is the browser's answer from the page itself: the listing's address is masked.
+    const observable = (pageId: string): boolean => browser.observable(pageId, threadId)
     if (name === 'browser_pages') {
-      // Downloads the agent's action started or a shared page gave, by name and state (ADR-0222): where one went is said
-      // only when the user saved it in this thread's folder.
+      // Downloads from a page shared with the agent when they started and still now, by name and state (ADR-0222):
+      // where one went is said only when the user saved it in this thread's folder.
       const downloads = parity && !compactThread && browser.agentDownloads ? await browser.agentDownloads(threadId) : []
+      // The listing's address and title are already masked against a typed secret, the address after its origin.
       return text({ pages: pages.map(page => observable(page.id)
-        ? { pageId: page.id, url: browser.masked?.(page.id, page.url) ?? page.url, title: browser.masked?.(page.id, page.title) ?? page.title, status: page.status, viewport: page.viewport, ...(page.device ? { device: page.device } : {}), shared: true }
+        ? { pageId: page.id, url: page.url, title: page.title, status: page.status, viewport: page.viewport, ...(page.device ? { device: page.device } : {}), shared: true }
         : { pageId: page.id, shared: false }), ...(downloads.length ? { downloads } : {}) })
     }
     if (name === 'browser_status') {
@@ -191,9 +190,7 @@ function browserAgentServer(definitions: readonly BrowserToolDefinition[], instr
       if (!tasks.ok) return text(tasks.error, true)
       const selected = request.taskId ? tasks.value.filter(task => task.id === request.taskId) : tasks.value
       if (request.taskId && selected.length === 0) return text({ message: 'This browser task is unavailable to this thread.' }, true)
-      const current = await browser.list({ threadId })
-      if (!current.ok) return text(current.error, true)
-      return text({ tasks: selected.map(task => taskSummary(task, observable(task.pageId, current.value.pages))) })
+      return text({ tasks: selected.map(task => taskSummary(task, observable(task.pageId))) })
     }
     const completed = async (result: ToolsResult<BrowserAgentResult>): Promise<BrowserToolResult> => {
       if (!result.ok) return operationResult(result)
@@ -203,9 +200,7 @@ function browserAgentServer(definitions: readonly BrowserToolDefinition[], instr
         const before = value.task.steps.at(-1)?.id
         const task = await waitWithin(browser.waitForAction(value.task.id, value.task.pendingAction.id), context)
         if (task === STILL_WAITING) {
-          const current = await browser.list({ threadId })
-          if (!current.ok) return text(current.error, true)
-          return text({ task: taskSummary({ ...value.task, output: null }, observable(value.task.pageId, current.value.pages)), approvalRequired: true,
+          return text({ task: taskSummary({ ...value.task, output: null }, observable(value.task.pageId)), approvalRequired: true,
             message: `${NOT_ANSWERED_YET} Read browser_status before asking again.` })
         }
         if (!task) return text({ message: 'This browser task closed while waiting for your answer.' }, true)
@@ -213,17 +208,11 @@ function browserAgentServer(definitions: readonly BrowserToolDefinition[], instr
         const last = task.steps.at(-1)
         failed = last !== undefined && last.id !== before && last.status === 'failed'
       }
-      const current = await browser.list({ threadId })
-      if (!current.ok) return text(current.error, true)
-      const page = current.value.pages.find(page => page.id === value.task.pageId)
-      const shared = !!page?.sharedOrigin && page.sharedOrigin === new URL(page.url).origin
-      return operationResult({ ok: true, value }, shared, failed)
+      return operationResult({ ok: true, value }, observable(value.task.pageId), failed)
     }
     const taskResult = async (result: ToolsResult<BrowserTask>): Promise<BrowserToolResult> => {
       if (!result.ok) return text(result.error, true)
-      const current = await browser.list({ threadId })
-      if (!current.ok) return text(current.error, true)
-      return text({ task: taskSummary(result.value, observable(result.value.pageId, current.value.pages)), approvalRequired: false })
+      return text({ task: taskSummary(result.value, observable(result.value.pageId)), approvalRequired: false })
     }
     const payload = { ...input.data as object, ...target }
     if (name === 'browser_open') return completed(await browser.agentOpen(payload))

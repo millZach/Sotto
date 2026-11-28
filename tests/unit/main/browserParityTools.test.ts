@@ -26,7 +26,7 @@ function service() {
   return {
     list: vi.fn(async () => ({ ok: true, value: { workspace, pages: [page] } })), tasks: vi.fn(async () => ({ ok: true, value: [task] })),
     action: vi.fn(async () => ({ ok: true, value: { task, output: 'hovered', approvalRequired: false } })), waitForAction: vi.fn(), agentOpen: vi.fn(), startTask: vi.fn(), finishTask: vi.fn(),
-    agentClose: vi.fn(async () => ({ ok: true, value: { closed: pageId } })), localServers: vi.fn(async () => ({ ok: true, value: [{ port: 5173, url: 'http://localhost:5173/', title: 'Vite', process: 'node' }] })),
+    agentClose: vi.fn(async () => ({ ok: true, value: { closed: pageId } })), observable: vi.fn((id: string) => id === page.id), localServers: vi.fn(async () => ({ ok: true, value: [{ port: 5173, url: 'http://localhost:5173/', title: 'Vite', process: 'node' }] })),
   }
 }
 

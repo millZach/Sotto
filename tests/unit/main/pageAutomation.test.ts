@@ -473,6 +473,17 @@ describe('what is masked (ADR-0219)', () => {
     await expect(automation_.evaluate('1')).rejects.toMatchObject({ code: 'blocked' })
   })
 
+  it('keeps the page\'s own origin whole, and masks the secret everywhere else, the same address\'s path included (the third review)', async () => {
+    // The page is on https://shop.example, and the secret is also part of its host.
+    const fake = page(), automation_ = automation(fake)
+    await automation_.typeSecret(given('shop'), go, { selector: '#password' })
+    expect(automation_.masked('Signed in at https://shop.example/account?pin=shop')).toBe('Signed in at https://shop.example/account?pin=••••••••')
+    // A match that runs past the origin is not inside it, so it is masked.
+    expect(automation_.maskedUrl('https://shop.example/shop')).toBe('https://shop.example/••••••••')
+    // Another site's address keeps its own origin when asked as an address, and only its own.
+    expect(automation_.maskedUrl('https://workshop.example/?a=shop')).toBe('https://workshop.example/?a=••••••••')
+    expect(automation_.masked('https://workshop.example/')).toBe('https://work••••••••.example/')
+  })
 })
 
 describe('masking a typed secret stays linear and cannot throw (the third review)', () => {
