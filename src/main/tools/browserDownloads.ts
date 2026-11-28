@@ -53,6 +53,11 @@ interface DownloadRecord {
   cancelAsked: boolean
   /** The page was shared with the agent when the download started. */
   readonly sharedAtStart: boolean
+  /**
+   * The name the page suggested, before it was made safe, so a secret typed into the page is masked in it as the page
+   * wrote it: made safe first, a secret holding `:` or `*` no longer matches its mask.
+   */
+  readonly suggested: string
 }
 
 /** Files that run a program or script when opened: Sotto only shows them in their folder (ADR-0222). */
@@ -74,6 +79,19 @@ export function safeDownloadName(suggested: string): string {
   if (!name || WINDOWS_RESERVED.test(name)) name = `download${name ? `-${name}` : ''}`
   if (name.length > 200) { const extension = extname(name).slice(0, 20); name = name.slice(0, 200 - extension.length) + extension }
   return name
+}
+/** Masks a secret typed into a page in text about that page, as the agent is told it (ADR-0219). */
+type Masked = (pageId: string, text: string) => string
+const stemOf = (name: string): string => name.slice(0, name.length - extname(name).length)
+/**
+ * Where a download was saved, as the agent is told it, with `/` between folders. The file there has the download's safe
+ * name, or that name with " (1)" and so on before its extension, and is told by `name`, the agent's own name for it,
+ * so a secret the safe name changed is masked as the page wrote it. One the user named otherwise in the Save dialog,
+ * and the folders, are masked as they are.
+ */
+function agentPath(path: string, safe: string, name: string, mask: (text: string) => string): string {
+  const slash = path.lastIndexOf('/'), folder = path.slice(0, slash + 1), saved = path.slice(slash + 1), own = stemOf(safe)
+  return mask(folder) + (saved.startsWith(own) ? stemOf(name) + mask(saved.slice(own.length)) : mask(saved))
 }
 /** Whether a file of this name is one Sotto opens on the user's press, rather than only showing it in its folder. */
 export function opensSafely(name: string): boolean { return !RUNS.has(extname(name).slice(1).toLowerCase()) }
@@ -123,13 +141,13 @@ export class BrowserDownloads {
    */
   start(item: DownloadItemLike, owner: DownloadOwner): BrowserDownload {
     const id = randomUUID()
-    const file = safeDownloadName(item.getFilename() || 'download')
+    const suggested = item.getFilename() || 'download', file = safeDownloadName(suggested)
     const folder = join(this.dependencies.pendingFolder, id)
     mkdirSync(folder, { recursive: true, mode: 0o700 })
     const pending = join(folder, file)
     item.setSavePath(pending)
     item.pause()
-    const record: DownloadRecord = { item, pending, chosen: null, replaces: false, reserved: null, finished: false, placing: false, cancelAsked: false, sharedAtStart: owner.shared === true, view: {
+    const record: DownloadRecord = { item, pending, chosen: null, replaces: false, reserved: null, finished: false, placing: false, cancelAsked: false, sharedAtStart: owner.shared === true, suggested, view: {
       id, threadId: owner.threadId, workspaceId: owner.workspaceId, pageId: owner.pageId, file, host: owner.host.slice(0, 300),
       state: 'asking', receivedBytes: 0, totalBytes: Math.max(0, item.getTotalBytes() || 0), byAgent: owner.byAgent, folder: null, opens: opensSafely(file), startedAt: Date.now(),
     } }
@@ -151,17 +169,22 @@ export class BrowserDownloads {
    * private then, keeps its downloads too, however lately the agent acted there. `masked` gives a name as its page says
    * anything back, with a secret typed there masked, since a site names its own file.
    */
-  agentView(threadId: string, workingDirectory: string, shared: (pageId: string) => boolean, masked: (pageId: string, text: string) => string = (_pageId, text) => text): { file: string; state: BrowserDownload['state']; byAgent: boolean; path?: string }[] {
+  agentView(threadId: string, workingDirectory: string, shared: (pageId: string) => boolean, masked: Masked = (_pageId, text) => text): { file: string; state: BrowserDownload['state']; byAgent: boolean; path?: string }[] {
     return this.list(threadId).filter(download => this.known(download, shared)).map(download => {
       const record = this.records.get(download.id)!
       const inside = download.state === 'saved' && record.chosen ? relative(workingDirectory, record.chosen) : null
       const mask = (text: string): string => masked(download.pageId!, text)
-      return { file: mask(download.file), state: download.state, byAgent: download.byAgent, ...(inside && !inside.startsWith('..') && !isAbsolute(inside) ? { path: mask(inside.replace(/\\/gu, '/')) } : {}) }
+      const file = this.agentName(record, masked)
+      return { file, state: download.state, byAgent: download.byAgent, ...(inside && !inside.startsWith('..') && !isAbsolute(inside) ? { path: agentPath(inside.replace(/\\/gu, '/'), download.file, file, mask) } : {}) }
     })
   }
   /** The names of the downloads a page started since `since` that the agent may know of, for its action's answer. */
-  startedSince(threadId: string, pageId: string, since: number, shared: (pageId: string) => boolean): string[] {
-    return this.list(threadId).filter(download => download.pageId === pageId && download.startedAt >= since && this.known(download, shared)).map(download => download.file)
+  startedSince(threadId: string, pageId: string, since: number, shared: (pageId: string) => boolean, masked: Masked = (_pageId, text) => text): string[] {
+    return this.list(threadId).filter(download => download.pageId === pageId && download.startedAt >= since && this.known(download, shared)).map(download => this.agentName(this.records.get(download.id)!, masked))
+  }
+  /** A download's name as the agent is told it: the page's suggestion with a secret typed there masked, then made safe. */
+  private agentName(record: DownloadRecord, masked: Masked): string {
+    return record.view.pageId === null ? record.view.file : safeDownloadName(masked(record.view.pageId, record.suggested))
   }
   private known(download: BrowserDownload, shared: (pageId: string) => boolean): boolean {
     return this.records.get(download.id)?.sharedAtStart === true && download.pageId !== null && shared(download.pageId)

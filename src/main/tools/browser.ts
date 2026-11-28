@@ -627,7 +627,7 @@ export class BrowserService extends BrowserTasks<PageRecord> {
   }
   protected actionNote(record: PageRecord, since: number): string | undefined {
     const threadId = record.page.workspace.threadId
-    const started = this.downloadList?.startedSince(threadId, record.page.id, since, pageId => this.sharedNow(pageId, threadId)) ?? []
+    const started = this.downloadList?.startedSince(threadId, record.page.id, since, pageId => this.sharedNow(pageId, threadId), (pageId, text) => this.masked(pageId, text)) ?? []
     if (!started.length) return undefined
     return `The page started downloading ${started.map(file => JSON.stringify(file)).join(', ')}. Sotto asks the user where to save it, and you are not told where it goes unless they save it in this thread's folder; browser_pages lists it.`
   }

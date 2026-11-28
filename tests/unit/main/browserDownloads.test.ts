@@ -270,6 +270,26 @@ describe('what the owner\'s review of downloads found (ADR-0222, November 27 ame
     expect(view.map(download => download.file).sort()).toEqual(['by-agent.zip', 'shared.pdf'])
   })
 
+  it('masks a typed secret in a download\'s name as the page wrote it, before the name is made safe, and where it was saved (the third review)', async () => {
+    const { downloads, owner, root } = await fixture()
+    // A secret with characters a file name cannot hold: made safe first, it would read export-p@ss_word_1.csv.
+    const secret = 'p@ss:word*1', mask = (_pageId: string, text: string): string => text.split(secret).join('••••••••')
+    const first = new FakeItem(`export-${secret}.csv`, 'one'), second = new FakeItem(`export-${secret}.csv`, 'two')
+    const a = downloads.start(first, { ...owner, shared: true }), b = downloads.start(second, { ...owner, shared: true })
+    // The user keeps the real name, and so does the disk.
+    expect(a.file).toBe('export-p@ss_word_1.csv')
+    expect(downloads.startedSince(owner.threadId, owner.pageId, 0, () => true, mask)).toEqual(['export-••••••••.csv', 'export-••••••••.csv'])
+    // Both saved to Downloads, which is inside the folder the agent works in here, the second under the next free name.
+    await downloads.act(owner.threadId, a.id, 'save'); await first.finish()
+    await settle(() => expect(downloads.list(owner.threadId).find(download => download.id === a.id)?.state).toBe('saved'))
+    await downloads.act(owner.threadId, b.id, 'save'); await second.finish()
+    await settle(() => expect(downloads.list(owner.threadId).find(download => download.id === b.id)?.state).toBe('saved'))
+    const view = downloads.agentView(owner.threadId, root, () => true, mask)
+    expect(view).toContainEqual({ file: 'export-••••••••.csv', state: 'saved', byAgent: false, path: 'Downloads/export-••••••••.csv' })
+    expect(view).toContainEqual({ file: 'export-••••••••.csv', state: 'saved', byAgent: false, path: 'Downloads/export-•••••••• (1).csv' })
+    expect(JSON.stringify(view)).not.toMatch(/p@ss|word_1/u)
+  })
+
   it('cancels the downloads still asking in a thread that has closed or gone, and keeps the rest', async () => {
     const { downloads, owner, pendingFolder } = await fixture()
     const gone = new FakeItem('gone.zip'), kept = new FakeItem('kept.zip'), saving = new FakeItem('saving.zip')
