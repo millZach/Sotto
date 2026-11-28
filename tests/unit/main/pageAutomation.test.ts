@@ -63,6 +63,9 @@ function page(focus: { node: number } = { node: 7 }): FakePage {
     if (method === 'DOM.focus') { focus.node = params.backendNodeId as number; return {} }
     // A document that holds no words and no field with anything in it.
     if (method === 'Runtime.evaluate' && String(params.expression).includes('documentElement.textContent')) return { result: { value: '' } }
+    if (method === 'Runtime.evaluate' && String(params.expression).includes('.call(document.activeElement')) return { result: { value: { text: '', singleLine: true } } }
+    if (method === 'DOM.resolveNode') return { object: { objectId: `node-${String(params.backendNodeId)}` } }
+    if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('isContentEditable')) return { result: { value: { text: '', singleLine: true } } }
     return {}
   })
 }
@@ -510,9 +513,9 @@ describe('nothing moves a typed secret\'s text out of its document (the third re
     const fake = page(focus), base = fake.handle, values = new Map<number, string>()
     fake.handle = (method, params) => {
       if (method === 'Input.insertText') values.set(focus.node, (values.get(focus.node) ?? '') + String(params.text))
-      if (method === 'Runtime.evaluate' && String(params.expression).includes('.call(document.activeElement')) return { result: { value: values.get(focus.node) ?? '' } }
+      if (method === 'Runtime.evaluate' && String(params.expression).includes('.call(document.activeElement')) return { result: { value: { text: values.get(focus.node) ?? '', singleLine: true } } }
       if (method === 'DOM.resolveNode') return { object: { objectId: `node-${String(params.backendNodeId)}` } }
-      if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('isContentEditable')) return { result: { value: values.get(Number(String(params.objectId).slice('node-'.length))) ?? '' } }
+      if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('isContentEditable')) return { result: { value: { text: values.get(Number(String(params.objectId).slice('node-'.length))) ?? '', singleLine: true } } }
       return base(method, params)
     }
     return { fake, values }
@@ -1192,7 +1195,7 @@ describe('the copies of a typed secret a page or Chromium makes (after the third
     fake.handle = (method, params) => {
       if (method === 'Input.insertText') held = keeps(held + String(params.text))
       if (method === 'DOM.resolveNode') return { object: { objectId: `node-${String(params.backendNodeId)}` } }
-      if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('isContentEditable')) return { result: { value: held } }
+      if (method === 'Runtime.callFunctionOn' && String(params.functionDeclaration).includes('isContentEditable')) return { result: { value: { text: held, singleLine: true } } }
       return base(method, params)
     }
     return fake

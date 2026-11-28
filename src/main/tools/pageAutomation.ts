@@ -135,8 +135,13 @@ function originOf(url: string): string {
 }
 /** Keys that move the caret. Held with Shift, each extends a selection. */
 const CARET_KEYS: ReadonlySet<string> = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown'])
-/** The keys a field holding a typed secret still takes: they submit it, move the focus or move the caret, and none edits it. */
-const NON_EDITING_KEYS: ReadonlySet<string> = new Set([...CARET_KEYS, 'Enter', 'Tab', 'Escape'])
+/** The keys a field holding a typed secret still takes, whatever the field: they move the caret or close what is open. */
+const NON_EDITING_KEYS: ReadonlySet<string> = new Set([...CARET_KEYS, 'Escape'])
+/**
+ * The keys a one-line field holding a typed secret also takes, as there they submit its form or move the focus. In a
+ * field of many lines or a rich one each can write a line break or a tab into the secret, which no mask then finds.
+ */
+const ONE_LINE_KEYS: ReadonlySet<string> = new Set(['Enter', 'Tab'])
 /** How long after one tap the next waits while a document holds a typed secret, so the two never make a double tap. */
 export const DOUBLE_TAP_GAP_MS = 500
 /**
@@ -163,7 +168,7 @@ export function movesText(action: TargetedAction | PageInput): string | null {
 }
 /**
  * Run on an element: the text an edit there would change, followed into open shadow roots and same-origin frames as
- * the focus is. Read only in Sotto, never said back.
+ * the focus is, and whether it is a one-line field, an `<input>`. Read only in Sotto, never said back.
  */
 const FIELD_TEXT = `function() {
   let element = this
@@ -173,8 +178,8 @@ const FIELD_TEXT = `function() {
     if (!inner || inner === element) break
     element = inner
   }
-  if (!element) return ''
-  return typeof element.value === 'string' ? element.value : element.isContentEditable ? element.innerText : ''
+  if (!element) return { text: '', singleLine: false }
+  return { text: typeof element.value === 'string' ? element.value : element.isContentEditable ? element.innerText : '', singleLine: element.localName === 'input' }
 }`
 /**
  * The text a document holds where it could be selected, copied or drawn: its words as written and as shown, what each
@@ -944,8 +949,8 @@ export abstract class PageAutomation {
     }
     // A field can keep less than was typed, cut at its maxlength or with no line break, and a form sends what it keeps,
     // which no mask of the whole secret finds, so what it holds now is masked too. One that cannot be read is left.
-    const kept = await this.fieldText(field).catch(() => '')
-    if (typeof kept === 'string' && kept !== '' && !kept.includes(value) && !this.typedSecrets.has(kept)) this.typedSecrets.set(kept, undefined)
+    const kept = (await this.field(field).catch(() => null))?.text ?? ''
+    if (kept !== '' && !kept.includes(value) && !this.typedSecrets.has(kept)) this.typedSecrets.set(kept, undefined)
   }
   /** Refuses a secret where something of the agent's could catch it: a document it ran script in, or a recording. */
   private secretMayGo(): void {
@@ -1021,36 +1026,46 @@ export abstract class PageAutomation {
   }
   /**
    * Refuses an edit to a field that holds a typed secret, for the page's life: typing into it, or any key but one that
-   * submits it or moves the focus or the caret. What an edit left could be part of the secret, which no mask finds, for
-   * a form to send in its address or a later snapshot to read. Typing a secretRef with `clear` replaces the whole of it,
-   * so that goes. `backendNodeId` is the field the edit reaches, or none for the focused one.
+   * moves the caret or closes what is open, and, in a one-line field, one that submits it or moves the focus. What an
+   * edit left could be part of the secret, which no mask finds, for a form to send in its address or a later snapshot
+   * to read. Typing a secretRef with `clear` replaces the whole of it, so that goes. `backendNodeId` is the field the edit
+   * reaches, or none for the focused one. On a page no secret was typed into, nothing is read for this.
    */
   private async noSecretEdit(action: TargetedAction | PageInput, backendNodeId?: number): Promise<void> {
-    const edits = action.type === 'key' ? !NON_EDITING_KEYS.has(action.key) : action.type === 'type' && !(action.secretRef && action.clear)
-    if (edits && await this.fieldHoldsSecret(backendNodeId)) fail('blocked', 'The field this reaches holds a secret you saved, so nothing is typed into it and no key edits it: what was left could be part of the secret, which no mask finds. Enter, Tab, Escape and the keys that move the caret still work. To type a secret into it again, use a secretRef with clear: true.')
+    if (!this.typedSecrets.size) return
+    if (action.type === 'key' ? NON_EDITING_KEYS.has(action.key) : action.type !== 'type' || (action.secretRef && action.clear)) return
+    const field = await this.field(backendNodeId)
+    if (!this.keepsSecret(field) || (action.type === 'key' && ONE_LINE_KEYS.has(action.key) && field?.singleLine === true)) return
+    fail('blocked', 'The field this reaches holds a secret you saved, so nothing is typed into it and no key edits it: what was left could be part of the secret, which no mask finds. Escape and the keys that move the caret still work, and so do Enter and Tab in a one-line field. To type a secret into it again, use a secretRef with clear: true.')
   }
   /**
    * Whether the field `backendNodeId` names, or the focused one, holds a secret typed into this page, in the text an edit
-   * there would change. The text is read here and never said back. One Sotto cannot check, as masking it failed, counts
-   * as holding one.
+   * there would change. The text is read here and never said back. One Sotto cannot read or check, as the page's answer
+   * was not one or masking it failed, counts as holding one.
    */
   private async fieldHoldsSecret(backendNodeId?: number): Promise<boolean> {
     if (!this.typedSecrets.size) return false
-    const text = await this.fieldText(backendNodeId)
-    return typeof text === 'string' && text !== '' && this.masked(text, '') !== text
+    return this.keepsSecret(await this.field(backendNodeId))
   }
-  /** The text of the field `backendNodeId` names, or of the focused one (`FIELD_TEXT`), as the page answers it. Read only in Sotto. */
-  private async fieldText(backendNodeId?: number): Promise<unknown> {
-    if (backendNodeId === undefined) {
-      const read = await this.send('Runtime.evaluate', { expression: `(${FIELD_TEXT}).call(document.activeElement || document.body)`, returnByValue: true }) as { result?: { value?: unknown } }
-      return read.result?.value
+  /** Whether a field as `field` read it holds a typed secret; one that could not be read (null) counts as holding one. */
+  private keepsSecret(field: { text: string } | null): boolean {
+    return field === null || (field.text !== '' && this.masked(field.text, '') !== field.text)
+  }
+  /**
+   * The field `backendNodeId` names, or the focused one (`FIELD_TEXT`): the text an edit there would change and whether
+   * it is one line, as the page answers them, or null when the page's answer is not that. Read only in Sotto.
+   */
+  private async field(backendNodeId?: number): Promise<{ text: string; singleLine: boolean } | null> {
+    const answer = (read: { result?: { value?: unknown } }): { text: string; singleLine: boolean } | null => {
+      const value = read.result?.value as { text?: unknown; singleLine?: unknown } | undefined
+      return value && typeof value.text === 'string' && typeof value.singleLine === 'boolean' ? { text: value.text, singleLine: value.singleLine } : null
     }
+    if (backendNodeId === undefined) return answer(await this.send('Runtime.evaluate', { expression: `(${FIELD_TEXT}).call(document.activeElement || document.body)`, returnByValue: true }) as { result?: { value?: unknown } })
     const resolved = await this.send('DOM.resolveNode', { backendNodeId, objectGroup: 'sotto-browser-field' }) as { object?: { objectId?: string } }
     const objectId = resolved.object?.objectId
-    return objectId ? await this.cleaningUp(async () => {
-      const read = await this.send('Runtime.callFunctionOn', { objectId, functionDeclaration: FIELD_TEXT, returnByValue: true }) as { result?: { value?: unknown } }
-      return read.result?.value
-    }, () => this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-field' })) : ''
+    if (!objectId) return null
+    return this.cleaningUp(async () => answer(await this.send('Runtime.callFunctionOn', { objectId, functionDeclaration: FIELD_TEXT, returnByValue: true }) as { result?: { value?: unknown } }),
+      () => this.send('Runtime.releaseObjectGroup', { objectGroup: 'sotto-browser-field' }))
   }
   /**
    * One picture of the page as Chromium drew it, within the snapshot deadline. `rect` is in the visual viewport's CSS
