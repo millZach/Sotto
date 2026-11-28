@@ -218,14 +218,25 @@ export function attributeOf(attributes: readonly string[] | undefined, name: str
   for (let index = 0; index + 1 < (attributes?.length ?? 0); index += 2) if (attributes![index]!.toLowerCase() === name) return attributes![index + 1]
   return undefined
 }
+/** The entities Chromium writes in markup, each for what it stands for (a no-break space for a space). */
+const ENTITIES: Readonly<Record<string, string>> = { nbsp: ' ', lt: '<', gt: '>', quot: '"', '#39': '\'', amp: '&' }
 /**
- * The words an element's markup holds, without its tags, scripts or styles. `mask` is given them once tags and entities
- * are gone and before runs of spaces close up, so a secret written with `&amp;` or two spaces is found.
+ * What lies between an element's words in its markup as Chromium writes it: a script, style or template whole, a
+ * comment, or a tag, whose values are always in double quotes and may hold a `>`, which does not end the tag.
+ */
+const MARKUP_BREAK = /<script\b[\s\S]*?<\/script>|<style\b[\s\S]*?<\/style>|<template\b[\s\S]*?<\/template>|<!--[\s\S]*?(?:-->|$)|<(?:[^>"]|"[^"]*")*>/giu
+/**
+ * The words an element's markup holds, without its tags, scripts or styles. `mask` is given the markup whole first, so a
+ * secret in a value goes before its tag does; then each run of words between tags once its entities are read, so one
+ * written with `&amp;` is found; then the words joined by spaces, before runs of them close up, so one with two spaces or
+ * a tag for a space is found. Words whose tags, or spaces, closed up would still spell a secret, as a PIN drawn a digit
+ * to a box does, are not given at all: each piece is a part of it, which no mask finds.
  */
 function markupText(html: string, mask: (words: string) => string = words => words): string {
-  return mask(html.replace(/<(script|style|template)\b[\s\S]*?<\/\1>/giu, ' ').replace(/<[^>]*>/gu, ' ')
-    .replace(/&nbsp;/gu, ' ').replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&quot;/gu, '"').replace(/&#39;/gu, '\'').replace(/&amp;/gu, '&'))
-    .replace(/\s+/gu, ' ').trim()
+  const pieces = mask(html).split(MARKUP_BREAK).map(piece => mask(piece.replace(/&(nbsp|lt|gt|quot|#39|amp);/gu, (_entity, name: string) => ENTITIES[name]!)))
+  const joined = pieces.join(''), closed = joined.replace(/\s+/gu, '')
+  if (mask(joined) !== joined || mask(closed) !== closed) return MASK
+  return mask(pieces.join(' ')).replace(/\s+/gu, ' ').trim()
 }
 
 /**

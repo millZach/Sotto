@@ -1041,6 +1041,31 @@ describe('page words are masked before they are cut or tidied (after the third r
     expect((await automation_.pointed({ backendNodeId: 31 }))?.element.text).not.toContain('corr')
   })
 
+  it('masks a picked element\'s markup before its tags go, and says none of its words when tags split the secret', async () => {
+    const markup: Record<number, [secret: string, html: string]> = {
+      // A PIN drawn a digit to a box, as a code is shown back.
+      40: ['4821', '<p>Your PIN <span class="box">4</span>\n  <span class="box">8</span><span class="box">2</span><span class="box">1</span></p>'],
+      41: ['hunt-er2x', '<p>hunt<b>-er</b>2x is saved</p>'],
+      // A value with a > in an attribute, which a tag's end was looked for at.
+      42: ['ab>cd-efgh', '<p title="ab>cd-efgh">Hi</p>'],
+      43: ['a&b>cd-efgh', '<p title="a&amp;b>cd-efgh">Hi</p><!-- note > a&amp;b>cd-efgh -->'],
+    }
+    for (const [node, [value, html]] of Object.entries(markup)) {
+      const fake = showing('', [], (method, params) => {
+        if (method === 'DOM.describeNode' && params.backendNodeId === Number(node)) return { node: { nodeType: 1, localName: 'p', attributes: [] } }
+        if (method === 'Accessibility.getPartialAXTree') return { nodes: [{ role: { value: 'paragraph' }, name: { value: '' } }] }
+        if (method === 'DOM.getBoxModel') return { model: { border: [0, 0, 10, 0, 10, 10, 0, 10] } }
+        if (method === 'DOM.getOuterHTML') return { outerHTML: html }
+        return undefined
+      })
+      const picked = await (await typedOn(fake, value)).pointed({ backendNodeId: Number(node) })
+      const text = picked?.element.text ?? ''
+      for (const piece of value.split(/[<>&-]/u).filter(part => part.length >= 2)) expect(text, `${node}: ${text}`).not.toContain(piece)
+      if (node === '40') expect(text).not.toMatch(/4\s*8\s*2\s*1/u)
+      if (node === '42' || node === '43') expect(text).toBe('Hi')
+    }
+  })
+
   it('masks the address a picture is taken at, which the user\'s feedback names to the agent', async () => {
     const automation_ = await typedOn(showing('Thanks'))
     // A form sent by GET carries the value in the next document's address, which a picture the user takes there names.
