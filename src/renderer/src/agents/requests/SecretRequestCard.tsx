@@ -15,9 +15,12 @@ export interface SecretRequestCardProps {
   readonly blocked: string | null
 }
 
-/** A sign-in page's site as the card names it: its host, with a port if it has one. */
+/**
+ * A sign-in page's site as the card names it: its host, with a port if it has one, and its scheme too when that is not
+ * https, since Sotto binds the value to the whole origin (ADR-0219, decision 7).
+ */
 function siteOf(url: string): string | null {
-  try { return new URL(url).host || null } catch { return null }
+  try { const parsed = new URL(url); return (parsed.protocol === 'https:' ? parsed.host : parsed.origin) || null } catch { return null }
 }
 
 /**

@@ -154,7 +154,7 @@ describe('what an agent knows of a download (ADR-0222)', () => {
     let answer: string | null = null
     const { downloads, owner, thread, root } = await fixture(() => answer)
     const inside = new FakeItem('data.csv'), outside = new FakeItem('private.pdf'), asking = new FakeItem('later.zip')
-    const first = downloads.start(inside, { ...owner, byAgent: true }), second = downloads.start(outside, owner)
+    const first = downloads.start(inside, { ...owner, byAgent: true }), second = downloads.start(outside, { ...owner, shared: true })
     downloads.start(asking, { ...owner, byAgent: true })
     answer = join(thread, 'inputs', 'data.csv')
     await inside.finish(); await downloads.act(owner.threadId, first.id, 'save-as')
@@ -236,12 +236,14 @@ describe('what the owner\'s review of downloads found (ADR-0222, November 27 ame
     expect(openPath).not.toHaveBeenCalled()
   })
 
-  it('tells the agent only of downloads it started or that came from a page shared with it', async () => {
+  it('tells the agent only of downloads it started or that came from a page shared with it then and now', async () => {
     const { downloads, owner, thread } = await fixture()
     downloads.start(new FakeItem('by-agent.zip'), { ...owner, pageId: 'private-page', byAgent: true })
-    downloads.start(new FakeItem('shared.pdf'), { ...owner, pageId: 'shared-page' })
-    downloads.start(new FakeItem('private.pdf'), { ...owner, pageId: 'private-page' })
-    downloads.start(new FakeItem('no-page.pdf'), { ...owner, pageId: null })
+    downloads.start(new FakeItem('shared.pdf'), { ...owner, pageId: 'shared-page', shared: true })
+    // Started while its page was private, and the page shared since: still the user's.
+    downloads.start(new FakeItem('before-sharing.pdf'), { ...owner, pageId: 'shared-page' })
+    downloads.start(new FakeItem('private.pdf'), { ...owner, pageId: 'private-page', shared: true })
+    downloads.start(new FakeItem('no-page.pdf'), { ...owner, pageId: null, shared: true })
     const view = downloads.agentView(owner.threadId, thread, pageId => pageId === 'shared-page')
     expect(view.map(download => download.file).sort()).toEqual(['by-agent.zip', 'shared.pdf'])
   })

@@ -88,6 +88,10 @@ describe('a host page\'s document that holds a typed secret (ADR-0220, decision 
     event('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/thanks' } })
     await new Promise(resolve => setTimeout(resolve, 20))
     expect(committed).toBe(1)
+    // The back-forward cache gives back the document that was, with its script and its fields.
+    event('Page.frameNavigated', { frame: { id: 'main', url: 'https://shop.example/login' }, type: 'BackForwardCacheRestore' })
+    await new Promise(resolve => setTimeout(resolve, 20))
+    expect(committed).toBe(1)
     pipe.close()
   })
 })

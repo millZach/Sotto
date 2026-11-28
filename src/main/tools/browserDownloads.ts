@@ -28,8 +28,11 @@ export interface BrowserDownloadsDependencies {
   openPath(path: string): Promise<string>
   showItemInFolder(path: string): void
 }
-/** Where a download came from: its page's thread and working copy, the page, its host, and whether an agent's action started it. */
-export interface DownloadOwner { readonly threadId: string; readonly workspaceId: string; readonly pageId: string | null; readonly host: string; readonly byAgent: boolean }
+/**
+ * Where a download came from: its page's thread and working copy, the page, its host, whether an agent's action started
+ * it, and whether the page was shared with the agent when it started.
+ */
+export interface DownloadOwner { readonly threadId: string; readonly workspaceId: string; readonly pageId: string | null; readonly host: string; readonly byAgent: boolean; readonly shared?: boolean }
 interface DownloadRecord {
   view: BrowserDownload
   readonly item: DownloadItemLike
@@ -41,6 +44,8 @@ interface DownloadRecord {
   reserved: string | null
   /** Chromium finished writing the pending file. */
   finished: boolean
+  /** The page was shared with the agent when the download started. */
+  readonly sharedAtStart: boolean
 }
 
 /** Files that run a program or script when opened: Sotto only shows them in their folder (ADR-0222). */
@@ -117,7 +122,7 @@ export class BrowserDownloads {
     const pending = join(folder, file)
     item.setSavePath(pending)
     item.pause()
-    const record: DownloadRecord = { item, pending, chosen: null, replaces: false, reserved: null, finished: false, view: {
+    const record: DownloadRecord = { item, pending, chosen: null, replaces: false, reserved: null, finished: false, sharedAtStart: owner.shared === true, view: {
       id, threadId: owner.threadId, workspaceId: owner.workspaceId, pageId: owner.pageId, file, host: owner.host.slice(0, 300),
       state: 'asking', receivedBytes: 0, totalBytes: Math.max(0, item.getTotalBytes() || 0), byAgent: owner.byAgent, folder: null, opens: opensSafely(file), startedAt: Date.now(),
     } }
@@ -134,11 +139,12 @@ export class BrowserDownloads {
   }
   /**
    * What an agent may know of its thread's downloads: names and states, and a path only for one the user saved in the
-   * thread's folder. Only a download its own action started, or one from a page `shared` says is shared with it now,
-   * is listed: a page the user keeps private keeps its downloads too.
+   * thread's folder. Only a download its own action started, or one from a page that was shared with it when the
+   * download started and that `shared` says is shared with it still, is listed: a page the user keeps private, or kept
+   * private then, keeps its downloads too.
    */
   agentView(threadId: string, workingDirectory: string, shared: (pageId: string) => boolean): { file: string; state: BrowserDownload['state']; byAgent: boolean; path?: string }[] {
-    return this.list(threadId).filter(download => download.byAgent || (download.pageId !== null && shared(download.pageId))).map(download => {
+    return this.list(threadId).filter(download => download.byAgent || (this.records.get(download.id)!.sharedAtStart && download.pageId !== null && shared(download.pageId))).map(download => {
       const record = this.records.get(download.id)!
       const inside = download.state === 'saved' && record.chosen ? relative(workingDirectory, record.chosen) : null
       return { file: download.file, state: download.state, byAgent: download.byAgent, ...(inside && !inside.startsWith('..') && !isAbsolute(inside) ? { path: inside.replace(/\\/gu, '/') } : {}) }

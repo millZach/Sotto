@@ -473,8 +473,10 @@ export class HostBrowserPage {
       if (!frame) return
       if (frame.parentId) { this.automation.addressChanged(`${frame.url ?? ''}${frame.urlFragment ?? ''}`); this.blankUnsafeFrame(frame.id, frame.url ?? ''); return }
       this.mainFrame = frame.id ?? this.mainFrame
-      // A new document committed, shared or not: one that held a typed secret, or the agent's script, is gone (ADR-0220, decision 6).
-      this.automation.documentCommitted(`${frame.url ?? ''}${frame.urlFragment ?? ''}`)
+      // A new document committed, shared or not: one that held a typed secret, or the agent's script, is gone (ADR-0220,
+      // decision 6). One the back-forward cache gives back is the document that was, with its script and its fields.
+      if (params.type === 'BackForwardCacheRestore') this.automation.addressChanged(`${frame.url ?? ''}${frame.urlFragment ?? ''}`)
+      else this.automation.documentCommitted(`${frame.url ?? ''}${frame.urlFragment ?? ''}`)
       const url = safeBrowserUrl(`${frame.url ?? ''}${frame.urlFragment ?? ''}`)
       if (url && url !== this.current.url) this.update({ url })
       this.refresh()

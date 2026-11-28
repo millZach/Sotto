@@ -404,8 +404,9 @@ export abstract class PageAutomation {
     } else if (method === 'Page.frameNavigated') {
       const frame = params.frame as { parentId?: unknown; url?: unknown; urlFragment?: unknown } | undefined
       const url = `${typeof frame?.url === 'string' ? frame.url : ''}${typeof frame?.urlFragment === 'string' ? frame.urlFragment : ''}`
-      // A frame's address is history the page keeps too; only the main frame's commit is a new document.
-      if (frame?.parentId) this.addressChanged(url)
+      // A frame's address is history the page keeps too; only the main frame's commit is a new document. One the
+      // back-forward cache gives back is the document that was, with its script and its fields.
+      if (frame?.parentId || params.type === 'BackForwardCacheRestore') this.addressChanged(url)
       else this.documentCommitted(url)
     } else if (method === 'Page.navigatedWithinDocument' && typeof params.url === 'string') this.addressChanged(params.url)
     else if (method === 'Page.domContentEventFired') this.loadedAt.domContent = Date.now()
@@ -447,7 +448,9 @@ export abstract class PageAutomation {
     let result = text
     for (const secret of this.typedSecrets) {
       const encoded = encodeURIComponent(secret)
-      for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1), encoded, encoded.replace(/%20/gu, '+')])) if (form.length >= 3) result = result.split(form).join('••••••••')
+      // A form sent by GET also escapes ! ' ( ) and ~, which encodeURIComponent leaves.
+      const formEncoded = encoded.replace(/[!'()~]/gu, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`).replace(/%20/gu, '+')
+      for (const form of new Set([secret, JSON.stringify(secret).slice(1, -1), encoded, encoded.replace(/%20/gu, '+'), formEncoded])) if (form.length >= 3) result = result.split(form).join('••••••••')
     }
     return result
   }
@@ -662,7 +665,8 @@ export abstract class PageAutomation {
    * the focused one. The field was checked when the action was asked for, and again here: right before the value goes,
    * the page's focused element must be that password field and its document at `origin`, the site the value is for, or
    * nothing is typed. `take` gives the value only then, so a refusal before it spends nothing (the reference stays for
-   * another try). Nothing is typed into a document the agent ran its own script in, or while the page records. `clear`
+   * another try), and the page is looked at once more after it, since the value comes from the engine and the page may
+   * have moved meanwhile. Nothing is typed into a document the agent ran its own script in, or while the page records. `clear`
    * replaces what the field held. The value is remembered only to mask it in what the page says back, and forgotten
    * with the page.
    */
@@ -686,6 +690,13 @@ export abstract class PageAutomation {
     this.secretMayGo()
     guard()
     const value = await take() ?? fail('blocked', 'This secretRef is unknown, used or expired. Ask for it again with request_secret.')
+    // The value crossed to the engine and back: the page had that long to move the focus or load another site.
+    const spent = 'Nothing was typed, and this secretRef is used. Ask for it again with request_secret.'
+    guard()
+    this.secretMayGo()
+    if (await this.focusedPassword(field).catch(() => null) !== field) return fail('blocked', `The password field lost focus. ${spent}`)
+    if (origin !== undefined && await this.documentOrigin() !== origin) return fail('blocked', `This page is no longer on ${origin}, the site this secret is for. ${spent}`)
+    guard()
     this.typedSecrets.add(value)
     this.secretInDocument = true
     await this.send('Input.insertText', { text: value })
@@ -730,7 +741,11 @@ export abstract class PageAutomation {
   }
   /** The page's address changed, within its document or with a new one: an address that holds a typed secret is kept in its history. */
   addressChanged(url: string): void {
-    if (this.typedSecrets.size && this.masked(url) !== url) this.secretInAddress = true
+    if (!this.typedSecrets.size) return
+    // Escaped however the page or a form chose, the address holds the value once it is decoded.
+    let decoded = url
+    try { decoded = decodeURIComponent(url.replace(/\+/gu, ' ')) } catch { /* An address that does not decode is matched as it is. */ }
+    if (this.masked(url) !== url || this.masked(decoded) !== decoded) this.secretInAddress = true
   }
   /** Whether the document loaded now holds a secret typed from a secret request, so no picture of it goes to the agent. */
   holdsSecret(): boolean { return this.secretInDocument }

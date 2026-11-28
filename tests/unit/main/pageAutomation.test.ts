@@ -447,6 +447,48 @@ describe('where a secret is not typed (the review of the browser-parity branch)'
     expect(own.calls('Input.insertText')).toEqual([{ text: 'hunter2-secret' }])
   })
 
+  it('looks again once the value has come from the engine, and types nothing into a page that changed meanwhile', async () => {
+    const focus = { node: 7 }, moved = at('https://github.com', focus)
+    // The page moves the focus while the value is on its way.
+    await expect(automation(moved).typeSecret(async () => { focus.node = 9; return 'hunter2-secret' }, go, { selector: '#password' }, false, 'https://github.com'))
+      .rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('lost focus') })
+    expect(moved.calls('Input.insertText')).toEqual([])
+    let origin = 'https://github.com'
+    const away = page(), base = away.handle
+    away.handle = (method, params) => method === 'Runtime.evaluate' && params.expression === 'location.origin' ? { result: { type: 'string', value: origin } } : base(method, params)
+    await expect(automation(away).typeSecret(async () => { origin = 'https://attacker.example'; return 'hunter2-secret' }, go, { selector: '#password' }, false, 'https://github.com'))
+      .rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('is used') })
+    expect(away.calls('Input.insertText')).toEqual([])
+  })
+
+  it('finds a secret in an address a form sent, whichever characters the form encoded', async () => {
+    // A form's encoding also escapes ! ' ( ) and ~, which encodeURIComponent leaves.
+    const secret = 'pa!ss(1)~\'x y'
+    const fake = page(), automation_ = automation(fake)
+    await automation_.typeSecret(given(secret), go, { selector: '#password' })
+    const address = `https://shop.example/session?${new URLSearchParams({ password: secret }).toString()}`
+    expect(automation_.masked(address)).toBe('https://shop.example/session?password=••••••••')
+    fake.emit('Page.frameNavigated', { frame: { id: 'main', url: address } })
+    await expect(automation_.evaluate('location.search')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('address') })
+    // An address escaped another way, with lower-case hex, is found once it is decoded.
+    const other = page(), others = automation(other)
+    await others.typeSecret(given(secret), go, { selector: '#password' })
+    other.emit('Page.frameNavigated', { frame: { id: 'main', url: `https://shop.example/session?p=${encodeURIComponent(secret).replace(/%[0-9A-F]{2}/gu, hex => hex.toLowerCase())}` } })
+    await expect(others.evaluate('location.search')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('address') })
+  })
+
+  it('keeps a document the back-forward cache restores as the one it was, script and secret alike', async () => {
+    const fake = at('https://github.com'), automation_ = automation(fake), take = counted()
+    fake.handle = ((base: Handler) => (method: string, params: Record<string, unknown>) => method === 'Runtime.evaluate' && params.userGesture ? { result: { type: 'string', value: 'ok' } } : base(method, params))(fake.handle)
+    await automation_.evaluate('addEventListener("keydown", () => undefined)')
+    fake.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://github.com/login' }, type: 'BackForwardCacheRestore' })
+    await expect(automation_.typeSecret(take.fn, go, { selector: '#password' }, false, 'https://github.com')).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('ran a script') })
+    const holding = page(), holder = automation(holding)
+    await holder.typeSecret(given('hunter2-secret'), go, { selector: '#password' })
+    holding.emit('Page.frameNavigated', { frame: { id: 'main', url: 'https://github.com/login' }, type: 'BackForwardCacheRestore' })
+    expect(holder.holdsSecret()).toBe(true)
+  })
+
   it('types nothing while the page records, and starts no recording on a page that holds a secret', async () => {
     const recording = page(), recorder = automation(recording), take = counted()
     await recorder.startScreencast(() => undefined)

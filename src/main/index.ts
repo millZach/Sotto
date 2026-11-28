@@ -977,7 +977,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     notify: alert => { void desktopNotifier?.notify(alert) },
     publishRecoveryNotice: notice => recoveryNotices.publish(notice),
     // A thread that closed or went takes the downloads still asking in it with it (ADR-0222).
-    onFilesBindingsDelta: delta => { filesBindingsMirror.apply(delta); browserService?.threadsChanged() },
+    onFilesBindingsDelta: delta => { const ended = filesBindingsMirror.apply(delta); if (ended.length) browserService?.threadsEnded(ended) },
     relaunchApp: () => { app.relaunch(); app.quit() },
     downloadsFolder: () => e2eConfiguration !== null ? join(userDataPath, 'downloads') : app.getPath('downloads'),
     log: code => logOperational(code),
@@ -1979,7 +1979,6 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
         openExternal: url => shell.openExternal(url),
         byDefault: () => workingCopySettings.browserWithoutAsking,
-        threadClosed: threadId => filesBindingsMirror.threadClosed(threadId),
         pointAtSomething: owlFeatures['quiet-browser'],
         // A secret request's reference is typed from the engine that holds its value (ADR-0219).
         ...(owlFeatures['secret-requests'] && engine.takeSecret ? { secret: (threadId: string, ref: string) => engine.takeSecret!(threadId, ref) } : {}),
@@ -2289,11 +2288,14 @@ protocol.registerSchemesAsPrivileged([VISUAL_SCHEME_PRIVILEGES, THREAD_MEDIA_SCH
 enableWasmThreadSupport(app.commandLine)
 disableDnsPrefetching(app.commandLine)
 configurePasswordStore(platform, app.commandLine, process.env.XDG_CURRENT_DESKTOP)
-// Hidden browser captures need a native surface on Windows (ADR-0020).
 // Preserve any caller-supplied feature switches; background throttling remains per-view.
-if (process.platform === 'win32') {
+{
   const disabled = new Set(app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean))
-  disabled.add('CalculateNativeWinOcclusion')
+  // Hidden browser captures need a native surface on Windows (ADR-0020).
+  if (process.platform === 'win32') disabled.add('CalculateNativeWinOcclusion')
+  // A page the back-forward cache gives back keeps its script and its fields, so going back would look like a new
+  // document to a typed secret's rules (ADR-0222, November 27 amendment). Sotto's browser keeps no such cache.
+  disabled.add('BackForwardCache')
   app.commandLine.appendSwitch('disable-features', [...disabled].join(','))
 }
 

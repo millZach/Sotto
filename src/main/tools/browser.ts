@@ -62,8 +62,6 @@ export interface BrowserDependencies {
   readonly browserFiles?: BrowserFiles
   /** The user's browser profiles (ADR-0221), with the full catalog on. */
   readonly profiles?: BrowserProfiles
-  /** Whether a thread Sotto lists is closed, archived or settled; its downloads still asking are cancelled (ADR-0222). */
-  threadClosed?(threadId: string): boolean
   /** Other browsers' profiles to copy sign-ins from, and the copy itself; tests give their own. */
   readonly browserImport?: { sources(): Promise<FoundImportSource[]>; copy(folder: string, target: CookieTarget): Promise<{ imported: number; skipped: number }> }
   /** Sotto's own folder where another browser's cookie file is copied to be read, and deleted after (ADR-0221). */
@@ -170,7 +168,7 @@ export class BrowserService extends BrowserTasks<PageRecord> {
         let host = ''
         try { const from = new URL(item.getURL()); host = ['http:', 'https:'].includes(from.protocol) ? from.host : new URL(record.page.url).host } catch { /* No host to show. */ }
         const { threadId, workspaceId } = record.page.workspace
-        this.downloadList.start(item, { threadId, workspaceId, pageId: record.page.id, host, byAgent: this.agentCaused(record.page.id) })
+        this.downloadList.start(item, { threadId, workspaceId, pageId: record.page.id, host, byAgent: this.agentCaused(record.page.id), shared: this.sharedNow(record.page.id, threadId) })
         return
       }
       event.preventDefault()
@@ -556,15 +554,19 @@ export class BrowserService extends BrowserTasks<PageRecord> {
       await this.destroy(record)
       this.dependencies.emit({ type: 'closed', threadId, workspaceId, pageId: record.page.id })
     }
-    await this.forgetProfile(request.id)
+    try { await this.forgetProfile(request.id) } catch (error) { if (error instanceof ProfileProblem) return fail('blocked', error.message); throw error }
     return { profiles: await store.list(), sources: await this.importSources() }
   }) }
+  /**
+   * Takes the profile off the list, then deletes its cookies and site data. In that order, a list that fails to change
+   * leaves the sign-ins as they were; data left behind is swept at the next start, as no profile names it.
+   */
   private async forgetProfile(id: string): Promise<void> {
+    await this.profileStore().remove(id)
     const stored = this.sessions.get(`profile:${id}`) ?? session.fromPartition(profilePartition(id))
     await stored.clearData().catch(() => undefined)
     await stored.clearStorageData().catch(() => undefined)
     this.sessions.delete(`profile:${id}`)
-    await this.profileStore().remove(id)
   }
   /**
    * The user's zoom (ADR-0222): the pane's control or Ctrl with =, - or 0. Chromium keeps zoom per site in a session, as
@@ -613,12 +615,13 @@ export class BrowserService extends BrowserTasks<PageRecord> {
     return owner ? this.downloadList.agentView(threadId, owner.workingDirectory, pageId => this.sharedNow(pageId, threadId)) : []
   }
   /**
-   * The thread list changed: a download still asking in a thread that closed or was deleted is cancelled, since nobody
-   * is left to answer it (ADR-0222, November 27 amendment).
+   * Threads closed (archived or settled) or deleted just now: a download still asking in one is cancelled, since nobody
+   * is left to answer it (ADR-0222, November 27 amendment). One started later in a thread the user opened again waits.
    */
-  threadsChanged(): void {
+  threadsEnded(threadIds: readonly string[]): void {
     if (this.disposed) return
-    this.downloadList?.cancelThreads(threadId => !this.dependencies.files.hasThread(threadId) || this.dependencies.threadClosed?.(threadId) === true)
+    const ended = new Set(threadIds)
+    this.downloadList?.cancelThreads(threadId => ended.has(threadId))
   }
   protected actionNote(record: PageRecord, since: number): string | undefined {
     const started = this.downloadList?.list(record.page.workspace.threadId).filter(download => download.pageId === record.page.id && download.startedAt >= since) ?? []

@@ -101,6 +101,10 @@ describe('a secret request card', () => {
     card(secretRequest({ url: 'https://dashboard.stripe.com/test/apikeys' }))
     expect(screen.getByText(/types it only on dashboard\.stripe\.com\. The agent and its provider never see it\./u)).toBeInTheDocument()
     cleanup()
+    // A site that is not https is named with its scheme, as Sotto binds the value to it.
+    card(secretRequest({ url: 'http://127.0.0.1:5173/login' }))
+    expect(screen.getByText(/types it only on http:\/\/127\.0\.0\.1:5173\./u)).toBeInTheDocument()
+    cleanup()
     card()
     expect(screen.getByText(/asks you before typing it on any page\. The agent and its provider never see it\./u)).toBeInTheDocument()
     cleanup()

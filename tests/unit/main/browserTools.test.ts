@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 import { EventEmitter } from 'node:events'
 import { BaseWindow, session, WebContentsView, type BrowserWindow } from 'electron'
 import { BrowserService, type BrowserDependencies } from '../../../src/main/tools/browser'
-import { BrowserProfiles } from '../../../src/main/tools/browserProfiles'
+import { BrowserProfiles, ProfileProblem } from '../../../src/main/tools/browserProfiles'
 import { BrowserFiles } from '../../../src/main/tools/browserFiles'
 import { AGENT_DOWNLOAD_MS } from '../../../src/main/tools/browserTasks'
 import { BROWSER_COMMAND_DEADLINE_MS } from '../../../src/main/tools/browserAutomation'
@@ -1193,6 +1193,19 @@ describe('browser profiles in the service (ADR-0221)', () => {
     expect(await readFile(file, 'utf8')).toContain('"broken"')
   })
 
+  it('takes a profile off its list before deleting its data, so a list that fails to change keeps the sign-ins', async () => {
+    const work = { id: '6f1c1d0e-6a2b-4d39-9c43-1b0b9e1f4a11', name: 'Work' }
+    // The list reads, and fails as it is written: another Sotto changed it meanwhile.
+    const profiles = { list: async () => [work], find: async (id: string) => id === work.id ? work : undefined, writable: async () => undefined,
+      remove: async () => { throw new ProfileProblem('Sotto could not read its list of browser profiles, so it changes nothing there and every profile keeps its sign-ins. Restart Sotto to try again.') },
+      add: vi.fn(), sweepPartitions: vi.fn() } as unknown as BrowserProfiles
+    const { service, target } = await browserFixture(false, new Set(), () => false, true, { profiles, browserImport: { sources: async () => [], copy: vi.fn() } })
+    unwrap(await service.create({ threadId: target.threadId, workspaceId: target.workspaceId, url: 'https://mail.example.com/', profileId: work.id }))
+    const used = vi.mocked(WebContentsView).mock.calls.at(-1)![0]!.webPreferences!.session as unknown as { clearData: ReturnType<typeof vi.fn> }
+    expect(await service.removeProfile({ id: work.id })).toMatchObject({ ok: false, error: { message: expect.stringContaining('keeps its sign-ins') } })
+    expect(used.clearData).not.toHaveBeenCalled()
+  })
+
   it('closes a removed profile\'s pages and deletes its data', async () => {
     const { service, target, emit } = await withProfiles()
     const { profile } = unwrap(await service.addProfile({ name: 'Work' }))
@@ -1512,31 +1525,28 @@ describe('downloads in the service (ADR-0222)', () => {
 
   it('tells the agent nothing of a download from a page the user keeps private', async () => {
     const { service, target, started } = await withDownloads()
-    // The user's own page, never shared: its download is the user's business.
+    // The user's own page, never shared: its download is the user's business, and stays so once the page is shared.
     started('mine.pdf')
     expect(await service.agentDownloads(target.threadId)).toEqual([])
     unwrap(await service.share({ ...target, enabled: true }))
     started('shared.pdf')
-    expect(await service.agentDownloads(target.threadId)).toEqual([{ file: 'shared.pdf', state: 'asking', byAgent: false }, { file: 'mine.pdf', state: 'asking', byAgent: false }])
+    expect(await service.agentDownloads(target.threadId)).toEqual([{ file: 'shared.pdf', state: 'asking', byAgent: false }])
     // Stop sharing takes the page's downloads out of what the agent is told.
     unwrap(await service.share({ ...target, enabled: false }))
     expect(await service.agentDownloads(target.threadId)).toEqual([])
   })
 
-  it('cancels a download still asking once its thread has closed or gone', async () => {
-    const gone = new Set<string>(), closed = new Set<string>()
-    const { service, target, started } = await withDownloads(() => false, gone, { threadClosed: threadId => closed.has(threadId) })
+  it('cancels a download still asking when its thread closes or goes, and only then', async () => {
+    const { service, target, started } = await withDownloads()
     const { item } = started('report.pdf')
-    service.threadsChanged()
+    service.threadsEnded(['another-thread'])
     expect(item.cancelled).toBe(false)
-    closed.add(target.threadId)
-    service.threadsChanged()
+    service.threadsEnded([target.threadId])
     expect(item.cancelled).toBe(true)
-    const again = await withDownloads(() => false, gone)
-    const second = again.started('notes.txt')
-    gone.add(again.target.threadId)
-    again.service.threadsChanged()
-    expect(second.item.cancelled).toBe(true)
+    // One started after its thread closed, a settled thread the user opened again, waits for the next time it ends.
+    const later = started('later.pdf')
+    service.threadsEnded(['another-thread'])
+    expect(later.item.cancelled).toBe(false)
   })
 
   it('blocks a download with the full catalog on but no downloads, as before', async () => {

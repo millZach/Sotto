@@ -42,7 +42,12 @@ export class FilesBindingsMirror {
   private readonly terminalHosts = new Map<string, SshTerminalHost>()
   private readonly closedThreads = new Set<string>()
 
-  apply(delta: FilesBindingsDelta): void {
+  /**
+   * Takes in what changed, and answers the local threads that ended with it: those that closed, archived or settled,
+   * and those that went. A thread that was closed already, or a whole list sent again, ends none.
+   */
+  apply(delta: FilesBindingsDelta): string[] {
+    const titledBefore = new Set(this.threadTitles.keys()), closedBefore = new Set(this.closedThreads)
     if (delta.reset) {
       this.bindings.clear()
       this.projectFolders.clear()
@@ -87,6 +92,10 @@ export class FilesBindingsMirror {
         else this.terminalHosts.set(id, value)
       }
     }
+    // A thread goes with its title, which every local thread has; its folder can come and go while it lives.
+    const gone = [...titledBefore].filter(id => !this.threadTitles.has(id))
+    const closed = [...this.closedThreads].filter(id => !closedBefore.has(id) && this.threadTitles.has(id))
+    return [...gone, ...closed]
   }
 
   resolveBinding(threadId: string): FilesBinding | null {
@@ -107,11 +116,6 @@ export class FilesBindingsMirror {
 
   terminalHost(hostId: string): SshTerminalHost | undefined {
     return this.terminalHosts.get(hostId)
-  }
-
-  /** Whether a local thread is archived or settled, as the engine last said. */
-  threadClosed(threadId: string): boolean {
-    return this.closedThreads.has(threadId)
   }
 }
 

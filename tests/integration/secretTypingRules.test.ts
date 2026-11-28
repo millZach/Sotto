@@ -53,7 +53,7 @@ vi.mock('electron', async () => {
   class Contents extends EventEmitter {
     url = ''; destroyed = false; zoom = 1
     navigationHistory = { canGoBack: () => false, canGoForward: () => false }
-    debugger: EventEmitter & Record<string, unknown>
+    debugger: InstanceType<typeof EventEmitter> & { isAttached(): boolean; attach: ReturnType<typeof vi.fn>; detach: ReturnType<typeof vi.fn>; sendCommand: ReturnType<typeof vi.fn> }
     capturePage = vi.fn(async () => ({ isEmpty: () => false, getSize: () => ({ width: 1280, height: 800 }), toDataURL: () => 'data:image/png;base64,YQ==', resize: () => ({ toJPEG: () => Buffer.from('thumbnail') }) }))
     getBackgroundThrottling = vi.fn(() => true)
     setBackgroundThrottling = vi.fn()
