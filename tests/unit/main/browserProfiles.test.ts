@@ -50,6 +50,8 @@ describe('browser profiles (ADR-0221)', () => {
       JSON.stringify({ version: 1, profiles: [work, { id: 'not-an-id', name: '' }] }),
       // A newer Sotto's file: this one does not know what else it holds.
       JSON.stringify({ version: 2, profiles: [work], more: true }),
+      // A newer Sotto's profile, which has a field this one does not know: it still opens, by its ID and name.
+      JSON.stringify({ version: 1, profiles: [{ ...work, color: 'blue' }] }),
     ]
     for (const text of broken) {
       await writeFile(file, text)

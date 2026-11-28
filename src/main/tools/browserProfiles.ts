@@ -5,6 +5,8 @@ import { z } from 'zod'
 import { BROWSER_PROFILES_MAX, browserProfileSchema, type BrowserProfile } from '../../shared/browser'
 
 const profilesFileSchema = z.object({ version: z.literal(1), profiles: z.array(browserProfileSchema).max(BROWSER_PROFILES_MAX) }).strict()
+/** A profile as a file this Sotto cannot take whole names it: its ID and name, and whatever a newer Sotto added left out. */
+const namedProfileSchema = z.object(browserProfileSchema.shape)
 const PARTITION_PREFIX = 'sotto-profile-'
 
 /** The persistent session a profile's pages share; Electron keeps it under `Partitions/` in Sotto's data folder. */
@@ -25,7 +27,7 @@ interface ProfilesRead { readonly profiles: BrowserProfile[]; readonly trusted: 
 function readable(value: unknown): BrowserProfile[] {
   const listed = (value as { profiles?: unknown } | null)?.profiles
   if (!Array.isArray(listed)) return []
-  return listed.flatMap(entry => { const parsed = browserProfileSchema.safeParse(entry); return parsed.success ? [parsed.data] : [] }).slice(0, BROWSER_PROFILES_MAX)
+  return listed.flatMap(entry => { const parsed = namedProfileSchema.safeParse(entry); return parsed.success ? [parsed.data] : [] }).slice(0, BROWSER_PROFILES_MAX)
 }
 
 /**
