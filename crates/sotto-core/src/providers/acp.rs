@@ -217,9 +217,18 @@ impl AcpProcess {
             )
         })?;
         let mut cmd = Command::new(&launch.executable);
-        // Node starts every Grok thread's process on `grokEnvironment`, a test's fake included.
-        if config.flavor == AcpFlavor::Grok {
-            super::grok_side::session_environment(&mut cmd);
+        // Node starts every Grok, Cursor and Antigravity process on its allow-listed environment, a test's fake included.
+        match config.flavor {
+            AcpFlavor::Grok => super::grok_side::session_environment(&mut cmd),
+            AcpFlavor::Cursor => {
+                let cfg_dir = config.data_directory.join("cursor").join("config");
+                let _ = fs::create_dir_all(&cfg_dir);
+                super::acp_side::cursor_environment(&mut cmd, &cfg_dir);
+            }
+            AcpFlavor::Antigravity => {
+                let _ = super::acp_side::antigravity_environment(&mut cmd, &config.data_directory);
+            }
+            AcpFlavor::Devin | AcpFlavor::Hermes => {}
         }
         cmd.args(&launch.prefix_args);
         launch.apply_tokio(&mut cmd);
@@ -230,45 +239,10 @@ impl AcpProcess {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        if config.use_cli_lookup {
-            match config.flavor {
-                AcpFlavor::Cursor => {
-                    let cfg_dir = config.data_directory.join("cursor").join("config");
-                    let _ = fs::create_dir_all(&cfg_dir);
-                    cmd.env("CURSOR_CONFIG_DIR", cfg_dir);
-                    cmd.env("CURSOR_INVOKED_AS", "agent");
-                    cmd.env("NO_OPEN_BROWSER", "1");
-                }
-                AcpFlavor::Hermes => {
-                    let hermes_home = config.data_directory.join("hermes");
-                    let _ = fs::create_dir_all(&hermes_home);
-                    cmd.env("HERMES_HOME", hermes_home);
-                }
-                AcpFlavor::Antigravity => {
-                    let agy_root = config.data_directory.join("antigravity");
-                    let gemini_dir = agy_root.join("gemini");
-                    let tmp_dir = agy_root.join("tmp");
-                    let _ = fs::create_dir_all(&gemini_dir);
-                    let _ = fs::create_dir_all(&tmp_dir);
-                    cmd.env("GEMINI_HOME", &gemini_dir);
-                    cmd.env("AGY_ACP_FORCE_FILE_STORAGE", "1");
-                    cmd.env("AGY_CLI_DISABLE_AUTO_UPDATE", "1");
-                    cmd.env("PYTHONUNBUFFERED", "1");
-                    if std::env::var("SSH_CONNECTION").is_err() {
-                        cmd.env("SSH_CONNECTION", "127.0.0.1 0 127.0.0.1 0");
-                    }
-                    #[cfg(windows)]
-                    {
-                        cmd.env("TEMP", &tmp_dir);
-                        cmd.env("TMP", &tmp_dir);
-                    }
-                    #[cfg(not(windows))]
-                    {
-                        cmd.env("TMPDIR", &tmp_dir);
-                    }
-                }
-                AcpFlavor::Grok | AcpFlavor::Devin => {}
-            }
+        if config.use_cli_lookup && config.flavor == AcpFlavor::Hermes {
+            let hermes_home = config.data_directory.join("hermes");
+            let _ = fs::create_dir_all(&hermes_home);
+            cmd.env("HERMES_HOME", hermes_home);
         }
         #[cfg(windows)]
         {
@@ -1372,31 +1346,78 @@ impl ProviderAdapter for AcpAdapter {
         })
     }
 
-    /// Node's Grok `writeShortText`: a side call on this thread's model in its folder, as its own short-lived Grok
-    /// process on a throwaway home, so the thread's session is never loaded for it. Nothing is written while Grok is not
-    /// connected, for a personal thread or one with no confirmed Grok session, or by the other clients this adapter
-    /// drives: Node's Devin and Hermes write nothing, and Cursor's and Antigravity's side calls are not ported yet.
+    /// Node's Grok, Cursor and Antigravity `writeShortText`: a short-lived side call on this thread's model in its folder,
+    /// with tools disabled and isolated from the thread's session. Nothing is written while disconnected, for a personal
+    /// thread or one with no confirmed provider session, or by Devin and Hermes (which write nothing in Node).
     fn write_short_text(&self, thread_id: String, prompt: crate::side_writing::ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
         Box::pin(async move {
-            if self.config.flavor != AcpFlavor::Grok || self.shared.status.lock().unwrap().connection != "connected" {
+            let flavor = self.config.flavor;
+            if !matches!(flavor, AcpFlavor::Grok | AcpFlavor::Cursor | AcpFlavor::Antigravity)
+                || self.shared.status.lock().unwrap().connection != "connected"
+            {
                 return Ok(None);
             }
-            // A record is kept only for a thread with a Grok session, as Node asks for `grokSessionId`.
             let Some(record) = self.shared.records.lock().unwrap().get(&thread_id).cloned() else {
                 return Ok(None);
             };
             if record.extra.get("kind").and_then(Value::as_str) == Some("personal") {
                 return Ok(None);
             }
-            // Node's `nativeModelId ?? modelId`.
-            let native_model = record.extra.get("nativeModelId").and_then(Value::as_str).map(String::from);
-            let Some(model) = native_model.or(record.model_id) else {
+            let model = if flavor == AcpFlavor::Grok {
+                // Node's `nativeModelId ?? modelId`.
+                record
+                    .extra
+                    .get("nativeModelId")
+                    .and_then(Value::as_str)
+                    .map(String::from)
+                    .or(record.model_id)
+            } else {
+                record.model_id
+            };
+            let Some(model) = model.filter(|m| !m.trim().is_empty()) else {
                 return Ok(None);
             };
             let cwd = crate::worktree_reclaim::existing_folder(&record.cwd)?;
-            let writing = self.config.data_directory.join("writing").join("grok");
-            let run = super::grok_side::SideRun { prompt: &prompt, model: &model, cwd: Path::new(&cwd), deadline: self.config.side_writing_deadline, homes_folder: &writing };
-            super::grok_side::write(self.config.launch().as_ref(), &self.config.prefix_args, run).await.map(Some)
+            match flavor {
+                AcpFlavor::Grok => {
+                    let writing = self.config.data_directory.join("writing").join("grok");
+                    let run = super::grok_side::SideRun {
+                        prompt: &prompt,
+                        model: &model,
+                        cwd: Path::new(&cwd),
+                        deadline: self.config.side_writing_deadline,
+                        homes_folder: &writing,
+                    };
+                    super::grok_side::write(self.config.launch().as_ref(), &self.config.prefix_args, run).await.map(Some)
+                }
+                AcpFlavor::Cursor => {
+                    let Some(launch) = self.config.launch() else {
+                        return Ok(None);
+                    };
+                    let run = super::acp_side::SideRun {
+                        prompt: &prompt,
+                        model: &model,
+                        cwd: &cwd,
+                        deadline: self.config.side_writing_deadline,
+                        data_directory: &self.config.data_directory,
+                    };
+                    super::acp_side::write_cursor(&launch, &self.config.prefix_args, run).await
+                }
+                AcpFlavor::Antigravity => {
+                    let Some(launch) = self.config.launch() else {
+                        return Ok(None);
+                    };
+                    let run = super::acp_side::SideRun {
+                        prompt: &prompt,
+                        model: &model,
+                        cwd: &cwd,
+                        deadline: self.config.side_writing_deadline,
+                        data_directory: &self.config.data_directory,
+                    };
+                    super::acp_side::write_antigravity(&launch, &self.config.prefix_args, run).await
+                }
+                AcpFlavor::Devin | AcpFlavor::Hermes => Ok(None),
+            }
         })
     }
 
@@ -1537,14 +1558,22 @@ fn extract_cursor_models(res: &Value) -> Vec<AgentModel> {
                 .and_then(Value::as_str)
                 .unwrap_or("default");
             let name = entry.get("name").and_then(Value::as_str).unwrap_or(raw_id);
+            let parsed_effort = entry
+                .get("configOptions")
+                .and_then(Value::as_array)
+                .and_then(|opts| super::acp_side::parse_thought_level_option(opts));
+            let (default_reasoning_effort, reasoning_efforts) = match parsed_effort {
+                Some((_, levels, current)) => (current, (!levels.is_empty()).then_some(levels)),
+                None => (None, None),
+            };
             out.push(AgentModel {
                 id: public_provider_entity_id("cursor", "model", raw_id),
                 name: name.to_string(),
                 provider: "Cursor".into(),
                 provider_id: "cursor".into(),
                 ready: true,
-                default_reasoning_effort: None,
-                reasoning_efforts: None,
+                default_reasoning_effort,
+                reasoning_efforts,
                 runtime_modes: Some(vec![
                     "approval-required".into(),
                     "auto-accept-edits".into(),

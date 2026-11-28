@@ -100,8 +100,9 @@ createInterface({ input: process.stdin }).on('line', line => {
   const frame = JSON.parse(line)
   // A side call's prompt is kept in oneshot.jsonl, apart from the threads' traffic, as a side call never touches a thread.
   const sideSession = frame.method === 'session/prompt' ? loadSession(frame.params?.sessionId) : undefined
-  const side = sideSession !== undefined && sideSession.mcpServers.length === 0 && sideSession.prompts.length === 0 && read('script.json', {}).sideAnswer
-    && /Name this/u.test(JSON.stringify(frame.params?.prompt ?? []))
+  const sideOneshot = read('oneshot.json', null)
+  const side = sideSession !== undefined && sideSession.mcpServers.length === 0 && sideSession.prompts.length === 0
+    && (Boolean(sideOneshot) || Boolean(read('script.json', {}).sideAnswer) && /Name this/u.test(JSON.stringify(frame.params?.prompt ?? [])))
   record(side ? { ...frame, params: { sessionId: frame.params.sessionId, prompt: '[side call]' } } : frame)
   if (!frame.method) {
     const request = pending.get(frame.id)
@@ -177,10 +178,29 @@ createInterface({ input: process.stdin }).on('line', line => {
     const text = p.prompt.filter(part => part.type === 'text').map(part => part.text).join('')
     session.prompts.push(text); save(p.sessionId)
     // A side call: a session with no tool servers, answered at once with the scripted words, logged apart.
-    if (script.sideAnswer && session.mcpServers.length === 0 && session.prompts.length === 1 && /Side-writing|Name this/u.test(text)) {
-      appendFileSync(path('oneshot.jsonl'), JSON.stringify({ cwd: session.cwd, model: session.model, thinking: session.thinking, mode: session.mode, material: text }) + '\n')
-      update(p.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: script.sideAnswer } })
-      send({ id: frame.id, result: { stopReason: 'end_turn' } })
+    const oneshot = read('oneshot.json', null)
+    const sideAnswer = oneshot ? (oneshot.text ?? 'Fixture title') : (script.sideAnswer && /Side-writing|Name this/u.test(text) ? script.sideAnswer : undefined)
+    if (session.mcpServers.length === 0 && session.prompts.length === 1 && (oneshot || sideAnswer)) {
+      appendFileSync(path('oneshot.jsonl'), JSON.stringify({ cwd: session.cwd, model: session.model, thinking: session.thinking, mode: session.mode, material: text, sessionId: p.sessionId }) + '\n')
+      if (oneshot?.writeFiles && gemini && appData) {
+        mkdirSync(join(gemini, appData, 'brain', p.sessionId), { recursive: true })
+        writeFileSync(join(gemini, appData, 'brain', p.sessionId, 'scratch.txt'), 'side')
+        mkdirSync(join(gemini, appData, 'conversations'), { recursive: true })
+        writeFileSync(join(gemini, appData, 'conversations', `${p.sessionId}.db`), 'side')
+        writeFileSync(join(gemini, appData, 'conversations', `${p.sessionId}.db-wal`), 'side')
+      }
+      if (oneshot?.fail) { send({ id: frame.id, error: { code: -32603, message: 'Scripted failure' } }); return }
+      const answer = () => {
+        if (oneshot?.tool) {
+          const toolCallId = `toolu_${randomUUID()}`
+          update(p.sessionId, { sessionUpdate: 'tool_call', toolCallId, title: 'Read README.md', kind: 'read', status: 'pending', rawInput: { path: join(session.cwd, 'README.md') } })
+          update(p.sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { content: 'Synthetic file content' } })
+        }
+        update(p.sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: sideAnswer } })
+        send({ id: frame.id, result: { stopReason: 'end_turn' } })
+      }
+      // `delayMs` stands for a client that takes that long to answer, so a caller's deadline can pass first.
+      if (oneshot?.delayMs) setTimeout(answer, oneshot.delayMs); else answer()
       return
     }
     prompts.push({ id: frame.id, sessionId: p.sessionId })
