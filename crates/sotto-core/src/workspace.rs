@@ -1076,6 +1076,13 @@ pub fn now_iso() -> String {
     Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
 
+/// Formats epoch milliseconds as an ISO-8601 UTC timestamp with milliseconds (matching JS `new Date(ms).toISOString()`).
+pub fn format_iso_ms(ms: i64) -> String {
+    chrono::DateTime::from_timestamp_millis(ms)
+        .unwrap_or_else(Utc::now)
+        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3406,12 +3406,50 @@ pub(crate) fn run_action_git_with(folder: &str, args: &[&str], deadline: Duratio
         .map_err(|e| action_tool_words("git", e))
 }
 
+/// Detailed failure from a `gh` invocation, preserving `stdout` on non-zero exit so GraphQL partial answers and
+/// rate-limit readings can be inspected identically to Node's `execFile` error (`src/main/agents/git/gitPullRequests.ts`).
+#[derive(Debug, Clone)]
+pub struct GhDetailedError {
+    pub unavailable: bool,
+    pub message: String,
+    pub stdout: String,
+}
+
 /// Runs GitHub's `gh` CLI as Node's `runGitStatusCommand` runs it (`src/main/agents/git/gitStatus.ts` + `ghCommand.ts`).
 pub(crate) fn run_action_gh_with(folder: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, String> {
     let readers = Readers { lines: None, keep_reading: true };
     run_tool_impl("gh", folder, args, &[], stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, readers, &[])
         .map(|o| o.stdout)
         .map_err(|e| action_tool_words("gh", e))
+}
+
+/// Runs `gh` like `run_action_gh_with`, preserving `stdout` and whether `gh` is missing when it fails.
+pub(crate) fn run_action_gh_detailed(folder: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, GhDetailedError> {
+    let readers = Readers { lines: None, keep_reading: true };
+    match run_tool_raw("gh", folder, args, &[], stdin, Some(8_000_000), false, Instant::now() + deadline, TimeoutStop::Terminate, readers, &[]) {
+        Ok(raw) if raw.success => Ok(raw.stdout),
+        Ok(raw) => {
+            let stderr_str = raw.stderr.trim().to_string();
+            let raw_msg = if stderr_str.is_empty() {
+                format!("gh exited with status {}", raw.status_display)
+            } else {
+                stderr_str
+            };
+            Err(GhDetailedError {
+                unavailable: false,
+                message: action_tool_words("gh", GitRunError::Failed(raw_msg)),
+                stdout: raw.stdout,
+            })
+        }
+        Err(err) => {
+            let unavailable = matches!(err, GitRunError::Unavailable(_));
+            Err(GhDetailedError {
+                unavailable,
+                message: action_tool_words("gh", err),
+                stdout: String::new(),
+            })
+        }
+    }
 }
 
 /// Runs `gh` and returns both stdout and stderr combined regardless of exit status (used for legacy `gh auth status`,

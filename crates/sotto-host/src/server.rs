@@ -25,6 +25,11 @@ use sotto_core::linked_files::LinkRequest;
 use sotto_core::pairing::constant_time_eq;
 use sotto_core::answered_requests::{answer_decision_id, AnswerTarget};
 use sotto_core::command_receipts::{ended_receipt, keeps_receipt, unknown_receipt, CommandReceipts, Receipt};
+use sotto_core::pull_requests::{
+    valid_pull_request_command_shape, ConfirmedPullRequestAction, GitPullRequestActionCommand,
+    GitPullRequestListRequest, GitPullRequestRequest, PullRequestConfirmationRequest,
+    PullRequestConfirmations,
+};
 use sotto_core::remote_commands::validate_remote_command;
 use sotto_core::protocol_fields::protocol_id;
 use sotto_core::workspace::sha256_hex;
@@ -87,6 +92,10 @@ pub fn advertised_features() -> Vec<String> {
         "provider-antigravity".into(),
         "git-refs".into(),
         "git-changed-files".into(),
+        "git-pull-request".into(),
+        "git-pull-request-list".into(),
+        "pull-request-confirmation".into(),
+        "pull-request-view".into(),
         "host-folders".into(),
         "thread-files".into(),
         "thread-file-links".into(),
@@ -493,6 +502,8 @@ pub struct HostState {
     pub client_sockets: Mutex<HashMap<String, usize>>,
     /// Each paired client's commands by its request ID, shared by both listeners, as Node's `CommandReceipts`.
     pub receipts: Arc<Mutex<CommandReceipts>>,
+    /// Paired-client pull request confirmation receipts and reading IDs, shared by both listeners (#1691).
+    pub pull_request_confirmations: Arc<Mutex<PullRequestConfirmations>>,
 }
 
 impl HostState {
@@ -866,6 +877,7 @@ impl RunningServer {
             file_reads: Mutex::new(HashSet::new()),
             client_sockets: Mutex::new(HashMap::new()),
             receipts: Arc::new(Mutex::new(CommandReceipts::default())),
+            pull_request_confirmations: Arc::new(Mutex::new(PullRequestConfirmations::new())),
         });
 
         let initial_descriptor = state.descriptor();
@@ -1940,6 +1952,14 @@ struct CommandReceipt<'a> {
     digest: String,
 }
 
+struct PullRequestConfirmRedeem {
+    thread_id: String,
+    url: String,
+    action: ConfirmedPullRequestAction,
+    method: Option<sotto_core::pull_requests::GitPullRequestMergeMethod>,
+    confirmation: Option<String>,
+}
+
 impl<'a> CommandReceipt<'a> {
     fn new(state: &'a HostState, client_id: &'a str, request_id: &str, command: &serde_json::Map<String, Value>) -> Self {
         let digest = sha256_hex(serde_json::to_string(command).unwrap_or_default().as_bytes());
@@ -1968,20 +1988,41 @@ impl<'a> CommandReceipt<'a> {
     /// Runs a command that passed every check, its receipt kept first, as Node keeps one only after every refusal: busy
     /// when the store is full of pending work. The command runs to its end and settles its receipt whether or not the
     /// socket stays to hear it.
-    async fn run(self, client: ClientContext, command: serde_json::Map<String, Value>, wire: &mut ClientWireState) -> HostResponseEnvelope {
+    async fn run(
+        self,
+        client: ClientContext,
+        command: serde_json::Map<String, Value>,
+        confirm_redeem: Option<PullRequestConfirmRedeem>,
+        wire: &mut ClientWireState,
+    ) -> HostResponseEnvelope {
         let CommandReceipt { state, client_id, request_id, digest } = self;
+        let match_head_commit: Option<String>;
         {
-            // Only pending work is busy: settled receipts make room.
+            // Only pending work is busy: settled receipts make room. Check room BEFORE redeeming any single-use
+            // pull request confirmation receipt so a `busy` refusal never burns the client's receipt (Node socketServer.ts:1703).
             let mut receipts = state.receipts.lock().unwrap();
             if !receipts.make_room() {
                 return HostResponseEnvelope::err(request_id, HostErrorCode::Busy, HostErrorCode::Busy.default_message());
             }
+            match_head_commit = if let Some(redeem) = confirm_redeem {
+                let redeemed = state
+                    .pull_request_confirmations
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .redeem(client_id, redeem.confirmation.as_deref(), &redeem.thread_id, &redeem.url, redeem.action, redeem.method);
+                match redeemed {
+                    Ok(head) => head,
+                    Err(message) => return HostResponseEnvelope::err(request_id, HostErrorCode::Forbidden, message),
+                }
+            } else {
+                None
+            };
             receipts.record(client_id, &request_id, digest);
         }
         let is_answer = command.get("type").and_then(Value::as_str) == Some("answer");
         // An answer is given under this client's own decision ID, so its receipt can say whether it was taken.
         let decision_id = is_answer.then(|| answer_decision_id(client_id, &request_id));
-        let queued = state.coordinator.enqueue_command_deciding(client, command, decision_id);
+        let queued = state.coordinator.enqueue_command_with_meta(client, command, decision_id, match_head_commit);
         let receipts = Arc::clone(&state.receipts);
         let (client_key, request_key) = (client_id.to_string(), request_id.clone());
         let (ended_tx, ended_rx) = tokio::sync::oneshot::channel();
@@ -2480,6 +2521,14 @@ async fn handle_ws_request(
             if local_git && sotto_core::git_local::LocalGitCommand::from_command(cmd).is_none() {
                 return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
             }
+            // And so are the GitHub pull request commands (ADR-0027, #1691).
+            let pr_cmd = matches!(
+                cmd.get("type").and_then(Value::as_str),
+                Some("git-pull-request-action" | "git-link-pull-request" | "git-unlink-pull-request" | "git-checkout-pull-request")
+            );
+            if pr_cmd && !valid_pull_request_command_shape(cmd) {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
             // A command for a thread of a provider this client does not know is not this client's to send, as Node's
             // socket server refuses it.
             if let Some(thread_id) = cmd.get("threadId").and_then(Value::as_str) {
@@ -2563,7 +2612,27 @@ async fn handle_ws_request(
                     }
                 }
             }
-            receipt.run(client, cmd.clone(), wire).await
+            // A merge, close or auto-merge runs only on this client's own confirmation receipt for exactly this press,
+            // spent inside `receipt.run` AFTER `make_room()` succeeds so a `busy` refusal never burns the receipt (#1691).
+            // The coordinator is told the head commit the receipt was given on, never the receipt.
+            let mut dispatched_cmd = cmd.clone();
+            let mut confirm_redeem = None;
+            if kind == "git-pull-request-action" {
+                let Some(parsed) = GitPullRequestActionCommand::parse(cmd) else {
+                    return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+                };
+                dispatched_cmd.remove("confirmation");
+                if let Some(confirmed_action) = ConfirmedPullRequestAction::from_action(parsed.action) {
+                    confirm_redeem = Some(PullRequestConfirmRedeem {
+                        thread_id: parsed.thread_id,
+                        url: parsed.url,
+                        action: confirmed_action,
+                        method: parsed.method,
+                        confirmation: parsed.confirmation,
+                    });
+                }
+            }
+            receipt.run(client, dispatched_cmd, confirm_redeem, wire).await
         }
         "receipt" => {
             // What became of one of this client's commands, as Node's socket server answers it. With an answer named,
@@ -2731,6 +2800,87 @@ async fn handle_ws_request(
                     HostErrorCode::Unavailable,
                     HostErrorCode::Unavailable.default_message(),
                 ),
+            }
+        }
+        "git-pull-request" => {
+            let parsed = req
+                .fields
+                .keys()
+                .all(|k| k == "request")
+                .then(|| GitPullRequestRequest::parse(req.fields.get("request")))
+                .flatten();
+            let Some(parsed) = parsed else {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            };
+            if hides_thread(state, wire, &parsed.thread_id).await {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+            }
+            let thread_id = parsed.thread_id.clone();
+            match state.coordinator.git_pull_request(parsed).await {
+                Ok(mut val) => {
+                    if let Some(obj) = val.as_object_mut() {
+                        if !obj.contains_key("limited") {
+                            let url = obj.get("url").and_then(Value::as_str).map(ToString::to_string);
+                            let head_id = obj.get("headId").and_then(Value::as_str).map(ToString::to_string);
+                            if let Some(url) = url {
+                                if let Some(read_id) = state
+                                    .pull_request_confirmations
+                                    .lock()
+                                    .unwrap_or_else(|e| e.into_inner())
+                                    .read(client_id, &thread_id, &url, head_id.as_deref())
+                                {
+                                    obj.insert("readId".into(), Value::String(read_id));
+                                }
+                            }
+                        }
+                    }
+                    HostResponseEnvelope::ok(req.id, val)
+                }
+                Err(err) => HostResponseEnvelope::err_with_reason(req.id, err.code, err.message, err.reason),
+            }
+        }
+        "git-pull-request-list" => {
+            let parsed = req
+                .fields
+                .keys()
+                .all(|k| k == "request")
+                .then(|| GitPullRequestListRequest::parse(req.fields.get("request")))
+                .flatten();
+            let Some(parsed) = parsed else {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            };
+            if hides_thread(state, wire, &parsed.thread_id).await {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+            }
+            match state.coordinator.git_pull_request_list(parsed).await {
+                Ok(val) => HostResponseEnvelope::ok(req.id, val),
+                Err(err) => HostResponseEnvelope::err_with_reason(req.id, err.code, err.message, err.reason),
+            }
+        }
+        "pull-request-confirmation" => {
+            let parsed = req
+                .fields
+                .keys()
+                .all(|k| k == "request")
+                .then(|| PullRequestConfirmationRequest::parse(req.fields.get("request")))
+                .flatten();
+            let Some(parsed) = parsed else {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            };
+            if hides_thread(state, wire, &parsed.thread_id).await {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, HostErrorCode::Forbidden.default_message());
+            }
+            if !offered_features(state, mode, client_id).iter().any(|f| f == "pull-request-confirmation") {
+                return HostResponseEnvelope::err(req.id, HostErrorCode::InvalidRequest, HostErrorCode::InvalidRequest.default_message());
+            }
+            match state
+                .pull_request_confirmations
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .issue(client_id, &parsed)
+            {
+                Ok(receipt) => HostResponseEnvelope::ok(req.id, receipt.to_json()),
+                Err(message) => HostResponseEnvelope::err(req.id, HostErrorCode::Forbidden, message),
             }
         }
         "thread-files" => {
@@ -4180,5 +4330,24 @@ mod tests {
         assert!(desktop.iter().any(|f| f == "watcher-control"));
         assert!(desktop.iter().any(|f| f == "watcher-reads"));
         assert!(desktop.iter().any(|f| f == "project-origins"));
+    }
+
+    #[test]
+    fn pull_request_features_are_offered_to_both_desktop_and_mobile_clients() {
+        let all = advertised_features();
+        for (desktop, on_listener) in [(true, true), (false, true), (false, false)] {
+            let offered = features_for_client(&all, desktop, on_listener);
+            for feature in [
+                "git-pull-request",
+                "git-pull-request-list",
+                "pull-request-confirmation",
+                "pull-request-view",
+            ] {
+                assert!(
+                    offered.iter().any(|f| f == feature),
+                    "expected {feature} for desktop={desktop} on_listener={on_listener}"
+                );
+            }
+        }
     }
 }

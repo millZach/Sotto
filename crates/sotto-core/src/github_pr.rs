@@ -23,7 +23,8 @@ use crate::git_action::{
 };
 use crate::git_local::{js_space, js_trim, safe_remote};
 use crate::ops::{
-    run_action_gh_combined, run_action_gh_with, run_action_git as git, run_action_git_config_regexp, GitHubRepository,
+    run_action_gh_combined, run_action_gh_detailed, run_action_gh_with, run_action_git as git,
+    run_action_git_config_regexp, GhDetailedError, GitHubRepository,
 };
 use crate::pull_request_draft::{PullRequestDrafts, PullRequestMaterial, PullRequestText};
 use crate::side_writing::SideWritingThreads;
@@ -50,6 +51,14 @@ const SINGLE_TEMPLATE_PATHS: [&str; 6] = [
 /// Runs `gh` commands for the GitHub pull request step (real `gh` in production, scripted stand-in in tests).
 pub trait GhRunner: Send + Sync {
     fn run_gh(&self, cwd: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, String>;
+    /// Runs `gh` like `run_gh`, preserving `stdout` and whether `gh` is unavailable on failure.
+    fn run_gh_detailed(&self, cwd: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, GhDetailedError> {
+        self.run_gh(cwd, args, deadline, stdin).map_err(|message| GhDetailedError {
+            unavailable: message.contains("is not installed or is not on PATH"),
+            message,
+            stdout: String::new(),
+        })
+    }
     /// Runs `gh` returning stdout and stderr combined regardless of exit status (used for legacy `gh auth status`).
     fn run_gh_combined(&self, cwd: &str, args: &[&str], deadline: Duration) -> String {
         match self.run_gh(cwd, args, deadline, None) {
@@ -69,6 +78,10 @@ pub struct SystemGh;
 impl GhRunner for SystemGh {
     fn run_gh(&self, cwd: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, String> {
         run_action_gh_with(cwd, args, deadline, stdin)
+    }
+
+    fn run_gh_detailed(&self, cwd: &str, args: &[&str], deadline: Duration, stdin: Option<&[u8]>) -> Result<String, GhDetailedError> {
+        run_action_gh_detailed(cwd, args, deadline, stdin)
     }
 
     fn run_gh_combined(&self, cwd: &str, args: &[&str], deadline: Duration) -> String {
@@ -289,6 +302,10 @@ pub struct GitHubHosts {
 impl GitHubHosts {
     pub fn new(gh: Arc<dyn GhRunner>) -> Self {
         Self { gh, signed_in: Mutex::new(None), aliases: Mutex::new(HashMap::new()) }
+    }
+
+    pub fn runner(&self) -> Arc<dyn GhRunner> {
+        Arc::clone(&self.gh)
     }
 
     pub fn repository(&self, url: &str) -> Option<GitHubRepository> {

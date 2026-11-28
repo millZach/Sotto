@@ -35,6 +35,7 @@ pub mod protocol_fields;
 pub mod provider;
 pub mod providers;
 pub mod pull_request_draft;
+pub mod pull_requests;
 pub mod remote_commands;
 pub mod side_writing;
 pub mod stores;

@@ -74,6 +74,8 @@ impl HostErrorCode {
 pub struct HostErrorPayload {
     pub code: HostErrorCode,
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// Written to `host-listener.json`, emitted on stdout with `event: "ready"`, and returned by
@@ -160,6 +162,15 @@ impl HostResponseEnvelope {
     }
 
     pub fn err(id: String, code: HostErrorCode, message: impl Into<String>) -> Self {
+        Self::err_with_reason(id, code, message, None)
+    }
+
+    pub fn err_with_reason(
+        id: String,
+        code: HostErrorCode,
+        message: impl Into<String>,
+        reason: Option<String>,
+    ) -> Self {
         Self {
             v: HOST_PROTOCOL_VERSION,
             id,
@@ -168,6 +179,7 @@ impl HostResponseEnvelope {
             error: Some(HostErrorPayload {
                 code,
                 message: message.into(),
+                reason,
             }),
         }
     }
