@@ -125,10 +125,10 @@ pub fn canonical_model_id(provider: &str, model_id: &str) -> String {
         if kind == "model" {
             val
         } else {
-            model_id
+            std::borrow::Cow::Borrowed(model_id)
         }
     } else {
-        strip_native_model_prefix(model_id)
+        std::borrow::Cow::Borrowed(strip_native_model_prefix(model_id))
     };
     let mut id = raw.trim().to_ascii_lowercase();
     if provider == "claude" {

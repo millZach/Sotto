@@ -1,4 +1,5 @@
 pub mod acp;
+pub(crate) mod acp_side;
 pub mod claude;
 mod claude_side;
 pub mod claude_history;
@@ -24,7 +25,7 @@ fn effort_key(id: &str) -> String {
 }
 
 /// Node's `EFFORT_RANK`: the levels whose place is known, least thorough first.
-fn effort_rank(id: &str) -> Option<u8> {
+pub(crate) fn effort_rank(id: &str) -> Option<u8> {
     Some(match effort_key(id).as_str() {
         "off" | "none" => 0,
         "minimal" => 1,

@@ -137,14 +137,11 @@ pub struct AcpAdapterConfig {
 
 impl AcpAdapterConfig {
     pub fn native(flavor: AcpFlavor, data_directory: PathBuf) -> Self {
-        let mut args = flavor.default_args();
-        if flavor == AcpFlavor::Antigravity {
-            let gemini_dir = data_directory.join("antigravity").join("gemini");
-            args.push("--gemini-dir".into());
-            args.push(gemini_dir.to_string_lossy().into_owned());
-            args.push("--app-data-dir".into());
-            args.push("antigravity-acp".into());
-        }
+        let args = if flavor == AcpFlavor::Antigravity {
+            super::acp_side::antigravity_arguments(&data_directory)
+        } else {
+            flavor.default_args()
+        };
         Self {
             flavor,
             data_directory,
@@ -197,11 +194,21 @@ struct InboundAcpRequest {
 
 type PendingAcpMap = Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value, String>>>>>;
 
+#[derive(Default, Clone)]
+struct AcpSessionState {
+    model: Option<String>,
+    effort: Option<String>,
+    effort_option: Option<String>,
+}
+
 struct AcpProcess {
     stdin_tx: mpsc::UnboundedSender<String>,
     pending_outbound: PendingAcpMap,
     next_id: AtomicI64,
     child: Mutex<Option<Child>>,
+    /// The model, reasoning effort, and `thought_level` config option ID last seen or applied for each native session
+    /// on this process instance, so a model switch saved while idle is still applied when a fresh process loads it.
+    session_state: Mutex<HashMap<String, AcpSessionState>>,
 }
 
 impl AcpProcess {
@@ -217,9 +224,18 @@ impl AcpProcess {
             )
         })?;
         let mut cmd = Command::new(&launch.executable);
-        // Node starts every Grok thread's process on `grokEnvironment`, a test's fake included.
-        if config.flavor == AcpFlavor::Grok {
-            super::grok_side::session_environment(&mut cmd);
+        // Node starts every Grok, Cursor and Antigravity process on its allow-listed environment, a test's fake included.
+        match config.flavor {
+            AcpFlavor::Grok => super::grok_side::session_environment(&mut cmd),
+            AcpFlavor::Cursor => {
+                let cfg_dir = config.data_directory.join("cursor").join("config");
+                let _ = fs::create_dir_all(&cfg_dir);
+                super::acp_side::cursor_environment(&mut cmd, &cfg_dir);
+            }
+            AcpFlavor::Antigravity => {
+                super::acp_side::antigravity_environment(&mut cmd, &config.data_directory);
+            }
+            AcpFlavor::Devin | AcpFlavor::Hermes => {}
         }
         cmd.args(&launch.prefix_args);
         launch.apply_tokio(&mut cmd);
@@ -230,45 +246,10 @@ impl AcpProcess {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        if config.use_cli_lookup {
-            match config.flavor {
-                AcpFlavor::Cursor => {
-                    let cfg_dir = config.data_directory.join("cursor").join("config");
-                    let _ = fs::create_dir_all(&cfg_dir);
-                    cmd.env("CURSOR_CONFIG_DIR", cfg_dir);
-                    cmd.env("CURSOR_INVOKED_AS", "agent");
-                    cmd.env("NO_OPEN_BROWSER", "1");
-                }
-                AcpFlavor::Hermes => {
-                    let hermes_home = config.data_directory.join("hermes");
-                    let _ = fs::create_dir_all(&hermes_home);
-                    cmd.env("HERMES_HOME", hermes_home);
-                }
-                AcpFlavor::Antigravity => {
-                    let agy_root = config.data_directory.join("antigravity");
-                    let gemini_dir = agy_root.join("gemini");
-                    let tmp_dir = agy_root.join("tmp");
-                    let _ = fs::create_dir_all(&gemini_dir);
-                    let _ = fs::create_dir_all(&tmp_dir);
-                    cmd.env("GEMINI_HOME", &gemini_dir);
-                    cmd.env("AGY_ACP_FORCE_FILE_STORAGE", "1");
-                    cmd.env("AGY_CLI_DISABLE_AUTO_UPDATE", "1");
-                    cmd.env("PYTHONUNBUFFERED", "1");
-                    if std::env::var("SSH_CONNECTION").is_err() {
-                        cmd.env("SSH_CONNECTION", "127.0.0.1 0 127.0.0.1 0");
-                    }
-                    #[cfg(windows)]
-                    {
-                        cmd.env("TEMP", &tmp_dir);
-                        cmd.env("TMP", &tmp_dir);
-                    }
-                    #[cfg(not(windows))]
-                    {
-                        cmd.env("TMPDIR", &tmp_dir);
-                    }
-                }
-                AcpFlavor::Grok | AcpFlavor::Devin => {}
-            }
+        if config.use_cli_lookup && config.flavor == AcpFlavor::Hermes {
+            let hermes_home = config.data_directory.join("hermes");
+            let _ = fs::create_dir_all(&hermes_home);
+            cmd.env("HERMES_HOME", hermes_home);
         }
         #[cfg(windows)]
         {
@@ -360,7 +341,43 @@ impl AcpProcess {
             pending_outbound,
             next_id: AtomicI64::new(1),
             child: Mutex::new(Some(child)),
+            session_state: Mutex::new(HashMap::new()),
         }))
+    }
+
+    fn record_session_config(&self, session_id: &str, value: &Value) {
+        let Some(options) = value.get("configOptions").and_then(Value::as_array) else {
+            return;
+        };
+        let mut map = self.session_state.lock().unwrap();
+        let state = map.entry(session_id.to_string()).or_default();
+        let model_opt = options
+            .iter()
+            .find(|entry| entry.get("id").and_then(Value::as_str) == Some("model"));
+        let model_changed = model_opt
+            .and_then(|entry| entry.get("currentValue"))
+            .and_then(Value::as_str)
+            .is_some_and(|model| {
+                let changed = state.model.as_deref() != Some(model);
+                state.model = Some(model.to_string());
+                changed
+            });
+        if let Some((id, _, current)) = super::acp_side::parse_thought_level_option(options) {
+            state.effort_option = Some(id);
+            state.effort = current;
+        } else if let Some(prev_id) = state.effort_option.as_deref() {
+            if let Some(current) = options
+                .iter()
+                .find(|entry| entry.get("id").and_then(Value::as_str) == Some(prev_id))
+                .and_then(|entry| entry.get("currentValue"))
+                .and_then(Value::as_str)
+            {
+                state.effort = Some(current.to_string());
+            } else if model_changed || model_opt.is_some() {
+                state.effort_option = None;
+                state.effort = None;
+            }
+        }
     }
 
     async fn call(&self, method: &str, params: Value, timeout_ms: u64) -> Result<Value, String> {
@@ -447,13 +464,10 @@ impl AcpProcess {
                 )
                 .await;
         } else if flavor == AcpFlavor::Antigravity {
-            let method = if std::env::var("GEMINI_API_KEY").is_ok() {
-                "gemini-api-key"
-            } else {
-                "oauth-personal"
-            };
+            // Headless hosts always sign in to Antigravity via the Google account (ADR-0212); ambient GEMINI_API_KEY
+            // is stripped by `antigravity_environment`.
             let _ = self
-                .call("authenticate", json!({ "methodId": method }), timeout_ms)
+                .call("authenticate", json!({ "methodId": "oauth-personal" }), timeout_ms)
                 .await;
         }
         Ok(res)
@@ -540,6 +554,8 @@ struct AcpSharedState {
     events_tx: Mutex<Option<mpsc::UnboundedSender<ProviderEvent>>>,
     status: Mutex<AgentProviderStatus>,
     models: Mutex<Vec<AgentModel>>,
+    /// Raw model ID -> `thought_level` config option ID discovered from the provider catalog (Cursor's per-model effort option).
+    effort_options: Mutex<HashMap<String, String>>,
     client_update: Mutex<Option<ClientUpdateRow>>,
     /// Sotto thread ID -> native ACP session ID.
     records: Mutex<HashMap<String, AcpThreadRecord>>,
@@ -573,6 +589,7 @@ impl AcpSharedState {
                 error: None,
             }),
             models: Mutex::new(Vec::new()),
+            effort_options: Mutex::new(HashMap::new()),
             client_update: Mutex::new(None),
             records: Mutex::new(records),
             native_to_sotto: Mutex::new(native_to_sotto),
@@ -868,85 +885,150 @@ impl AcpAdapter {
             .filter(|s| !s.is_empty())
             .map(ToString::to_string);
 
-        let (prev_model, prev_effort) = self
-            .shared
-            .records
+        let prev_state = proc
+            .session_state
             .lock()
             .unwrap()
-            .get(thread_id)
-            .map(|r| (r.model_id.clone(), r.reasoning_effort.clone()))
-            .unwrap_or((None, None));
+            .get(session_id)
+            .cloned()
+            .unwrap_or_default();
 
-        let model_changed = raw_model.is_some() && raw_model != prev_model;
-        let effort_changed = raw_effort.is_some() && raw_effort != prev_effort;
-        if !model_changed && !effort_changed {
-            return Ok(());
-        }
+        let model_changed = raw_model.is_some() && raw_model != prev_state.model;
+        let effort_changed = raw_effort.is_some() && raw_effort != prev_state.effort;
+        let mut applied_effort: Option<String> = None;
 
         match flavor {
             AcpFlavor::Grok => {
-                if let Some(ref mid) = raw_model {
-                    let mut params = json!({
-                        "sessionId": session_id,
-                        "modelId": mid,
-                    });
-                    if let Some(ref eff) = raw_effort {
-                        params.as_object_mut().unwrap().insert(
-                            "_meta".into(),
-                            json!({ "reasoningEffort": eff }),
-                        );
+                if model_changed || effort_changed {
+                    if let Some(ref mid) = raw_model {
+                        let mut params = json!({
+                            "sessionId": session_id,
+                            "modelId": mid,
+                        });
+                        if let Some(ref eff) = raw_effort {
+                            params.as_object_mut().unwrap().insert(
+                                "_meta".into(),
+                                json!({ "reasoningEffort": eff }),
+                            );
+                        }
+                        proc.call("session/set_model", params, self.config.request_timeout_ms)
+                            .await?;
+                        let mut map = proc.session_state.lock().unwrap();
+                        let state = map.entry(session_id.to_string()).or_default();
+                        state.model = Some(mid.clone());
+                        if let Some(ref eff) = raw_effort {
+                            state.effort = Some(eff.clone());
+                            applied_effort = Some(eff.clone());
+                        }
                     }
-                    proc.call("session/set_model", params, self.config.request_timeout_ms)
-                        .await?;
+                } else if raw_effort.is_some() {
+                    applied_effort = raw_effort.clone();
                 }
             }
             AcpFlavor::Devin | AcpFlavor::Cursor | AcpFlavor::Antigravity | AcpFlavor::Hermes => {
                 if let Some(ref mid) = raw_model {
                     if model_changed {
-                        proc.call(
-                            "session/set_config_option",
-                            json!({
-                                "sessionId": session_id,
-                                "configId": "model",
-                                "value": mid,
-                            }),
-                            self.config.request_timeout_ms,
-                        )
-                        .await?;
-                    }
-                }
-                if let Some(ref eff) = raw_effort {
-                    if effort_changed {
-                        let _ = proc
+                        let res = proc
                             .call(
                                 "session/set_config_option",
                                 json!({
                                     "sessionId": session_id,
-                                    "configId": "reasoning_effort",
+                                    "configId": "model",
+                                    "value": mid,
+                                }),
+                                self.config.request_timeout_ms,
+                            )
+                            .await?;
+                        proc.record_session_config(session_id, &res);
+                        let mut map = proc.session_state.lock().unwrap();
+                        let state = map.entry(session_id.to_string()).or_default();
+                        state.model = Some(mid.clone());
+                    }
+                }
+                let cur_state = proc
+                    .session_state
+                    .lock()
+                    .unwrap()
+                    .get(session_id)
+                    .cloned()
+                    .unwrap_or_default();
+                let active_model = raw_model.as_deref().or(cur_state.model.as_deref());
+                let effort_config_id = match flavor {
+                    AcpFlavor::Cursor => cur_state.effort_option.clone().or_else(|| {
+                        active_model.and_then(|m| self.shared.effort_options.lock().unwrap().get(m).cloned())
+                    }),
+                    AcpFlavor::Antigravity => cur_state
+                        .effort_option
+                        .clone()
+                        .or_else(|| Some("thinking_level".into())),
+                    AcpFlavor::Devin | AcpFlavor::Hermes => cur_state
+                        .effort_option
+                        .clone()
+                        .or_else(|| Some("reasoning_effort".into())),
+                    AcpFlavor::Grok => None,
+                };
+                if let Some(ref eff) = raw_effort {
+                    if cur_state.effort.as_deref() == Some(eff.as_str()) {
+                        applied_effort = Some(eff.clone());
+                    } else if let Some(config_id) = effort_config_id {
+                        let call_res = proc
+                            .call(
+                                "session/set_config_option",
+                                json!({
+                                    "sessionId": session_id,
+                                    "configId": config_id,
                                     "value": eff,
                                 }),
                                 self.config.request_timeout_ms,
                             )
                             .await;
+                        match (flavor, call_res) {
+                            (_, Ok(res)) => {
+                                proc.record_session_config(session_id, &res);
+                                let mut map = proc.session_state.lock().unwrap();
+                                let state = map.entry(session_id.to_string()).or_default();
+                                if matches!(flavor, AcpFlavor::Cursor | AcpFlavor::Antigravity)
+                                    && res.get("configOptions").is_some()
+                                    && state.effort.as_deref() != Some(eff.as_str())
+                                {
+                                    return Err(format!(
+                                        "{} did not confirm this thread’s effort. Your thread and draft are kept. Choose the effort again, then send.",
+                                        flavor.name()
+                                    ));
+                                }
+                                state.effort = Some(eff.clone());
+                                applied_effort = Some(eff.clone());
+                            }
+                            (AcpFlavor::Cursor | AcpFlavor::Antigravity, Err(err)) => return Err(err),
+                            (AcpFlavor::Devin | AcpFlavor::Hermes | AcpFlavor::Grok, Err(_)) => {}
+                        }
                     }
                 }
             }
         }
 
+        let mut changed_record = false;
         if let Some(rec) = self.shared.records.lock().unwrap().get_mut(thread_id) {
             if let Some(model) = raw_model.as_ref().filter(|_| flavor == AcpFlavor::Grok) {
-                // Node's `alias.nativeModelId = modelId` once Grok takes the change: the model the session is on, which
-                // its side call runs on, must not stay the one Node last saw.
-                rec.extra.insert("nativeModelId".into(), Value::String(model.clone()));
+                if rec.extra.get("nativeModelId").and_then(Value::as_str) != Some(model.as_str()) {
+                    // Node's `alias.nativeModelId = modelId` once Grok takes the change: the model the session is on, which
+                    // its side call runs on, must not stay the one Node last saw.
+                    rec.extra.insert("nativeModelId".into(), Value::String(model.clone()));
+                    changed_record = true;
+                }
             }
-            if raw_model.is_some() {
+            if raw_model.is_some() && rec.model_id != raw_model {
                 rec.model_id = raw_model;
+                changed_record = true;
             }
-            if raw_effort.is_some() {
-                rec.reasoning_effort = raw_effort;
+            if applied_effort.is_some() && rec.reasoning_effort != applied_effort {
+                rec.reasoning_effort = applied_effort;
+                changed_record = true;
             }
         }
-        self.shared.save_records();
+        if changed_record {
+            self.shared.save_records();
+        }
         Ok(())
     }
 }
@@ -1044,7 +1126,9 @@ impl ProviderAdapter for AcpAdapter {
                         )
                         .await
                         .unwrap_or_default();
-                    extract_cursor_models(&res)
+                    let (models, effort_options) = extract_cursor_models(&res);
+                    *self.shared.effort_options.lock().unwrap() = effort_options;
+                    models
                 }
                 AcpFlavor::Devin | AcpFlavor::Antigravity => {
                     let created = probe
@@ -1176,6 +1260,7 @@ impl ProviderAdapter for AcpAdapter {
                         .and_then(Value::as_str)
                         .ok_or_else(|| format!("{} session/new returned no sessionId.", flavor.name()))?
                         .to_string();
+                    proc.record_session_config(&sid, &created);
                     // The record carries what Node's schema requires, so Node reads it after a rollback (ADR-0214).
                     // The model is the one the thread asked for; Node confirms it again when it next loads the session.
                     let record = AcpThreadRecord::created(flavor, &self.shared.data_directory, &req, sid.clone());
@@ -1206,9 +1291,12 @@ impl ProviderAdapter for AcpAdapter {
                             grok_policy_meta(req.runtime_mode.as_deref()),
                         );
                     }
-                    let _ = proc
+                    if let Ok(loaded) = proc
                         .call(load_method, params, self.config.request_timeout_ms)
-                        .await;
+                        .await
+                    {
+                        proc.record_session_config(&rec.session_id, &loaded);
+                    }
                     rec.session_id
                 }
             };
@@ -1372,31 +1460,80 @@ impl ProviderAdapter for AcpAdapter {
         })
     }
 
-    /// Node's Grok `writeShortText`: a side call on this thread's model in its folder, as its own short-lived Grok
-    /// process on a throwaway home, so the thread's session is never loaded for it. Nothing is written while Grok is not
-    /// connected, for a personal thread or one with no confirmed Grok session, or by the other clients this adapter
-    /// drives: Node's Devin and Hermes write nothing, and Cursor's and Antigravity's side calls are not ported yet.
+    /// Node's Grok, Cursor and Antigravity `writeShortText`: a short-lived side call on this thread's model in its folder,
+    /// with tools disabled and isolated from the thread's session. Nothing is written while disconnected, for a personal
+    /// thread or one with no confirmed provider session, or by Devin and Hermes (which write nothing in Node).
     fn write_short_text(&self, thread_id: String, prompt: crate::side_writing::ShortTextPrompt) -> BoxFuture<'_, Result<Option<String>, String>> {
         Box::pin(async move {
-            if self.config.flavor != AcpFlavor::Grok || self.shared.status.lock().unwrap().connection != "connected" {
+            let flavor = self.config.flavor;
+            if !matches!(flavor, AcpFlavor::Grok | AcpFlavor::Cursor | AcpFlavor::Antigravity)
+                || self.shared.status.lock().unwrap().connection != "connected"
+            {
                 return Ok(None);
             }
-            // A record is kept only for a thread with a Grok session, as Node asks for `grokSessionId`.
             let Some(record) = self.shared.records.lock().unwrap().get(&thread_id).cloned() else {
                 return Ok(None);
             };
             if record.extra.get("kind").and_then(Value::as_str) == Some("personal") {
                 return Ok(None);
             }
-            // Node's `nativeModelId ?? modelId`.
-            let native_model = record.extra.get("nativeModelId").and_then(Value::as_str).map(String::from);
-            let Some(model) = native_model.or(record.model_id) else {
+            let extra_model = record.extra.get("modelId").and_then(Value::as_str).map(String::from);
+            let model = if flavor == AcpFlavor::Grok {
+                // Node's `nativeModelId ?? modelId`.
+                record
+                    .extra
+                    .get("nativeModelId")
+                    .and_then(Value::as_str)
+                    .map(String::from)
+                    .or(record.model_id)
+                    .or(extra_model)
+            } else {
+                record.model_id.or(extra_model)
+            };
+            let Some(model) = model.filter(|m| !m.trim().is_empty()) else {
                 return Ok(None);
             };
             let cwd = crate::worktree_reclaim::existing_folder(&record.cwd)?;
-            let writing = self.config.data_directory.join("writing").join("grok");
-            let run = super::grok_side::SideRun { prompt: &prompt, model: &model, cwd: Path::new(&cwd), deadline: self.config.side_writing_deadline, homes_folder: &writing };
-            super::grok_side::write(self.config.launch().as_ref(), &self.config.prefix_args, run).await.map(Some)
+            match flavor {
+                AcpFlavor::Grok => {
+                    let writing = self.config.data_directory.join("writing").join("grok");
+                    let run = super::grok_side::SideRun {
+                        prompt: &prompt,
+                        model: &model,
+                        cwd: Path::new(&cwd),
+                        deadline: self.config.side_writing_deadline,
+                        homes_folder: &writing,
+                    };
+                    super::grok_side::write(self.config.launch().as_ref(), &self.config.prefix_args, run).await.map(Some)
+                }
+                AcpFlavor::Cursor => {
+                    let Some(launch) = self.config.launch() else {
+                        return Ok(None);
+                    };
+                    let run = super::acp_side::SideRun {
+                        prompt: &prompt,
+                        model: &model,
+                        cwd: &cwd,
+                        deadline: self.config.side_writing_deadline,
+                        data_directory: &self.config.data_directory,
+                    };
+                    super::acp_side::write_cursor(&launch, &self.config.prefix_args, run).await
+                }
+                AcpFlavor::Antigravity => {
+                    let Some(launch) = self.config.launch() else {
+                        return Ok(None);
+                    };
+                    let run = super::acp_side::SideRun {
+                        prompt: &prompt,
+                        model: &model,
+                        cwd: &cwd,
+                        deadline: self.config.side_writing_deadline,
+                        data_directory: &self.config.data_directory,
+                    };
+                    super::acp_side::write_antigravity(&launch, &self.config.prefix_args, run).await
+                }
+                AcpFlavor::Devin | AcpFlavor::Hermes => Ok(None),
+            }
         })
     }
 
@@ -1423,15 +1560,54 @@ impl ProviderAdapter for AcpAdapter {
                 let map = self.thread_procs.lock().await;
                 map.get(&thread_id).cloned()
             };
-            if let (Some(proc), Some(sid)) = (proc, sid) {
-                self.apply_session_settings(
-                    &proc,
-                    &thread_id,
-                    &sid,
-                    model_id.as_deref(),
-                    reasoning_effort.as_deref(),
-                )
-                .await?;
+            if let Some(sid) = sid {
+                if let Some(proc) = proc {
+                    self.apply_session_settings(
+                        &proc,
+                        &thread_id,
+                        &sid,
+                        model_id.as_deref(),
+                        reasoning_effort.as_deref(),
+                    )
+                    .await?;
+                } else {
+                    // Persist model and effort switches even while no live thread process is running, matching Node;
+                    // the next `send_message` starts a fresh process whose `applied_settings` is empty and applies them.
+                    let raw_model = model_id.as_deref().map(|m| {
+                        crate::workspace::parse_public_provider_entity_id(m)
+                            .map(|(_, _, raw)| raw.to_string())
+                            .unwrap_or_else(|| m.to_string())
+                    });
+                    let raw_effort = reasoning_effort
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .map(ToString::to_string);
+                    let mut changed = false;
+                    if let Some(rec) = self.shared.records.lock().unwrap().get_mut(&thread_id) {
+                        if let Some(ref model) = raw_model {
+                            if self.config.flavor == AcpFlavor::Grok
+                                && rec.extra.get("nativeModelId").and_then(Value::as_str) != Some(model.as_str())
+                            {
+                                rec.extra.insert("nativeModelId".into(), Value::String(model.clone()));
+                                changed = true;
+                            }
+                            if rec.model_id.as_deref() != Some(model.as_str()) {
+                                rec.model_id = Some(model.clone());
+                                changed = true;
+                            }
+                        }
+                        if let Some(ref effort) = raw_effort {
+                            if rec.reasoning_effort.as_deref() != Some(effort.as_str()) {
+                                rec.reasoning_effort = Some(effort.clone());
+                                changed = true;
+                            }
+                        }
+                    }
+                    if changed {
+                        self.shared.save_records();
+                    }
+                }
             }
             Ok(())
         })
@@ -1528,8 +1704,9 @@ fn extract_grok_models(init: &Value) -> Vec<AgentModel> {
     out
 }
 
-fn extract_cursor_models(res: &Value) -> Vec<AgentModel> {
+fn extract_cursor_models(res: &Value) -> (Vec<AgentModel>, HashMap<String, String>) {
     let mut out = Vec::new();
+    let mut effort_options = HashMap::new();
     if let Some(arr) = res.get("models").and_then(Value::as_array) {
         for entry in arr {
             let raw_id = entry
@@ -1537,14 +1714,25 @@ fn extract_cursor_models(res: &Value) -> Vec<AgentModel> {
                 .and_then(Value::as_str)
                 .unwrap_or("default");
             let name = entry.get("name").and_then(Value::as_str).unwrap_or(raw_id);
+            let parsed_effort = entry
+                .get("configOptions")
+                .and_then(Value::as_array)
+                .and_then(|opts| super::acp_side::parse_thought_level_option(opts));
+            let (default_reasoning_effort, reasoning_efforts) = match parsed_effort {
+                Some((opt_id, levels, current)) => {
+                    effort_options.insert(raw_id.to_string(), opt_id);
+                    (current, (!levels.is_empty()).then_some(levels))
+                }
+                None => (None, None),
+            };
             out.push(AgentModel {
                 id: public_provider_entity_id("cursor", "model", raw_id),
                 name: name.to_string(),
                 provider: "Cursor".into(),
                 provider_id: "cursor".into(),
                 ready: true,
-                default_reasoning_effort: None,
-                reasoning_efforts: None,
+                default_reasoning_effort,
+                reasoning_efforts,
                 runtime_modes: Some(vec![
                     "approval-required".into(),
                     "auto-accept-edits".into(),
@@ -1555,7 +1743,7 @@ fn extract_cursor_models(res: &Value) -> Vec<AgentModel> {
             });
         }
     }
-    out
+    (out, effort_options)
 }
 
 fn extract_config_option_models(flavor: AcpFlavor, created: &Value) -> Vec<AgentModel> {

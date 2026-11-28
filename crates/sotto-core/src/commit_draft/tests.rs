@@ -399,3 +399,4 @@ fn claude_code_writes_nothing_for_a_personal_session_a_thread_it_has_no_record_o
 }
 
 mod codex_grok;
+mod cursor_antigravity_opencode;
