@@ -189,7 +189,14 @@ fn cursor_drafts_on_the_model_configured_while_idle() {
 fn cursor_send_message_applies_per_model_effort_option_and_rejects_unknown_effort() {
     let fixture = Fixture::new();
     let runtime = runtime();
-    let adapter = cursor(&fixture, &runtime, json!({ "text": "Fix the parser" }), Duration::from_secs(60));
+    let mut config = AcpAdapterConfig::fake(AcpFlavor::Cursor, fixture.data(), FAKE_CURSOR.into());
+    config.side_writing_deadline = Duration::from_secs(60);
+    fs::create_dir_all(fixture.data()).unwrap();
+    fs::write(fixture.data().join("oneshot.json"), json!({ "text": "Fix the parser" }).to_string()).unwrap();
+    let adapter = Arc::new(AcpAdapter::new(config));
+    let (events_tx, mut events_rx) = tokio::sync::mpsc::unbounded_channel();
+    runtime.block_on(adapter.connect(events_tx)).unwrap();
+    assert_eq!(adapter.status().connection, "connected");
     let send = crate::provider::SendMessageRequest {
         thread_id: "t-effort".into(),
         record_seed: crate::provider::ThreadRecordSeed { project_id: "project-1".into(), title: "Effort check".into(), created_at: "2026-11-27T10:00:00.000Z".into() },
@@ -204,6 +211,21 @@ fn cursor_send_message_applies_per_model_effort_option_and_rejects_unknown_effor
         attachments: Vec::new(),
     };
     runtime.block_on(adapter.send_message(send)).unwrap();
+    // Settle the in-flight prompt so fakeCursorAgent finishes saving sessions/{sid}.json before we inspect it.
+    runtime.block_on(adapter.interrupt("t-effort".into())).unwrap();
+    runtime.block_on(async {
+        let settled = tokio::time::timeout(Duration::from_secs(10), async {
+            while let Some(ev) = events_rx.recv().await {
+                if matches!(ev, crate::provider::ProviderEvent::TurnCompleted { ref thread_id, .. } if thread_id == "t-effort") {
+                    return true;
+                }
+            }
+            false
+        })
+        .await
+        .expect("timed out waiting for Cursor turn to settle");
+        assert!(settled, "events channel closed before TurnCompleted");
+    });
 
     // Wire must have sent Cursor's per-model `reasoning` configId (not hardcoded `reasoning_effort`) and fake session saved `high`.
     let frames = jsonl(&fixture.data().join("requests.jsonl"));
