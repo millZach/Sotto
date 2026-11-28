@@ -44,6 +44,13 @@ interface DownloadRecord {
   reserved: string | null
   /** Chromium finished writing the pending file. */
   finished: boolean
+  /**
+   * The file is being placed: `place` alone then ends the download, lets go of its name and deletes its waiting folder,
+   * so a Cancel meanwhile cannot hand the name to another download or delete a file it never wrote.
+   */
+  placing: boolean
+  /** Cancel was pressed while the file was placed: it stops a file that has not started to move. */
+  cancelAsked: boolean
   /** The page was shared with the agent when the download started. */
   readonly sharedAtStart: boolean
 }
@@ -122,7 +129,7 @@ export class BrowserDownloads {
     const pending = join(folder, file)
     item.setSavePath(pending)
     item.pause()
-    const record: DownloadRecord = { item, pending, chosen: null, replaces: false, reserved: null, finished: false, sharedAtStart: owner.shared === true, view: {
+    const record: DownloadRecord = { item, pending, chosen: null, replaces: false, reserved: null, finished: false, placing: false, cancelAsked: false, sharedAtStart: owner.shared === true, view: {
       id, threadId: owner.threadId, workspaceId: owner.workspaceId, pageId: owner.pageId, file, host: owner.host.slice(0, 300),
       state: 'asking', receivedBytes: 0, totalBytes: Math.max(0, item.getTotalBytes() || 0), byAgent: owner.byAgent, folder: null, opens: opensSafely(file), startedAt: Date.now(),
     } }
@@ -191,11 +198,14 @@ export class BrowserDownloads {
     this.dependencies.emit({ ...record.view }, true)
     return null
   }
-  /** Every download still asking or saving is cancelled and its pending file deleted, at once: Sotto is closing. */
+  /**
+   * Every download still asking or saving is cancelled and its pending file deleted, at once: Sotto is closing. One being
+   * placed is left to `place`, which places nothing more once this has run.
+   */
   dispose(): void {
     this.disposed = true
     for (const record of this.records.values()) {
-      if (record.view.state !== 'asking' && record.view.state !== 'saving') continue
+      if ((record.view.state !== 'asking' && record.view.state !== 'saving') || record.placing) continue
       try { record.item.cancel() } catch { /* Already gone. */ }
       rmSync(dirname(record.pending), { recursive: true, force: true })
     }
@@ -238,6 +248,8 @@ export class BrowserDownloads {
   }
   private cancel(record: DownloadRecord): void {
     if (record.view.state !== 'asking' && record.view.state !== 'saving') return
+    // The file is on its way to where the user said: `place` stops it if it has not started to move, and says which.
+    if (record.placing) { record.cancelAsked = true; return }
     record.view.state = 'cancelled'
     record.chosen = null
     this.release(record)
@@ -262,28 +274,39 @@ export class BrowserDownloads {
   /**
    * Moves the finished file to where the user chose, and its waiting folder away. Save to Downloads never replaces a
    * file: one that appeared at its name after the user answered sends it to the next free name.
+   *
+   * While it runs, the download keeps its name and its waiting folder whatever else happens (`placing`). A Cancel, or
+   * Sotto closing, stops a file that has not started to move; one that has is placed, since stopping it then could only
+   * be done by deleting what is at the target, which may be the user's own file or another download's. Nothing here
+   * deletes a file at a target.
    */
   private async place(record: DownloadRecord): Promise<void> {
     let target = record.chosen
-    if (!target || this.disposed) return
+    if (!target || this.disposed || record.placing) return
+    record.placing = true
+    const stopped = (): boolean => record.cancelAsked || this.disposed
+    let ended: 'saved' | 'cancelled' | 'failed' = 'failed'
     try {
       await mkdir(dirname(target), { recursive: true })
-      if (record.replaces) await move(record.pending, target)
+      if (stopped()) ended = 'cancelled'
+      else if (record.replaces) { await move(record.pending, target); ended = 'saved' }
       else for (let tries = 0; ; tries++) {
-        try { await moveWithoutReplacing(record.pending, target); break } catch (error) {
+        try { await moveWithoutReplacing(record.pending, target); ended = 'saved'; break } catch (error) {
           if ((error as { code?: string }).code !== 'EEXIST' || tries >= 20) throw error
           const next = await this.freePath(dirname(target), record.view.file)
-          // Cancelled while the next name was found: Cancel has deleted what was waiting.
-          if (record.chosen !== target) { this.reserved.delete(sameOnDisk(next)); return }
           this.release(record)
           record.reserved = record.chosen = target = next
+          if (stopped()) { ended = 'cancelled'; break }
         }
       }
-      if (record.chosen !== target) { await rm(target, { force: true }).catch(() => undefined); return }
-      record.view.state = 'saved'
+    } catch { /* Not placed: a file that could not move, or a disk that refused it. */ }
+    record.placing = false
+    // A save that failed after the user pressed Cancel saved nothing, as they asked.
+    record.view.state = ended === 'failed' && record.cancelAsked ? 'cancelled' : ended
+    if (ended === 'saved') {
       // The name it was saved under decides too: Save as can give a document a program's name.
       record.view.opens = opensSafely(record.view.file) && opensSafely(basename(target))
-    } catch { record.view.state = 'failed'; record.chosen = null }
+    } else record.chosen = null
     this.release(record)
     await rm(dirname(record.pending), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 }).catch(() => undefined)
     this.publish(record)

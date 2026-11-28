@@ -7,6 +7,26 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { BrowserDownloads, opensSafely, safeDownloadName, type DownloadItemLike } from '../../../src/main/tools/browserDownloads'
 import type { BrowserDownload } from '../../../src/shared/browser'
 
+/** The next call of one file operation on a matching path, held until the test lets it go. */
+const gates = vi.hoisted(() => ({ next: null as null | { op: string; matches: (path: string) => boolean; reached: () => void; release: Promise<void> } }))
+vi.mock('node:fs/promises', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  const held = (op: string, call: (...args: never[]) => Promise<unknown>) => async (...args: unknown[]): Promise<unknown> => {
+    const gate = gates.next
+    if (gate?.op === op && gate.matches(String(args[0]))) { gates.next = null; gate.reached(); await gate.release }
+    return (call as (...given: unknown[]) => Promise<unknown>)(...args)
+  }
+  return { ...actual, mkdir: held('mkdir', actual.mkdir), link: held('link', actual.link), rename: held('rename', actual.rename), unlink: held('unlink', actual.unlink), stat: held('stat', actual.stat) }
+})
+/** Holds the next `op` on a path `matches` accepts: `reached` settles once the call is waiting, and `release` lets it go on. */
+function hold(op: string, matches: (path: string) => boolean): { reached: Promise<void>; release: () => void } {
+  let reached!: () => void, release!: () => void
+  const there = new Promise<void>(resolve => { reached = resolve })
+  gates.next = { op, matches, reached, release: new Promise<void>(resolve => { release = resolve }) }
+  return { reached: there, release }
+}
+afterEach(() => { gates.next = null })
+
 /** Electron's DownloadItem as far as Sotto uses it: Chromium writes to the save path once resumed. */
 class FakeItem extends EventEmitter implements DownloadItemLike {
   savePath = ''
@@ -262,6 +282,108 @@ describe('what the owner\'s review of downloads found (ADR-0222, November 27 ame
     expect(saving.cancelled).toBe(false)
     expect(downloads.list('thread-gone').find(download => download.id === a.id)?.state).toBe('cancelled')
     await settle(async () => expect(await readdir(pendingFolder)).not.toContain(a.id))
+  })
+})
+
+describe('a Cancel that comes while a download is placed (the second review of ADR-0222\'s November 27 amendment)', () => {
+  it('neither replaces nor deletes the file Save as chose when Cancel comes before the file moves', async () => {
+    let chosen = ''
+    const { downloads, root, owner, pendingFolder } = await fixture(() => chosen)
+    chosen = join(root, 'existing.pdf')
+    await writeFile(chosen, 'the user\'s own')
+    const item = new FakeItem('report.pdf', 'download')
+    const { id } = downloads.start(item, owner)
+    await item.finish()
+    const folder = hold('mkdir', path => path === root)
+    const saving = downloads.act(owner.threadId, id, 'save-as')
+    await folder.reached
+    await downloads.act(owner.threadId, id, 'cancel')
+    folder.release()
+    await saving
+    await settle(() => expect(downloads.list(owner.threadId)[0]?.state).toBe('cancelled'))
+    expect(await readFile(chosen, 'utf8')).toBe('the user\'s own')
+    await settle(async () => expect(await readdir(pendingFolder)).toEqual([]))
+  })
+
+  it('places a Save as whose file had started to move when Cancel came, and deletes nothing', async () => {
+    let chosen = ''
+    const { downloads, root, owner, pendingFolder } = await fixture(() => chosen)
+    chosen = join(root, 'existing.pdf')
+    await writeFile(chosen, 'older')
+    const item = new FakeItem('report.pdf', 'newer')
+    const { id } = downloads.start(item, owner)
+    await item.finish()
+    const moving = hold('rename', path => path === item.savePath)
+    const saving = downloads.act(owner.threadId, id, 'save-as')
+    await moving.reached
+    await downloads.act(owner.threadId, id, 'cancel')
+    moving.release()
+    await saving
+    // The user chose to replace it in the Save dialog; Cancel came too late to stop that, and takes nothing more away.
+    await settle(() => expect(downloads.list(owner.threadId)[0]?.state).not.toBe('saving'))
+    expect(await readFile(chosen, 'utf8')).toBe('newer')
+    expect(downloads.list(owner.threadId)[0]?.state).toBe('saved')
+    await settle(async () => expect(await readdir(pendingFolder)).toEqual([]))
+  })
+
+  it('holds a name until its download is placed, so a Cancel meanwhile neither frees it nor deletes another download\'s file', async () => {
+    let chosen = ''
+    const { downloads, downloadsFolder, owner } = await fixture(() => chosen)
+    const first = new FakeItem('notes.txt', 'one'), second = new FakeItem('other.txt', 'two')
+    const a = downloads.start(first, owner), b = downloads.start(second, owner)
+    await first.finish(); await second.finish()
+    const target = join(downloadsFolder, 'notes.txt')
+    // The hard link is made; Cancel comes while the waiting copy is let go.
+    const letGo = hold('unlink', path => path === first.savePath)
+    const placing = downloads.act(owner.threadId, a.id, 'save')
+    await letGo.reached
+    await downloads.act(owner.threadId, a.id, 'cancel')
+    chosen = target
+    const other = await downloads.act(owner.threadId, b.id, 'save-as').then(view => view, (error: unknown) => error)
+    letGo.release()
+    await placing
+    await settle(() => expect(downloads.list(owner.threadId).some(download => download.state === 'saving')).toBe(false))
+    const state = (id: string) => downloads.list(owner.threadId).find(download => download.id === id)?.state
+    // A download that says it is saved has its own file there, whichever answer won.
+    const there = await readFile(target, 'utf8').catch(() => null)
+    if (state(b.id) === 'saved') expect(there).toBe('two')
+    expect(state(a.id)).toBe('saved')
+    expect(there).toBe('one')
+    expect(other).toMatchObject({ code: 'blocked', message: expect.stringContaining('Another download') })
+    expect(state(b.id)).toBe('asking')
+  })
+
+  it('cancels a Save to Downloads that Cancel reaches while it looks for the next free name, and leaves the user\'s file', async () => {
+    const { downloads, downloadsFolder, owner, pendingFolder } = await fixture()
+    const item = new FakeItem('report.pdf', 'download')
+    const { id } = downloads.start(item, owner)
+    await downloads.act(owner.threadId, id, 'save')
+    await writeFile(join(downloadsFolder, 'report.pdf'), 'the user\'s own')
+    const looking = hold('stat', path => path.endsWith('report (1).pdf'))
+    await item.finish()
+    await looking.reached
+    await downloads.act(owner.threadId, id, 'cancel')
+    looking.release()
+    await settle(() => expect(downloads.list(owner.threadId)[0]?.state).toBe('cancelled'))
+    expect((await readdir(downloadsFolder)).sort()).toEqual(['report.pdf'])
+    expect(await readFile(join(downloadsFolder, 'report.pdf'), 'utf8')).toBe('the user\'s own')
+    await settle(async () => expect(await readdir(pendingFolder)).toEqual([]))
+  })
+
+  it('places nothing once Sotto closes while a download is about to be placed', async () => {
+    let chosen = ''
+    const { downloads, root, owner } = await fixture(() => chosen)
+    chosen = join(root, 'chosen', 'report.pdf')
+    const item = new FakeItem('report.pdf', 'download')
+    const { id } = downloads.start(item, owner)
+    await item.finish()
+    const folder = hold('mkdir', path => path === join(root, 'chosen'))
+    const saving = downloads.act(owner.threadId, id, 'save-as')
+    await folder.reached
+    downloads.dispose()
+    folder.release()
+    await saving
+    await expect(readFile(chosen, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })
 
