@@ -39,7 +39,7 @@ Nothing here moves except the cursor's glide, which reduced motion turns into a 
 - `tests/unit/main/browserParityTools.test.ts`: Antigravity's full-catalog calls refused over `tools/call` and directly, and downloads in `browser_pages`.
 - `tests/unit/main/localServers.test.ts`: `::1`, German `netstat`, a content type in capitals, one deadline per probe, and a parent that started after its child not taken for it (Windows reuses an exited parent's ID).
 - `tests/unit/host/browser/hostBrowser.test.ts` and `hostBrowserService.test.ts`: a main-frame commit on the host ends a secret's document; the host forwards the feature and its files folder and sweeps it.
-- `tests/integration/secretParityCanary.test.ts` (new): one secret, typed by ref and by selector, never in a snapshot, result, task, event, page address or title, dialog refusal or the window's state, through a fragment change, Stop sharing and sharing again, with `evaluate` back once a new document commits.
+- `tests/integration/secretParityCanary.test.ts` (new): one secret, typed by ref and by selector, never in a snapshot, result, task, event, page address or title, dialog refusal or the window's state, through a fragment change, Stop sharing and sharing again, with `evaluate` kept off for the rest of the page's life once the secret is typed (since the second review, below).
 - `tests/unit/renderer/tools/browserZoomDownloads.test.tsx` (new): the zoom menu and chip, the download strip and list, the hook, the drawing editor's focus and Add, and "Allow this thread" hidden for an action that asks every time. `browserReview.test.tsx`: a drawing added as one draft item that says the user drew on it.
 - `tests/unit/main/toolsIpc.test.ts`: 52 tools channels, the four new ones (zoom, downloads, download, cursorStyle) held to the main window and refused with the feature off.
 
@@ -62,11 +62,22 @@ The owner's review asked for these changes, recorded in ADR-0222's November 27 a
 
 - **Names (decision 3).** A download's name is held from the moment Sotto picks it until the file is placed. Two downloads of one name each get a name of their own, compared without case where the disk ignores case. **Save to Downloads** moves the file without replacing one: a hard link, or else a copy that refuses an existing file. If a file of that name appeared meanwhile, it takes the next free name. **Save as…** may still replace the file the user chose, but not a name another download holds.
 - **What runs.** Sotto never opens disk images (`iso`, `img`, `vhd`, `vhdx`), or `chm`, `xll`, `appref-ms`, `msp`, `settingcontent-ms`, `library-ms` or `search-ms` files.
-- **A closed thread.** A download still asking is cancelled at the moment its thread is archived, settled or deleted. The engine now tells the shell which threads are closed, and the shell acts only when a thread becomes closed or gone. A settled thread the user opens again keeps its new downloads.
+- **A closed thread.** A download still asking is cancelled at the moment its thread is deleted, or closed by its provider; the second review settled that the user's Settle leaves it waiting (below). The engine now tells the shell which threads are closed, and the shell acts only when a thread becomes closed or gone. A thread opened again keeps its new downloads.
 - **What the agent hears (decision 5).** The agent hears only of downloads its own action started, and of those from a page that was shared with it when the download started and still is.
 - **Zoom (decision 1).** A zoom is the site's by host name, as Chromium keeps it, so another port on the same host shares it.
 
 `browserDownloads.test.ts`, `browserTools.test.ts` and `engineBoundary.test.ts` check these. Their new tests failed on the old code and pass. In the spec, which passed with the other browser journeys, the user's download from the agent's shared page is still listed for the agent. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-owners-review).
+
+## After the second review
+
+A second, independent review of the round above found these, recorded in ADR-0222's November 27 amendment:
+
+- **Cancel while a file is placed (decision 3).** A Cancel that came while a finished download was being placed went ahead anyway. It could replace the file Save as chose and then delete it, free the name for another download whose file it then deleted, or be reported as failed. Placing now holds the name and the waiting folder until it ends. A Cancel stops a file that has not started to move, and one that has is saved; nothing deletes a file at a target.
+- **What the agent hears (decision 5).** A download from a page the user had just made private still reached the agent when the agent had acted there in the last three seconds, a snapshot included. The agent now hears of a download only from a page shared with it when the download started and still, its own action's included. A read no longer counts as acting, and Stop sharing or a profile page leaving its site forgets the agent's last action. Names are masked as the page's other words are.
+- **Zoom (decision 1).** A zoom now forgets the snapshot refs of every page on the host, not only what waits for the user there.
+- **A closed thread, not changed.** The review read "settled" as the user's Settle, which never cancelled a download. That stays: Settle and Settle project keep running work and cards, and Undo brings the thread back (`CONTEXT.md`, **Settled** and **Settle toast**), while a cancelled download's file is gone for good. The amendment and the guide now say a download is cancelled when its thread is deleted or closed by its provider, and `engineBoundary.test.ts` pins that a settled thread or project ends nothing.
+
+`browserDownloads.test.ts` holds each await of a placing with a gate on `node:fs/promises` and presses Cancel there. `browserTools.test.ts` covers the private-page, cross-site and action-answer cases, masked names, and a ref click after a zoom on both ports. The new tests failed on the old code and pass, except two that guard the new placing and passed before too: a Cancel while the next free name is found, and Sotto closing during mkdir. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-second-review).
 
 ## Not checked here
 

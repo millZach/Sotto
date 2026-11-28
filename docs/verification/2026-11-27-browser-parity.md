@@ -90,6 +90,22 @@ The other four failed under the run's load:
 
 The first three passed when rerun on their own, on this branch and on `origin/main` at f127a1546. `workspaceThreadChanges`' long run of mixed operations takes 14.9 seconds on its own here, so it passed alone on this branch. On `origin/main` it timed out on its own, at 15.2 seconds.
 
+## After the second review
+
+A second, independent review checked the round above. [The secret requests verification](2026-11-27-secret-requests.md#after-the-second-review) and [the zoom and downloads verification](2026-11-27-browser-zoom-downloads.md#after-the-second-review) cover theirs. Here, it is the profiles list (ADR-0221, November 27 amendment). A file Sotto could not take whole was read one entry at a time, but each entry was read strictly, so a profile with a field a newer Sotto added, such as a colour, was not listed. Each is now read by its ID and name, with the rest left out. `browserProfiles.test.ts` checks it; the test failed on the old code and passes.
+
+All gates ran on Node 24.22.1, on the code that is now `a5a728105`:
+
+- `npm run typecheck` and `npm run lint` passed, and each of the round's eight commits typechecks on its own.
+- `npm run notices:verify` verified 202 components.
+- `npm run e2e:list` listed 693 tests in 305 files.
+- `npm run i18n:extract` added no message, and `interfaceCatalogs`, `zodSchemaSites` and `copySites` passed 12 tests.
+- The related browser, secret and host suites passed 620 tests in 48 files, with 6 skipped.
+- `npm run build` passed.
+- `browser-parity.spec.ts`, `browser-zoom-downloads.spec.ts`, `secret-requests.spec.ts` and `browser-pane.spec.ts` passed all 6 of their tests in 2.0 minutes.
+
+The full suite ran as `npm run test -- --maxWorkers=2`. It passed 22,384 tests and failed 11, with 907 skipped, in 54 minutes. Ten of the failures are the known ones from outside this branch, listed above: `threadWorktreeReclaim` (2), `threadWorktreeInterruptedRemoval` (3), `gitRepository` (2), `liveChildSteps` (2) and `installedProvidersGate` (1). The eleventh, `opencodeAdapter`'s "hands the history to the event store", timed out waiting under the run's load. It touches no browser code, and its file passed all 77 of its tests, with 4 skipped, when rerun on its own.
+
 ## Not checked here
 
 - macOS and Linux. The server list's `lsof` and `ss` readers and the Firefox folders there are unit-tested on fixed text only.

@@ -23,11 +23,11 @@ Devin's approval profile lets `sotto_secrets` through without Devin's own questi
 The owner's review asked for six changes here, recorded in the November 27 amendments to ADR-0219 and ADR-0222:
 
 - A reference is bound to the site of its card's sign-in page and typed only there. On another site it is refused, even under the browser grant. If the card named no page, Sotto asks the user every time and shows the page the value would go to; that answer never becomes the thread's grant.
-- In a document where the agent ran its own script (`evaluate`), typing is refused before the value is taken, until another document commits in the main frame. The same holds for a page whose address held the value.
+- In a document where the agent ran its own script (`evaluate`), typing is refused before the value is taken, until another document commits in the main frame. Once a secret was typed into a page, `evaluate` stays off there until the page closes (since the second review, below).
 - Every check runs before the value is taken, so an action refused for any reason leaves the reference unused. The page is checked again once the value comes back from the engine. If the page changed in the meantime, nothing is typed and the agent is told the reference is used.
 - The card says truly where a value goes: the sign-in page's site, or a page the user says yes to. For a file, it says that anything the agent's commands print reaches the agent and its provider. The 32 `threads` catalogs were extracted again.
 - While a document holds a typed secret, the agent gets no screenshot, no picture with a snapshot, no recording and no thumbnail of the page.
-- A secret is also found in an address as a GET form encodes it. Sotto's browser keeps no back-forward cache, and a document the cache restores on a paired host's Chromium is treated as the same document.
+- A secret is also found in an address as a GET form encodes it. Neither Sotto's browser nor, since the second review, a paired host's Chromium keeps a back-forward cache.
 
 These test files check the changes:
 
@@ -37,6 +37,19 @@ These test files check the changes:
 - `hostBrowser.test.ts` and `secretRequestCard.test.tsx`
 
 Their new tests failed on the old code and pass. The spec's staging card now names its login page, which the spec needs, since a card that named none asks every time. The spec passed with the other three browser journeys. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-owners-review). It then ran again with `SOTTO_E2E_EVIDENCE=publish` to make the card's 14 captures again, and each one was looked at; every capture shows the new note. The captures are described above.
+
+## After the second review
+
+A second, independent review found where a typed secret could still be read back or tested. Looking for more of the same found three more. All are recorded in the November 27 amendments to ADR-0219, ADR-0220 and ADR-0222:
+
+- `wait_for` compared words and the address with the page's own, which told a right first character from a wrong one. It now compares them with the secret masked.
+- The mask matched only upper-case escapes, and an address with a stray `%` failed to decode, so `evaluate` stayed on. The mask now finds each character as itself or escaped in either case, once or twice over, and as JSON writes it.
+- Back to a cached page gave its document back as new. A paired host's Chromium now starts without the back-forward cache, and a document given back anyway keeps the rules.
+- A recording that failed to start blocked typing a secret on that page for good.
+- An allowed type that failed after the value was taken did not tell the agent its reference was used. It now does, as an error.
+- Found here: a site can write the value back into a later document, so `evaluate` now stays off for the page's life once a secret is typed there. A selector that compares part of an attribute is refused on such a page. While the document holds the secret, `snapshot` and `inspect` leave out what fields hold, so an edit after a "show password" button cannot bring the value out in pieces.
+
+`pageAutomation.test.ts`, `hostBrowser.test.ts`, `secretTypingRules.test.ts` and `secretParityCanary.test.ts` check these. The back-forward cache tests now go A, then B, then back to A. The new tests failed on the old code and pass. The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-second-review).
 
 ## Not checked here
 
