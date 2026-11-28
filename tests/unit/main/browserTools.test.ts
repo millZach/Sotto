@@ -1610,13 +1610,19 @@ describe('downloads in the service (ADR-0222)', () => {
       // The user stops sharing while the agent's click runs, the page downloads, and the user shares it again.
       if (method === 'Input.dispatchMouseEvent' && (params as { type?: string }).type === 'mousePressed') {
         unwrap(await service.share({ ...target, enabled: false })); started('private.pdf'); unwrap(await service.share({ ...target, enabled: true }))
+        // Stop sharing paused the task; the user resumes it, and the click then downloads again, shared this time.
+        unwrap(await service.controlTask({ ...target, taskId: task.id, control: 'resume' }))
+        started('shared.pdf')
       }
       return plain(method, params)
     })
-    const clicked = await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } })
+    const clicked = unwrap(await service.action({ ...target, taskId: task.id, action: { type: 'click', x: 20, y: 30 } }))
+    // The action finished, so its answer was written, and it names only the download that started while shared.
+    expect(clicked.output).toContain('"shared.pdf"')
     expect(JSON.stringify(clicked)).not.toContain('private.pdf')
-    expect(await service.agentDownloads(target.threadId)).toEqual([])
+    expect(await service.agentDownloads(target.threadId)).toEqual([expect.objectContaining({ file: 'shared.pdf' })])
   })
+
 
   it('cancels a download still asking when its thread closes or goes, and only then', async () => {
     const { service, target, started } = await withDownloads()
