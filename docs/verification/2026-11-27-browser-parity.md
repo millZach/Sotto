@@ -138,6 +138,29 @@ All gates ran on Node 24.22.1, on the code that is now `5972818b9`:
 
 The full suite ran as `npm run test -- --maxWorkers=2`, on `9e314a6ef`, which differs from the code above only in one comment. It passed 22,422 tests and failed 23, with 907 skipped, in 59 minutes. Ten of the failures are the known ones from outside this branch, listed above: `threadWorktreeReclaim` (2), `threadWorktreeInterruptedRemoval` (3), `gitRepository` (2), `liveChildSteps` (2) and `installedProvidersGate` (1). The other 13 each timed out at 15 seconds, waiting for a headless host or a socket: `hostPhoneAccess` (2), `phoneAccess` (4), `headlessLock` (1), `socketWebSocketInterop` (2), `museGate` (2) and `remoteClaudeLateAnswer` (2). None touches browser code. The six files, rerun together straight after, failed 13 tests again, not the same ones. On `origin/main` (`4b02b62ce`) they passed all 51 of their tests, and on this branch, run again, they passed all 51 too.
 
+## After the fourth review
+
+A fourth, independent review checked the round above. [The secret requests verification](2026-11-27-secret-requests.md#after-the-fourth-review) covers what it found and what changed. Here, it is what an adversarial pass found once the fixes were in, and the gates.
+
+An adversarial pass ran after the fixes:
+
+- The one tidying every place now uses gave what the three it replaced gave, on 20,000 random strings.
+- The mask left no part of the secret in 1,525,173 cuts of words tidied each of the three ways, with four secrets, two of them passphrases, each written with marks, control characters and runs of spaces inside and around it.
+- A dialog's words made of copies of the secret, cut where Sotto reads them, came back as one mask. With the cut counted in the masked words instead, part of the secret came through, so the test of it guards the cut.
+- The review's `a\n%2520b`, for a value `a\n b`, is masked, and was on the code it reviewed too.
+
+All gates ran on Node 24.22.1, on the code that is now `73f2a1ebd`:
+
+- `npm run typecheck` and `npm run lint` passed. Each of the round's eight code commits typechecks, passes lint on the files it changes and passes the browser and secret suites on its own. One of those runs failed a socket test with `fetch failed: bad port`: this computer hands out ports from 1024 up, so a host's port can be one `fetch` refuses, as 6000 is. It passed when run again.
+- `npm run notices:verify` verified 202 components.
+- `npm run e2e:list` listed 693 tests in 305 files.
+- `npm run i18n:extract` added no message, and `interfaceCatalogs`, `zodSchemaSites` and `copySites` passed 12 tests.
+- The changed suites, with the browser, secret and host suites around them, passed 915 tests in 51 files, with 6 skipped.
+- `npm run build` passed.
+- `browser-parity.spec.ts`, `browser-zoom-downloads.spec.ts`, `secret-requests.spec.ts` and `browser-pane.spec.ts` passed all 6 of their tests in 1.9 minutes.
+
+The full suite ran as `npm run test -- --maxWorkers=2`, on the code that is now `6dc6f9299` but for two comments in `secretFields.test.ts`. It passed 22,453 tests and failed 10, with 907 skipped, in 56 minutes. The 10 are the known ones from outside this branch, listed above: `threadWorktreeReclaim` (2), `threadWorktreeInterruptedRemoval` (3), `gitRepository` (2), `liveChildSteps` (2) and `installedProvidersGate` (1). No test timed out.
+
 ## Not checked here
 
 - macOS and Linux. The server list's `lsof` and `ss` readers and the Firefox folders there are unit-tested on fixed text only.

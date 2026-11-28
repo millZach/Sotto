@@ -79,11 +79,32 @@ Still open, since no rule in Sotto reaches them:
 - On the test iPhone, a swipe read as a long press, which selects a word.
 - The user's own clipboard, which still holds a value they pasted into the card.
 - A value the page changes after it is typed, or shows as an image, a canvas or in a frame from another site: the mask and the page read find only text.
+- A value in a closed shadow root, which neither the page read nor the field read can see into.
 - A value the page writes back between Sotto's read and the action it checked, which the next action finds.
 - A value the page's text splits with its own spaces, as a PIN in boxes, in a snapshot: only a picked element's markup is checked for that.
 - A value of one or two characters, which nothing masks.
 
 The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-third-review).
+
+## After the fourth review
+
+A fourth, independent review checked the round above, and found four bugs and five smaller faults. All are recorded in the November 28 amendments to ADR-0219 and ADR-0222 that follow the fourth review:
+
+- A mask is eight characters, so masking a shorter value, as a PIN, made the words longer. A dialog of 2,000 characters, a title of 512 or an address of 8,192 that held it then ran past what the window takes, and the window dropped every news of the page: the dialog card never showed while the page waited on it, and the list of pages failed. What is masked is now cut again to what its place takes. An address is cut until the window takes it, or said as its origin and a mask.
+- Enter and Tab reached a field of many lines, or a rich one, that held the value, and could write a line break or a tab into it, which split it where no mask finds it. They now reach only a one-line field. A field Sotto cannot read counts as one that holds the value.
+- A passphrase the page wrote across a line break, a tab or a mark was put together by tidying the page's words after they were masked, and then cut through: a snapshot, a dialog, the element the user points at and the page's title each gave part of it. Each now tidies, then masks, then cuts, through one helper.
+- Whether a later document shows the value, and whether a field holds it, were decided with the page's origin masked too, so a PIN that is the page's port made every document of a local app count as showing it. They are decided with the origin left whole, as everything else is masked.
+- The failed step the user reads in Tools, when a used reference was typed again, now says so in the user's words.
+- The refusals name only what the agent's catalog can do: the stable one has no `clear`.
+- **Stop sharing** during an action of the agent's makes a download the page starts after it the user's.
+- A value with a `+` in it masked words with a space there. Only a value with a space in it is also looked for with that space written `+`.
+- On a page no secret was typed into, none of these rules reads anything more, and a `type` that names its field looks it up once.
+
+`pageAutomation.test.ts`, `secretFields.test.ts`, `secretTypingRules.test.ts` and `browserTools.test.ts` check these. `secretFields.test.ts` runs the field read in a DOM, on a one-line field, a field of many lines and a rich one, with every key a field that holds the value takes. `secretTypingRules.test.ts` sends what is masked through the window's own checks, as the preload does. The new tests failed on the old code and pass, with three exceptions, which hold what was already so and passed on the old code too: the keys a one-line field takes, a field that holds none of the value, and a guard on the cut, which fails once the cut is counted in the masked words.
+
+The list of what is still open, above, now names closed shadow roots, which the review found missing from it.
+
+The gates are in [the first verification](2026-11-27-browser-parity.md#after-the-fourth-review).
 
 ## Not checked here
 
